@@ -1,8 +1,6 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
-
-const inter = Inter({ subsets: ['latin'] })
+import { GameProvider } from '@/contexts/game-context'
 
 export const metadata: Metadata = {
   title: 'Killerpool - Modern Killer Pool Game',
@@ -28,7 +26,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className="dark">
-      <body className={inter.className}>{children}</body>
+      <body className="font-sans antialiased">
+        <GameProvider>{children}</GameProvider>
+      </body>
     </html>
   )
 }
