@@ -14,14 +14,39 @@
 
 ## 📦 Установка
 
-```bash
-# Установка зависимостей
-npm install
+### 1. Установите зависимости
 
-# Копируйте .env.local.example в .env.local и заполните переменные
+```bash
+npm install
+```
+
+### 2. Настройте Supabase
+
+**Создайте проект в Supabase:**
+
+1. Зайдите на [supabase.com](https://supabase.com) и создайте новый проект
+2. Получите API ключи из Settings → API
+3. Запустите SQL миграцию из `supabase/migrations/00001_initial_schema.sql`
+
+**Подробная инструкция:** [supabase/README.md](./supabase/README.md)
+
+### 3. Настройте environment variables
+
+```bash
+# Скопируйте пример файла
 cp .env.local.example .env.local
 
-# Запуск в режиме разработки
+# Откройте .env.local и добавьте ваши Supabase ключи
+```
+
+Вам нужны:
+- `NEXT_PUBLIC_SUPABASE_URL` - URL вашего Supabase проекта
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Public anon key
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key (⚠️ держите в секрете!)
+
+### 4. Запустите dev server
+
+```bash
 npm run dev
 ```
 
@@ -39,9 +64,10 @@ npm run dev
 ### Шаг 2: Настройте переменные окружения
 
 В настройках проекта Vercel добавьте:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_SUPABASE_URL` - URL вашего Supabase проекта
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Public anon key
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key
+- `NEXT_PUBLIC_APP_URL=https://killerpool.app` - Production URL
 
 ### Шаг 3: Деплой
 
@@ -66,16 +92,41 @@ npm run dev
 
 ```
 killerpool/
-├── app/              # Next.js App Router
-│   ├── layout.tsx    # Корневой layout
-│   ├── page.tsx      # Главная страница
-│   └── globals.css   # Глобальные стили
-├── components/       # React компоненты
-├── lib/              # Утилиты
-├── public/           # Статические файлы
+├── app/                    # Next.js App Router
+│   ├── layout.tsx          # Корневой layout
+│   ├── page.tsx            # Главная страница
+│   └── globals.css         # Глобальные стили
+├── components/             # React компоненты
+├── lib/                    # Утилиты и хелперы
+│   ├── supabase/           # Supabase клиенты
+│   │   ├── client.ts       # Browser client
+│   │   ├── server.ts       # Server client
+│   │   └── middleware.ts   # Middleware helper
+│   └── types/              # TypeScript типы
+│       └── database.types.ts  # Database types
+├── supabase/               # Supabase конфигурация
+│   ├── migrations/         # SQL миграции
+│   │   └── 00001_initial_schema.sql
+│   └── README.md           # Supabase setup guide
+├── public/                 # Статические файлы
+│   └── manifest.json       # PWA manifest
+├── middleware.ts           # Next.js middleware (auth)
+├── DEVELOPMENT_PLAN.md     # План разработки
 └── killerpool-app-technical-doc.pdf  # Техническая документация
 ```
 
 ## 📄 Документация
 
-Подробная техническая документация находится в файле `killerpool-app-technical-doc.pdf`.
+- **Техническая спецификация:** [killerpool-app-technical-doc.pdf](./killerpool-app-technical-doc.pdf)
+- **План разработки:** [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
+- **Настройка Supabase:** [supabase/README.md](./supabase/README.md)
+
+## 🛠 Доступные команды
+
+```bash
+# Development
+npm run dev          # Запустить dev server
+npm run build        # Production build
+npm run start        # Запустить production server
+npm run lint         # Проверить код с ESLint
+```
