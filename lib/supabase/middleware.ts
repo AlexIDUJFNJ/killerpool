@@ -8,13 +8,29 @@ import { NextResponse, type NextRequest } from 'next/server'
  * refreshing user sessions and managing cookies.
  */
 export async function updateSession(request: NextRequest) {
+  // Check if Supabase environment variables are configured
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Missing Supabase environment variables. Please configure:')
+    console.error('- NEXT_PUBLIC_SUPABASE_URL')
+    console.error('- NEXT_PUBLIC_SUPABASE_ANON_KEY')
+
+    // Return early without auth check if env vars are missing
+    // This prevents the middleware from crashing
+    return NextResponse.next({
+      request,
+    })
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -39,17 +55,22 @@ export async function updateSession(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-  // Protected routes logic can be added here
-  // Example:
-  // if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-  //   const url = request.nextUrl.clone()
-  //   url.pathname = '/auth'
-  //   return NextResponse.redirect(url)
-  // }
+    // Protected routes logic can be added here
+    // Example:
+    // if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+    //   const url = request.nextUrl.clone()
+    //   url.pathname = '/auth'
+    //   return NextResponse.redirect(url)
+    // }
+  } catch (error) {
+    console.error('Error fetching user in middleware:', error)
+    // Continue without blocking the request
+  }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is. If you're
   // creating a new response object with NextResponse.next() make sure to:
