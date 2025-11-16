@@ -1,15 +1,37 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useGame } from '@/contexts/game-context'
 import { motion } from 'framer-motion'
-import { Play, History, Trophy, Users } from 'lucide-react'
+import { Play, History, Trophy, Users, UserCircle, LogIn } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import type { User } from '@supabase/supabase-js'
 
 export default function Home() {
   const { game, isLoading } = useGame()
   const hasActiveGame = game && game.status === 'active'
+  const [user, setUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    // Get initial user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user)
+      setAuthLoading(false)
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   if (isLoading) {
     return (
@@ -29,6 +51,32 @@ export default function Home() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.1),transparent)]" />
 
       <div className="relative z-10 w-full max-w-2xl">
+        {/* Auth button - top right */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
+          className="absolute top-0 right-0 -mt-4"
+        >
+          {!authLoading && (
+            user ? (
+              <Link href="/profile">
+                <Button variant="outline" size="lg">
+                  <UserCircle className="mr-2 h-5 w-5" />
+                  Profile
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/auth">
+                <Button variant="outline" size="lg">
+                  <LogIn className="mr-2 h-5 w-5" />
+                  Sign In
+                </Button>
+              </Link>
+            )
+          )}
+        </motion.div>
+
         {/* Logo */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

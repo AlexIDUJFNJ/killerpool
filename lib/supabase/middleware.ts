@@ -60,13 +60,24 @@ export async function updateSession(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    // Protected routes logic can be added here
-    // Example:
-    // if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    //   const url = request.nextUrl.clone()
-    //   url.pathname = '/auth'
-    //   return NextResponse.redirect(url)
-    // }
+    // Protected routes - require authentication
+    const protectedRoutes = ['/profile']
+    const isProtectedRoute = protectedRoutes.some(route =>
+      request.nextUrl.pathname.startsWith(route)
+    )
+
+    if (!user && isProtectedRoute) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/auth'
+      return NextResponse.redirect(url)
+    }
+
+    // Redirect authenticated users away from auth page
+    if (user && request.nextUrl.pathname === '/auth') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/'
+      return NextResponse.redirect(url)
+    }
   } catch (error) {
     console.error('Error fetching user in middleware:', error)
     // Continue without blocking the request
