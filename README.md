@@ -1,6 +1,31 @@
 # 🎱 Killerpool
 
+[![Next.js](https://img.shields.io/badge/Next.js-15.0-black?logo=next.js)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.0-blue?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-Backend-green?logo=supabase)](https://supabase.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 Современное PWA-приложение для управления игрой в "Killer Pool" (бильярд).
+
+[🚀 Демо](https://killerpool.app) · [📖 Документация](ARCHITECTURE.md) · [🐛 Сообщить о проблеме](https://github.com/yourusername/killerpool/issues) · [✨ Предложить фичу](https://github.com/yourusername/killerpool/issues/new)
+
+---
+
+## 📋 Содержание
+
+- [Технологический стек](#-технологический-стек)
+- [Текущее состояние проекта](#-текущее-состояние-проекта)
+- [Установка](#-установка)
+- [Настройка Vercel](#-настройка-vercel)
+- [Основные правила MVP](#-основные-правила-mvp)
+- [PWA](#-pwa)
+- [Структура проекта](#-структура-проекта)
+- [Документация](#-документация)
+- [Доступные команды](#-доступные-команды)
+
+---
 
 ## 🚀 Технологический стек
 
@@ -176,10 +201,20 @@ killerpool/
 
 ## 📄 Документация
 
-- **Техническая спецификация:** [killerpool-app-technical-doc.pdf](./killerpool-app-technical-doc.pdf)
-- **План разработки:** [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
-- **Настройка Supabase:** [supabase/README.md](./supabase/README.md)
-- **Contributing Guide:** [CONTRIBUTING.md](./CONTRIBUTING.md)
+### Для разработчиков
+
+- 🏗️ **[Архитектура](ARCHITECTURE.md)** - Системная архитектура и технические решения
+- 📡 **[API Documentation](API.md)** - Документация API и Supabase функций
+- 🚀 **[Deployment Guide](DEPLOYMENT.md)** - Полное руководство по деплою
+- 🔧 **[Troubleshooting](TROUBLESHOOTING.md)** - Решение частых проблем
+- 🔐 **[Security](SECURITY.md)** - Best practices по безопасности
+- 🤝 **[Contributing](CONTRIBUTING.md)** - Как внести свой вклад
+
+### Настройка и планирование
+
+- 📋 **[План разработки](DEVELOPMENT_PLAN.md)** - Roadmap и текущий статус
+- 🗄️ **[Supabase Setup](supabase/README.md)** - Настройка базы данных
+- 📄 **[Техническая спецификация](killerpool-app-technical-doc.pdf)** - Подробная документация проекта
 
 ## 🛠 Доступные команды
 
@@ -190,3 +225,50 @@ npm run build        # Production build
 npm run start        # Запустить production server
 npm run lint         # Проверить код с ESLint
 ```
+
+## 🤝 Contributing
+
+Мы приветствуем вклад в проект! Пожалуйста, ознакомьтесь с [CONTRIBUTING.md](CONTRIBUTING.md) для подробной информации.
+
+### Quick Start для контрибьюторов
+
+1. Fork репозиторий
+2. Создайте feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit изменения (`git commit -m 'feat: add amazing feature'`)
+4. Push в branch (`git push origin feature/amazing-feature`)
+5. Откройте Pull Request
+
+## 📊 Статус проекта
+
+- **Week 1 (Days 1-7):** ✅ Завершено - MVP с полной игровой функциональностью
+- **Week 2 (Days 8-11):** ✅ Завершено - Supabase интеграция и аутентификация
+- **Week 2 (Days 12-14):** ⏳ В процессе - История игр, статистика, export
+- **Week 3 (Days 15-21):** 🔜 Запланировано - PWA, тестирование, финальная полировка
+
+Подробнее см. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
+
+## 📝 License
+
+Этот проект лицензирован под MIT License - см. [LICENSE](LICENSE) для деталей.
+
+## 💬 Поддержка
+
+Нужна помощь?
+
+- 📖 Прочитайте [документацию](ARCHITECTURE.md)
+- 🔧 Проверьте [Troubleshooting Guide](TROUBLESHOOTING.md)
+- 🐛 [Создайте issue](https://github.com/yourusername/killerpool/issues)
+- 💬 Задайте вопрос в [Discussions](https://github.com/yourusername/killerpool/discussions)
+
+## 🙏 Благодарности
+
+- [Next.js](https://nextjs.org/) - Отличный React framework
+- [Supabase](https://supabase.com/) - Backend-as-a-Service
+- [shadcn/ui](https://ui.shadcn.com/) - Красивые UI компоненты
+- [Vercel](https://vercel.com/) - Hosting и deployment
+
+---
+
+<div align="center">
+  Сделано с ❤️ для любителей бильярда
+</div>
