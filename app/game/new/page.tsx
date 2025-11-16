@@ -23,10 +23,8 @@ export default function NewGamePage() {
   const [selectedPlayerIndex, setSelectedPlayerIndex] = React.useState<number | null>(null)
 
   const handleAddPlayer = () => {
-    if (players.length < 8) {
-      const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
-      setPlayers([...players, { name: '', avatar: nextAvatar }])
-    }
+    const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
+    setPlayers([...players, { name: '', avatar: nextAvatar }])
   }
 
   const handleRemovePlayer = (index: number) => {
@@ -109,7 +107,7 @@ export default function NewGamePage() {
                       placeholder={`Player ${index + 1} name`}
                       value={player.name}
                       onChange={(e) => handleNameChange(index, e.target.value)}
-                      className="flex-1 bg-background border border-input rounded-md px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="flex-1 min-w-0 bg-background border border-input rounded-md px-3 py-3 text-base sm:text-lg sm:px-4 focus:outline-none focus:ring-2 focus:ring-ring"
                       maxLength={20}
                     />
 
@@ -129,16 +127,14 @@ export default function NewGamePage() {
           ))}
         </div>
 
-        {players.length < 8 && (
-          <Button
-            variant="outline"
-            className="w-full h-14 mb-8"
-            onClick={handleAddPlayer}
-          >
-            <Plus className="mr-2 h-5 w-5" />
-            Add Player ({players.length}/8)
-          </Button>
-        )}
+        <Button
+          variant="outline"
+          className="w-full h-14 mb-8"
+          onClick={handleAddPlayer}
+        >
+          <Plus className="mr-2 h-5 w-5" />
+          Add Player ({players.length})
+        </Button>
 
         {selectedPlayerIndex !== null && (
           <motion.div
