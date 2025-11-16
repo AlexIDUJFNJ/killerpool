@@ -141,7 +141,7 @@ export default function GamePage() {
 
   // Game Screen
   return (
-    <main className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <main className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 overflow-x-hidden">
       {/* Header */}
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="flex items-center justify-between p-4">
@@ -182,7 +182,7 @@ export default function GamePage() {
       </div>
 
       {/* Main Content */}
-      <div className="container max-w-2xl mx-auto px-4 py-8">
+      <div className="container max-w-2xl mx-auto px-4 py-8 overflow-x-hidden">
         {/* Next Up Indicator */}
         <AnimatePresence mode="wait">
           {nextPlayer && (

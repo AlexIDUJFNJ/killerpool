@@ -46,8 +46,8 @@ export function SwipeablePlayerCard({
 
   // Indicator opacities
   const missOpacity = useTransform(x, [-200, -SWIPE_THRESHOLD, 0], [1, 0.7, 0])
-  const potOpacity = useTransform(y, [-200, -SWIPE_THRESHOLD, 0], [1, 0.7, 0])
-  const blackOpacity = useTransform(x, [0, SWIPE_THRESHOLD, 200], [0, 0.7, 1])
+  const potOpacity = useTransform(x, [0, SWIPE_THRESHOLD, 200], [0, 0.7, 1])
+  const blackOpacity = useTransform(y, [-200, -SWIPE_THRESHOLD, 0], [1, 0.7, 0])
 
   const handleDragStart = () => {
     if (disabled) return
@@ -67,14 +67,14 @@ export function SwipeablePlayerCard({
       if (currentX < -SWIPE_THRESHOLD / 2) {
         setSwipeDirection('miss')
       } else if (currentX > SWIPE_THRESHOLD / 2) {
-        setSwipeDirection('pot_black')
+        setSwipeDirection('pot')
       } else {
         setSwipeDirection(null)
       }
     } else {
       // Vertical swipe (up)
       if (currentY < -SWIPE_THRESHOLD / 2) {
-        setSwipeDirection('pot')
+        setSwipeDirection('pot_black')
       } else {
         setSwipeDirection(null)
       }
@@ -101,16 +101,16 @@ export function SwipeablePlayerCard({
         action = 'miss'
         haptics.miss()
       }
-      // Right swipe (POT BLACK)
+      // Right swipe (POT)
       else if (offsetX > SWIPE_THRESHOLD || velocityX > SWIPE_VELOCITY_THRESHOLD) {
-        action = 'pot_black'
-        haptics.potBlack()
+        action = 'pot'
+        haptics.pot()
       }
     }
-    // Check vertical swipe (up for POT)
+    // Check vertical swipe (up for BLACK)
     else if (offsetY < -SWIPE_THRESHOLD || velocityY < -SWIPE_VELOCITY_THRESHOLD) {
-      action = 'pot'
-      haptics.pot()
+      action = 'pot_black'
+      haptics.potBlack()
     }
 
     if (action) {
@@ -136,22 +136,22 @@ export function SwipeablePlayerCard({
       </motion.div>
 
       <motion.div
-        style={{ opacity: potOpacity }}
+        style={{ opacity: blackOpacity }}
         className="absolute left-1/2 -translate-x-1/2 top-0 -translate-y-24 z-0"
       >
-        <div className="flex flex-col items-center gap-2 text-slate-400">
-          <Circle className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">POT</span>
+        <div className="flex flex-col items-center gap-2 text-slate-900 dark:text-slate-100">
+          <Target className="h-16 w-16" strokeWidth={3} />
+          <span className="text-xl font-bold">BLACK</span>
         </div>
       </motion.div>
 
       <motion.div
-        style={{ opacity: blackOpacity }}
+        style={{ opacity: potOpacity }}
         className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-24 z-0"
       >
         <div className="flex flex-col items-center gap-2 text-emerald-500">
-          <Target className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">BLACK</span>
+          <Circle className="h-16 w-16" strokeWidth={3} />
+          <span className="text-xl font-bold">POT</span>
         </div>
       </motion.div>
 
@@ -265,16 +265,16 @@ export function SwipeablePlayerCard({
                       <span className="text-muted-foreground">← Miss</span>
                     </div>
                     <div className="flex flex-col items-center gap-1">
-                      <div className="text-slate-400">
-                        <Circle className="h-5 w-5 mx-auto" />
+                      <div className="text-slate-900 dark:text-slate-100">
+                        <Target className="h-5 w-5 mx-auto" />
                       </div>
-                      <span className="text-muted-foreground">↑ Pot</span>
+                      <span className="text-muted-foreground">↑ Black</span>
                     </div>
                     <div className="flex flex-col items-center gap-1">
                       <div className="text-emerald-500">
-                        <Target className="h-5 w-5 mx-auto" />
+                        <Circle className="h-5 w-5 mx-auto" />
                       </div>
-                      <span className="text-muted-foreground">Black →</span>
+                      <span className="text-muted-foreground">Pot →</span>
                     </div>
                   </div>
                 </motion.div>
