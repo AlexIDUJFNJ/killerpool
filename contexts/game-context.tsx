@@ -10,6 +10,7 @@ import * as React from 'react'
 import { Game, GameAction } from '@/lib/types'
 import { applyAction, undoLastAction, getCurrentPlayer } from '@/lib/game-logic'
 import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
+import { autoSyncGame } from '@/lib/sync'
 
 interface GameContextValue {
   game: Game | null
@@ -40,10 +41,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (game) {
       saveCurrentGame(game)
-      
-      // If game is completed, save to history
+
+      // If game is completed, save to history and sync to Supabase
       if (game.status === 'completed') {
         saveToHistory(game)
+        // Auto-sync to Supabase in background
+        autoSyncGame(game).catch((error) => {
+          console.error('Failed to auto-sync game:', error)
+        })
       }
     }
   }, [game])

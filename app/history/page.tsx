@@ -8,15 +8,73 @@ import { Badge } from '@/components/ui/badge'
 import { loadGameHistory, deleteGameFromHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Trophy, Users, Clock, Trash2 } from 'lucide-react'
+import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check } from 'lucide-react'
+import { syncAllGamesToSupabase, mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
 
 export default function HistoryPage() {
   const [games, setGames] = React.useState<Game[]>([])
+  const [isSyncing, setIsSyncing] = React.useState(false)
+  const [syncStatus, setSyncStatus] = React.useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
+  const [isOnline, setIsOnline] = React.useState(false)
 
   React.useEffect(() => {
     const history = loadGameHistory()
     setGames(history)
+
+    // Check if Supabase is available
+    isSupabaseAvailable().then(setIsOnline)
   }, [])
+
+  const handleSync = async () => {
+    setIsSyncing(true)
+    setSyncStatus('syncing')
+
+    try {
+      const result = await syncAllGamesToSupabase()
+      console.log('Sync result:', result)
+      setSyncStatus('success')
+
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setSyncStatus('idle')
+      }, 3000)
+    } catch (error) {
+      console.error('Sync error:', error)
+      setSyncStatus('error')
+
+      // Auto-hide error message after 3 seconds
+      setTimeout(() => {
+        setSyncStatus('idle')
+      }, 3000)
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const handleMerge = async () => {
+    setIsSyncing(true)
+    setSyncStatus('syncing')
+
+    try {
+      await mergeGamesWithSupabase()
+      const history = loadGameHistory()
+      setGames(history)
+      setSyncStatus('success')
+
+      setTimeout(() => {
+        setSyncStatus('idle')
+      }, 3000)
+    } catch (error) {
+      console.error('Merge error:', error)
+      setSyncStatus('error')
+
+      setTimeout(() => {
+        setSyncStatus('idle')
+      }, 3000)
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   const handleDelete = (gameId: string) => {
     if (confirm('Delete this game from history?')) {
@@ -74,13 +132,42 @@ export default function HistoryPage() {
   return (
     <main className="min-h-screen p-6">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-3xl font-bold">Game History</h1>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <Link href="/">
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <h1 className="text-3xl font-bold">Game History</h1>
+          </div>
+
+          {isOnline && (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleMerge}
+                disabled={isSyncing}
+              >
+                {syncStatus === 'syncing' ? (
+                  <CloudUpload className="h-4 w-4 mr-2 animate-pulse" />
+                ) : syncStatus === 'success' ? (
+                  <Check className="h-4 w-4 mr-2 text-green-500" />
+                ) : (
+                  <Cloud className="h-4 w-4 mr-2" />
+                )}
+                Sync
+              </Button>
+            </div>
+          )}
+
+          {!isOnline && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CloudOff className="h-4 w-4" />
+              <span className="hidden sm:inline">Offline</span>
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -155,7 +242,7 @@ export default function HistoryPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                    <div className="grid grid-cols-3 gap-2 text-center text-sm mb-3">
                       <div className="bg-muted rounded-md p-2">
                         <div className="font-bold">{game.history.length}</div>
                         <div className="text-xs text-muted-foreground">Actions</div>
@@ -171,6 +258,12 @@ export default function HistoryPage() {
                         <div className="text-xs text-muted-foreground">Black Pots</div>
                       </div>
                     </div>
+
+                    <Link href={`/history/${game.id}`}>
+                      <Button variant="outline" className="w-full">
+                        View Details
+                      </Button>
+                    </Link>
                   </CardContent>
                 </Card>
               </motion.div>
