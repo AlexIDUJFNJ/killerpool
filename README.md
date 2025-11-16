@@ -7,10 +7,69 @@
 - **Next.js 15** (App Router)
 - **React 19**
 - **TypeScript**
-- **TailwindCSS 4** + shadcn/ui
+- **TailwindCSS 3.4** + shadcn/ui
 - **Framer Motion** (анимации)
 - **Supabase** (БД, авторизация)
 - **Vercel** (деплой)
+
+## 📊 Текущее состояние проекта
+
+### ✅ Реализовано (Week 1 + Week 2 Days 8-11)
+
+#### Основа и инфраструктура
+- [x] Next.js 15 с App Router и TypeScript
+- [x] Tailwind CSS 3.4 + shadcn/ui компоненты
+- [x] Framer Motion для плавных анимаций
+- [x] SEO оптимизация (metadata, Open Graph, robots, sitemap)
+- [x] Error handling (error.tsx, loading.tsx, not-found.tsx)
+- [x] PWA manifest
+
+#### UI Компоненты
+- [x] Player Card с аватарами и жизнями
+- [x] Анимированный Life Bar
+- [x] Action Buttons (MISS, POT, POT BLACK)
+- [x] Адаптивный дизайн (mobile-first)
+
+#### Игровая логика
+- [x] Создание игры с 2+ игроками
+- [x] Отслеживание жизней (MISS -1, POT 0, BLACK +1)
+- [x] Определение победителя
+- [x] История действий
+- [x] localStorage для оффлайн режима
+- [x] React Context для состояния игры
+
+#### Аутентификация и База данных
+- [x] Supabase настроен и развернут
+- [x] Таблицы: games, player_profiles, rulesets
+- [x] Row Level Security (RLS)
+- [x] Google OAuth
+- [x] Magic Link вход
+- [x] Защита роутов (middleware)
+- [x] Профиль пользователя
+
+#### Экраны
+- [x] Главная страница с анимациями
+- [x] Создание новой игры
+- [x] Игровой экран
+- [x] Экран победителя
+- [x] Аутентификация
+- [x] Профиль
+- [x] История игр (базовая)
+
+### 🚧 В процессе разработки
+
+- [ ] Полная интеграция истории с Supabase
+- [ ] Детальная статистика игроков
+- [ ] Export функционал (CSV, screenshot)
+- [ ] Web Share API
+
+### 🔜 Запланировано (Week 3)
+
+- [ ] Service Worker для офлайн режима
+- [ ] Realtime мультиплеер
+- [ ] Достижения и badges
+- [ ] Light theme
+- [ ] Apple Sign In
 
 ## 📦 Установка
 
@@ -120,6 +179,7 @@ killerpool/
 - **Техническая спецификация:** [killerpool-app-technical-doc.pdf](./killerpool-app-technical-doc.pdf)
 - **План разработки:** [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
 - **Настройка Supabase:** [supabase/README.md](./supabase/README.md)
+- **Contributing Guide:** [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## 🛠 Доступные команды
 
