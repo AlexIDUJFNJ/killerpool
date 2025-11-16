@@ -185,17 +185,55 @@ supabase db push
    - Magic Link
    - Password Recovery
 
-### 2. Social Auth (опционально)
+### 2. Google OAuth (рекомендуется)
 
-Включите провайдеров в **Authentication** → **Providers**:
+#### Шаг 1: Создайте Google OAuth клиент
 
-- **Google**: Для быстрого входа
+1. Зайдите в [Google Cloud Console](https://console.cloud.google.com/)
+2. Создайте новый проект или выберите существующий
+3. Перейдите в **APIs & Services** → **Credentials**
+4. Нажмите **Create Credentials** → **OAuth client ID**
+5. Выберите тип приложения: **Web application**
+6. Настройте:
+   - **Name:** Killerpool
+   - **Authorized JavaScript origins:**
+     - `http://localhost:3000` (для разработки)
+     - `https://your-app-url.vercel.app` (для production)
+   - **Authorized redirect URIs:**
+     - `https://your-project-ref.supabase.co/auth/v1/callback` (замените на ваш Supabase URL)
+7. Нажмите **Create**
+8. Скопируйте **Client ID** и **Client Secret**
+
+#### Шаг 2: Настройте Google Provider в Supabase
+
+1. В Supabase Dashboard: **Authentication** → **Providers**
+2. Найдите **Google** и включите его
+3. Вставьте:
+   - **Client ID** (из Google Cloud Console)
+   - **Client Secret** (из Google Cloud Console)
+4. Нажмите **Save**
+
+#### Шаг 3: Проверьте настройки
+
+1. Убедитесь, что в Google Cloud Console включен **Google+ API**
+2. В **OAuth consent screen** настройте:
+   - **User Type:** External
+   - **App name:** Killerpool
+   - **User support email:** ваш email
+   - **Developer contact information:** ваш email
+3. Добавьте **Scopes:**
+   - `userinfo.email`
+   - `userinfo.profile`
+
+### 3. Другие Social Providers (опционально)
+
 - **Apple**: Для iOS пользователей
 - **GitHub**: Для разработчиков
+- **Discord**: Для игрового сообщества
 
 Для каждого провайдера нужны OAuth credentials.
 
-### 3. Email Settings
+### 4. Email Settings
 
 1. **Authentication** → **Email Auth**
 2. Настройте:

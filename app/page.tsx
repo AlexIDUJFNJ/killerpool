@@ -56,7 +56,7 @@ export default function Home() {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
-          className="absolute top-0 right-0 -mt-4"
+          className="absolute top-0 right-0 mt-4 md:-mt-4"
         >
           {!authLoading && (
             user ? (
