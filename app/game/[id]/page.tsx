@@ -4,12 +4,14 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { PlayerCard } from '@/components/game/player-card'
-import { ActionButtons } from '@/components/game/action-buttons'
+import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
+import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { useGame } from '@/contexts/game-context'
 import { getCurrentPlayer, getActivePlayers, getNextPlayers } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RotateCcw, Home, Play, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, RotateCcw, Home, Play, Users2 } from 'lucide-react'
+import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
 
 export default function GamePage() {
@@ -18,7 +20,8 @@ export default function GamePage() {
   const gameId = params.id as string
   const { game, performAction, undoAction, endGame } = useGame()
   const [showWinner, setShowWinner] = React.useState(false)
-  const [showAllPlayers, setShowAllPlayers] = React.useState(true)
+  const [showAllPlayers, setShowAllPlayers] = React.useState(false)
+  const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
 
   React.useEffect(() => {
     if (!game) {
@@ -33,6 +36,7 @@ export default function GamePage() {
 
     if (game.status === 'completed') {
       setShowWinner(true)
+      haptics.victory()
     }
   }, [game, gameId, router])
 
@@ -42,14 +46,32 @@ export default function GamePage() {
 
   const currentPlayer = getCurrentPlayer(game)
   const activePlayers = getActivePlayers(game)
-  const nextPlayers = getNextPlayers(game, 2)
+  const nextPlayers = getNextPlayers(game, 1)
+  const nextPlayer = nextPlayers[0]
 
-  const handleAction = (action: GameAction) => {
-    performAction(action)
+  const handleSwipe = (action: 'miss' | 'pot' | 'pot_black') => {
+    // Map swipe action to GameAction
+    const actionMap: Record<string, GameAction> = {
+      miss: 'miss',
+      pot: 'pot',
+      pot_black: 'pot_black',
+    }
+
+    const gameAction = actionMap[action]
+
+    // Increment key to trigger card animation
+    setCurrentPlayerKey((prev) => prev + 1)
+
+    // Perform action after brief delay for animation
+    setTimeout(() => {
+      performAction(gameAction)
+    }, 300)
   }
 
   const handleUndo = () => {
     undoAction()
+    haptics.tap()
+    setCurrentPlayerKey((prev) => prev + 1)
   }
 
   const handleEndGame = () => {
@@ -68,8 +90,9 @@ export default function GamePage() {
     router.push('/')
   }
 
+  // Winner Screen
   if (showWinner && game.status === 'completed') {
-    const winner = game.players.find(p => p.id === game.winnerId)
+    const winner = game.players.find((p) => p.id === game.winnerId)
 
     return (
       <main className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
@@ -116,134 +139,152 @@ export default function GamePage() {
     )
   }
 
+  // Game Screen
   return (
-    <main className="min-h-screen pb-64 md:pb-32">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <Link href="/">
-                <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-              </Link>
-              <div>
-                <h1 className="text-lg font-bold">Game in Progress</h1>
-                <p className="text-xs text-muted-foreground">
-                  {activePlayers.length} players remaining
-                </p>
-              </div>
+    <main className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+      {/* Header */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3">
+            <Link href="/">
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-lg font-bold">Killer Pool</h1>
+              <p className="text-xs text-muted-foreground">
+                {activePlayers.length} players remaining
+              </p>
             </div>
+          </div>
 
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
               onClick={handleUndo}
               disabled={game.history.length === 0}
+              title="Undo last action"
             >
               <RotateCcw className="h-5 w-5" />
             </Button>
-          </div>
-
-          {/* Current Player - Sticky */}
-          {currentPlayer && (
-            <motion.div
-              key={currentPlayer.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="px-4 py-3 bg-primary/5 border-t"
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowAllPlayers(true)}
+              title="View all players"
             >
-              <PlayerCard
-                {...currentPlayer}
-                variant="inline"
-                maxLives={game.ruleset.params.max_lives}
-              />
+              <Users2 className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="container max-w-2xl mx-auto px-4 py-8">
+        {/* Next Up Indicator */}
+        <AnimatePresence mode="wait">
+          {nextPlayer && (
+            <motion.div
+              key={`next-${nextPlayer.id}`}
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="text-center mb-6"
+            >
+              <p className="text-sm text-muted-foreground uppercase tracking-wide mb-2">
+                Next Up
+              </p>
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-full">
+                <span className="text-2xl">{nextPlayer.avatar}</span>
+                <span className="font-medium">{nextPlayer.name}</span>
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(nextPlayer.lives, 5) }).map((_, i) => (
+                    <div key={i} className="h-2 w-2 rounded-full bg-emerald-500" />
+                  ))}
+                </div>
+              </div>
             </motion.div>
           )}
-        </div>
+        </AnimatePresence>
 
-        {/* Next Up Section */}
-        {nextPlayers.length > 0 && (
-          <div className="px-4 py-4 bg-muted/20">
-            <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
-              Next Up
-            </p>
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {nextPlayers.map((player) => (
-                  <PlayerCard
-                    key={player.id}
-                    {...player}
-                    variant="mini"
-                    maxLives={game.ruleset.params.max_lives}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
-        )}
-
-        {/* All Players Section - Collapsible */}
-        <div className="px-4 py-4">
-          <button
-            onClick={() => setShowAllPlayers(!showAllPlayers)}
-            className="flex items-center justify-between w-full mb-3 group"
-          >
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              All Players ({game.players.length})
-            </p>
-            {showAllPlayers ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-            )}
-          </button>
-
-          <AnimatePresence>
-            {showAllPlayers && (
+        {/* Current Player Card */}
+        <div className="relative min-h-[500px] flex items-center justify-center">
+          <AnimatePresence mode="wait">
+            {currentPlayer && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="space-y-2 overflow-hidden"
+                key={`player-${currentPlayer.id}-${currentPlayerKey}`}
+                initial={{ scale: 0.8, opacity: 0, rotateY: -90 }}
+                animate={{ scale: 1, opacity: 1, rotateY: 0 }}
+                exit={{
+                  scale: 0.8,
+                  opacity: 0,
+                  rotateY: 90,
+                  transition: { duration: 0.3 },
+                }}
+                transition={{
+                  type: 'spring',
+                  damping: 20,
+                  stiffness: 200,
+                }}
+                className="w-full"
               >
-                {game.players.map((player, index) => (
-                  <PlayerCard
-                    key={player.id}
-                    {...player}
-                    variant="compact"
-                    showPosition={index + 1}
-                    isActive={currentPlayer?.id === player.id}
-                    maxLives={game.ruleset.params.max_lives}
-                  />
-                ))}
+                <SwipeablePlayerCard
+                  name={currentPlayer.name}
+                  avatar={currentPlayer.avatar}
+                  lives={currentPlayer.lives}
+                  maxLives={game.ruleset.params.max_lives}
+                  onSwipe={handleSwipe}
+                  disabled={game.status !== 'active'}
+                />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Action Buttons - Fixed Bottom */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent border-t md:p-6">
-          <div className="max-w-4xl mx-auto space-y-3">
-            <ActionButtons
-              onAction={handleAction}
-              disabled={game.status !== 'active'}
-              compact
-            />
-
+        {/* Game Stats */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 text-center space-y-2"
+        >
+          <p className="text-sm text-muted-foreground">
+            Actions: {game.history.length}
+          </p>
+          {game.history.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              className="w-full"
               onClick={handleEndGame}
+              className="text-muted-foreground hover:text-destructive"
             >
               End Game
             </Button>
-          </div>
-        </div>
+          )}
+        </motion.div>
       </div>
+
+      {/* Bottom Sheet - All Players */}
+      <BottomSheet
+        isOpen={showAllPlayers}
+        onClose={() => setShowAllPlayers(false)}
+        title="All Players"
+      >
+        <div className="p-6 space-y-3">
+          {game.players.map((player, index) => (
+            <PlayerCard
+              key={player.id}
+              {...player}
+              variant="compact"
+              showPosition={index + 1}
+              isActive={currentPlayer?.id === player.id}
+              maxLives={game.ruleset.params.max_lives}
+            />
+          ))}
+        </div>
+      </BottomSheet>
     </main>
   )
 }
