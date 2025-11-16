@@ -12,12 +12,14 @@ export interface ActionButtonsProps {
   onAction: (action: GameAction) => void
   disabled?: boolean
   className?: string
+  compact?: boolean
 }
 
 export function ActionButtons({
   onAction,
   disabled = false,
   className,
+  compact = false,
 }: ActionButtonsProps) {
   const [lastAction, setLastAction] = React.useState<GameAction | null>(null)
 
@@ -55,7 +57,7 @@ export function ActionButtons({
   ]
 
   return (
-    <div className={cn('grid grid-cols-1 md:grid-cols-3 gap-4', className)}>
+    <div className={cn('grid grid-cols-1 md:grid-cols-3 gap-3', className)}>
       {buttons.map(({ action, label, description, icon: Icon, variant, className: btnClass }) => (
         <motion.div
           key={action}
@@ -66,18 +68,19 @@ export function ActionButtons({
           transition={{ duration: 0.3 }}
         >
           <Button
-            size="xl"
+            size={compact ? 'lg' : 'xl'}
             variant={variant}
             onClick={() => handleAction(action)}
             disabled={disabled}
             className={cn(
-              'w-full h-24 flex-col gap-2 text-white shadow-lg',
+              'w-full flex-col gap-1.5 text-white shadow-lg',
+              compact ? 'h-16' : 'h-24',
               btnClass
             )}
           >
-            <Icon className="h-8 w-8" />
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-xl font-bold">{label}</span>
+            <Icon className={compact ? 'h-5 w-5' : 'h-8 w-8'} />
+            <div className="flex flex-col items-center gap-0.5">
+              <span className={compact ? 'text-base font-bold' : 'text-xl font-bold'}>{label}</span>
               <span className="text-xs opacity-80">{description}</span>
             </div>
           </Button>

@@ -152,6 +152,28 @@ export function getEliminatedPlayers(game: Game): Player[] {
 }
 
 /**
+ * Get the next N players in the queue (after current player)
+ */
+export function getNextPlayers(game: Game, count: number = 2): Player[] {
+  const totalPlayers = game.players.length
+  const nextPlayers: Player[] = []
+  let currentIndex = game.currentPlayerIndex
+  let found = 0
+
+  for (let i = 0; i < totalPlayers && found < count; i++) {
+    const nextIndex = (currentIndex + 1 + i) % totalPlayers
+    const player = game.players[nextIndex]
+
+    if (!player.eliminated) {
+      nextPlayers.push(player)
+      found++
+    }
+  }
+
+  return nextPlayers
+}
+
+/**
  * Get the winner if game is completed
  */
 export function getWinner(game: Game): Player | undefined {

@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button'
 import { PlayerCard } from '@/components/game/player-card'
 import { ActionButtons } from '@/components/game/action-buttons'
 import { useGame } from '@/contexts/game-context'
-import { getCurrentPlayer, getActivePlayers } from '@/lib/game-logic'
+import { getCurrentPlayer, getActivePlayers, getNextPlayers } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RotateCcw, Home, Play } from 'lucide-react'
+import { ArrowLeft, RotateCcw, Home, Play, ChevronDown, ChevronUp } from 'lucide-react'
 import Link from 'next/link'
 
 export default function GamePage() {
@@ -18,6 +18,7 @@ export default function GamePage() {
   const gameId = params.id as string
   const { game, performAction, undoAction, endGame } = useGame()
   const [showWinner, setShowWinner] = React.useState(false)
+  const [showAllPlayers, setShowAllPlayers] = React.useState(true)
 
   React.useEffect(() => {
     if (!game) {
@@ -41,6 +42,7 @@ export default function GamePage() {
 
   const currentPlayer = getCurrentPlayer(game)
   const activePlayers = getActivePlayers(game)
+  const nextPlayers = getNextPlayers(game, 2)
 
   const handleAction = (action: GameAction) => {
     performAction(action)
@@ -115,24 +117,25 @@ export default function GamePage() {
   }
 
   return (
-    <main className="min-h-screen p-6 pb-32">
+    <main className="min-h-screen pb-64 md:pb-32">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold">Game in Progress</h1>
-              <p className="text-sm text-muted-foreground">
-                {activePlayers.length} players remaining
-              </p>
+        {/* Header */}
+        <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <Link href="/">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+              </Link>
+              <div>
+                <h1 className="text-lg font-bold">Game in Progress</h1>
+                <p className="text-xs text-muted-foreground">
+                  {activePlayers.length} players remaining
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -142,47 +145,98 @@ export default function GamePage() {
               <RotateCcw className="h-5 w-5" />
             </Button>
           </div>
-        </div>
 
-        {currentPlayer && (
-          <motion.div
-            key={currentPlayer.id}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 text-center"
-          >
-            <p className="text-sm text-muted-foreground mb-2">Current Turn</p>
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-4xl">{currentPlayer.avatar}</span>
-              <span className="text-2xl font-bold">{currentPlayer.name}</span>
-            </div>
-          </motion.div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <AnimatePresence mode="popLayout">
-            {game.players.map((player) => (
+          {/* Current Player - Sticky */}
+          {currentPlayer && (
+            <motion.div
+              key={currentPlayer.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="px-4 py-3 bg-primary/5 border-t"
+            >
               <PlayerCard
-                key={player.id}
-                {...player}
-                isActive={currentPlayer?.id === player.id}
+                {...currentPlayer}
+                variant="inline"
                 maxLives={game.ruleset.params.max_lives}
               />
-            ))}
+            </motion.div>
+          )}
+        </div>
+
+        {/* Next Up Section */}
+        {nextPlayers.length > 0 && (
+          <div className="px-4 py-4 bg-muted/20">
+            <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+              Next Up
+            </p>
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
+                {nextPlayers.map((player) => (
+                  <PlayerCard
+                    key={player.id}
+                    {...player}
+                    variant="mini"
+                    maxLives={game.ruleset.params.max_lives}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* All Players Section - Collapsible */}
+        <div className="px-4 py-4">
+          <button
+            onClick={() => setShowAllPlayers(!showAllPlayers)}
+            className="flex items-center justify-between w-full mb-3 group"
+          >
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              All Players ({game.players.length})
+            </p>
+            {showAllPlayers ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+            )}
+          </button>
+
+          <AnimatePresence>
+            {showAllPlayers && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-2 overflow-hidden"
+              >
+                {game.players.map((player, index) => (
+                  <PlayerCard
+                    key={player.id}
+                    {...player}
+                    variant="compact"
+                    showPosition={index + 1}
+                    isActive={currentPlayer?.id === player.id}
+                    maxLives={game.ruleset.params.max_lives}
+                  />
+                ))}
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background via-background to-transparent">
-          <div className="max-w-4xl mx-auto">
+        {/* Action Buttons - Fixed Bottom */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent border-t md:p-6">
+          <div className="max-w-4xl mx-auto space-y-3">
             <ActionButtons
               onAction={handleAction}
               disabled={game.status !== 'active'}
+              compact
             />
 
             <Button
               variant="ghost"
               size="sm"
-              className="w-full mt-4"
+              className="w-full"
               onClick={handleEndGame}
             >
               End Game
