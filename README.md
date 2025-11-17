@@ -88,10 +88,19 @@
 - [ ] Export функционал (CSV, screenshot)
 - [ ] Web Share API
 
-### 🔜 Запланировано (Week 3)
+### ✅ Week 3 - PWA Setup (Days 15-16 завершены)
 
-- [ ] Service Worker для офлайн режима
-- [ ] Realtime мультиплеер
+- [x] Service Worker для офлайн режима
+- [x] PWA manifest и иконки
+- [x] Background Sync для синхронизации данных
+- [x] Офлайн fallback страница
+- [x] Кеширование статики и API
+- [x] Установка на iOS/Android
+
+### 🔜 Запланировано (Week 3 - продолжение)
+
+- [ ] Realtime мультиплеер (Day 17)
+- [ ] Performance optimization (Days 18-19)
 - [ ] Достижения и badges
 - [ ] Light theme
 - [ ] Apple Sign In
@@ -243,7 +252,8 @@ npm run lint         # Проверить код с ESLint
 - **Week 1 (Days 1-7):** ✅ Завершено - MVP с полной игровой функциональностью
 - **Week 2 (Days 8-11):** ✅ Завершено - Supabase интеграция и аутентификация
 - **Week 2 (Days 12-14):** ⏳ В процессе - История игр, статистика, export
-- **Week 3 (Days 15-21):** 🔜 Запланировано - PWA, тестирование, финальная полировка
+- **Week 3 (Days 15-16):** ✅ Завершено - PWA Setup (Service Worker, офлайн режим, иконки)
+- **Week 3 (Days 17-21):** ⏳ В процессе - Realtime, тестирование, финальная полировка
 
 Подробнее см. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 

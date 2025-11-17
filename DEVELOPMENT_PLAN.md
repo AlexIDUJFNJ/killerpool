@@ -235,18 +235,23 @@
 
 **Цель:** PWA, тестирование, доработка
 
-#### День 15-16: PWA Setup
+#### День 15-16: PWA Setup ✅
 
-- [ ] Установить `@ducanh2912/next-pwa`
-- [ ] Настроить Service Worker:
-  - [ ] Кеш статики
-  - [ ] Офлайн fallback
-  - [ ] Background sync для игр
-- [ ] Создать иконки:
-  - [ ] 192x192
-  - [ ] 512x512
-  - [ ] Favicon, Apple Touch Icon
-- [ ] Тестирование установки на iOS/Android
+- [x] Установить `@ducanh2912/next-pwa`
+- [x] Настроить Service Worker:
+  - [x] Кеш статики
+  - [x] Офлайн fallback
+  - [x] Background sync для игр
+- [x] Создать иконки:
+  - [x] 192x192
+  - [x] 512x512
+  - [x] Favicon, Apple Touch Icon
+  - [x] SVG исходник
+- [x] Настроить manifest.json
+- [x] Добавить PWA мета-теги
+- [x] Создать офлайн страницу
+- [x] Настроить runtime caching стратегии
+- [x] Документация PWA_SETUP.md
 
 #### День 17: Realtime (опционально)
 
@@ -452,9 +457,20 @@
 - **Week 1 (Days 1-7):** ✅ **100% Завершено** - Rapid MVP с полной игровой функциональностью
 - **Week 2 (Days 8-11):** ✅ **100% Завершено** - Supabase интеграция и аутентификация
 - **Week 2 (Days 12-14):** ⏳ **В процессе** - История игр, статистика, export
-- **Week 3 (Days 15-21):** 🔜 **Запланировано** - PWA, тестирование, финальная полировка
+- **Week 3 (Days 15-16):** ✅ **100% Завершено** - PWA Setup (Service Worker, офлайн, иконки)
+- **Week 3 (Days 17-21):** ⏳ **В процессе** - Realtime, тестирование, финальная полировка
 
-### Недавние улучшения (16 ноября 2025):
+### Недавние улучшения (17 ноября 2025):
+- ✅ **PWA Setup завершен** (Days 15-16)
+  - Service Worker с кешированием
+  - Офлайн режим с fallback страницей
+  - Background Sync для синхронизации данных
+  - Иконки всех размеров (192, 512, favicon, apple-touch-icon)
+  - PWA manifest с полной конфигурацией
+  - Runtime caching стратегии для разных типов ресурсов
+  - Документация PWA_SETUP.md
+
+### Предыдущие обновления (16 ноября 2025):
 - ✅ Добавлены специальные Next.js файлы (error.tsx, loading.tsx, not-found.tsx)
 - ✅ Улучшен SEO (Open Graph, Twitter Cards, robots.txt, sitemap)
 - ✅ Создан CONTRIBUTING.md для контрибьюторов
