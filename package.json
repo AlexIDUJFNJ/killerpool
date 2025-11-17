@@ -8,18 +8,22 @@
     "start": "next start",
     "lint": "next lint",
     "generate-icons": "node scripts/generate-icons.js",
-    "prebuild": "npm run generate-icons"
+    "prebuild": "npm run generate-icons",
+    "analyze": "node scripts/analyze-bundle.js"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.81.1",
+    "@types/qrcode": "^1.5.6",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "framer-motion": "^11.0.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.460.0",
     "next": "^15.0.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.2.0"

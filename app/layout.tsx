@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { GameProvider } from '@/contexts/game-context'
+import { ThemeProvider } from '@/components/theme-provider'
 import { PWAInit } from '@/components/pwa-init'
 
 export const metadata: Metadata = {
@@ -67,7 +68,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" className="dark overflow-x-hidden">
+    <html lang="ru" suppressHydrationWarning className="overflow-x-hidden">
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
@@ -79,8 +80,10 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body className="font-sans antialiased overflow-x-hidden">
-        <PWAInit />
-        <GameProvider>{children}</GameProvider>
+        <ThemeProvider defaultTheme="dark" storageKey="killerpool-theme">
+          <PWAInit />
+          <GameProvider>{children}</GameProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

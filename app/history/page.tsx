@@ -5,25 +5,82 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { loadGameHistory, deleteGameFromHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check } from 'lucide-react'
+import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check, Search, Filter } from 'lucide-react'
 import { syncAllGamesToSupabase, mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
 
+type DateFilter = 'all' | 'today' | 'week' | 'month'
+type StatusFilter = 'all' | 'completed' | 'abandoned'
+
 export default function HistoryPage() {
-  const [games, setGames] = React.useState<Game[]>([])
+  const [allGames, setAllGames] = React.useState<Game[]>([])
+  const [filteredGames, setFilteredGames] = React.useState<Game[]>([])
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const [dateFilter, setDateFilter] = React.useState<DateFilter>('all')
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
   const [isSyncing, setIsSyncing] = React.useState(false)
   const [syncStatus, setSyncStatus] = React.useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
   const [isOnline, setIsOnline] = React.useState(false)
 
+  // Load games on mount
   React.useEffect(() => {
     const history = loadGameHistory()
-    setGames(history)
+    setAllGames(history)
+    setFilteredGames(history)
 
     // Check if Supabase is available
     isSupabaseAvailable().then(setIsOnline)
   }, [])
+
+  // Apply filters whenever search query or filters change
+  React.useEffect(() => {
+    let filtered = [...allGames]
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(game =>
+        game.players.some(player =>
+          player.name.toLowerCase().includes(query)
+        )
+      )
+    }
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+      filtered = filtered.filter(game => {
+        const gameDate = new Date(game.createdAt)
+
+        switch (dateFilter) {
+          case 'today':
+            return gameDate >= today
+          case 'week':
+            const weekAgo = new Date(today)
+            weekAgo.setDate(weekAgo.getDate() - 7)
+            return gameDate >= weekAgo
+          case 'month':
+            const monthAgo = new Date(today)
+            monthAgo.setMonth(monthAgo.getMonth() - 1)
+            return gameDate >= monthAgo
+          default:
+            return true
+        }
+      })
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(game => game.status === statusFilter)
+    }
+
+    setFilteredGames(filtered)
+  }, [searchQuery, dateFilter, statusFilter, allGames])
 
   const handleSync = async () => {
     setIsSyncing(true)
@@ -58,7 +115,7 @@ export default function HistoryPage() {
     try {
       await mergeGamesWithSupabase()
       const history = loadGameHistory()
-      setGames(history)
+      setAllGames(history)
       setSyncStatus('success')
 
       setTimeout(() => {
@@ -79,7 +136,7 @@ export default function HistoryPage() {
   const handleDelete = (gameId: string) => {
     if (confirm('Delete this game from history?')) {
       deleteGameFromHistory(gameId)
-      setGames(games.filter(g => g.id !== gameId))
+      setAllGames(allGames.filter(g => g.id !== gameId))
     }
   }
 
@@ -101,7 +158,7 @@ export default function HistoryPage() {
     return `${minutes}m ${seconds}s`
   }
 
-  if (games.length === 0) {
+  if (allGames.length === 0) {
     return (
       <main className="min-h-screen p-6">
         <div className="max-w-2xl mx-auto">
@@ -132,7 +189,7 @@ export default function HistoryPage() {
   return (
     <main className="min-h-screen p-6">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <Link href="/">
               <Button variant="ghost" size="icon">
@@ -170,8 +227,114 @@ export default function HistoryPage() {
           )}
         </div>
 
-        <div className="space-y-4">
-          {games.map((game, index) => {
+        {/* Search and Filters */}
+        <div className="mb-6 space-y-4">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by player name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Filter Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Date:</span>
+            </div>
+            <Button
+              variant={dateFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setDateFilter('all')}
+            >
+              All Time
+            </Button>
+            <Button
+              variant={dateFilter === 'today' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setDateFilter('today')}
+            >
+              Today
+            </Button>
+            <Button
+              variant={dateFilter === 'week' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setDateFilter('week')}
+            >
+              Last 7 Days
+            </Button>
+            <Button
+              variant={dateFilter === 'month' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setDateFilter('month')}
+            >
+              Last 30 Days
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Status:</span>
+            </div>
+            <Button
+              variant={statusFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('all')}
+            >
+              All
+            </Button>
+            <Button
+              variant={statusFilter === 'completed' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('completed')}
+            >
+              Completed
+            </Button>
+            <Button
+              variant={statusFilter === 'abandoned' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('abandoned')}
+            >
+              Abandoned
+            </Button>
+          </div>
+
+          {/* Results Count */}
+          {(searchQuery || dateFilter !== 'all' || statusFilter !== 'all') && (
+            <div className="text-sm text-muted-foreground">
+              Showing {filteredGames.length} of {allGames.length} games
+            </div>
+          )}
+        </div>
+
+        {/* Games List */}
+        {filteredGames.length === 0 ? (
+          <div className="text-center py-12">
+            <Trophy className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <h2 className="text-xl font-semibold mb-2">No games found</h2>
+            <p className="text-muted-foreground mb-6">
+              Try adjusting your filters or search query
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearchQuery('')
+                setDateFilter('all')
+                setStatusFilter('all')
+              }}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredGames.map((game, index) => {
             const winner = game.players.find(p => p.id === game.winnerId)
 
             return (
@@ -268,8 +431,9 @@ export default function HistoryPage() {
                 </Card>
               </motion.div>
             )
-          })}
-        </div>
+            })}
+          </div>
+        )}
       </div>
     </main>
   )

@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button'
 import { PlayerCard } from '@/components/game/player-card'
 import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
+import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
 import { getCurrentPlayer, getActivePlayers, getNextPlayers } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RotateCcw, Home, Play, Users2 } from 'lucide-react'
+import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode } from 'lucide-react'
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
 
@@ -21,6 +22,7 @@ export default function GamePage() {
   const { game, performAction, undoAction, endGame } = useGame()
   const [showWinner, setShowWinner] = React.useState(false)
   const [showAllPlayers, setShowAllPlayers] = React.useState(false)
+  const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
 
   React.useEffect(() => {
@@ -163,6 +165,14 @@ export default function GamePage() {
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => setShowInviteModal(true)}
+              title="Invite players"
+            >
+              <QrCode className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleUndo}
               disabled={game.history.length === 0}
               title="Undo last action"
@@ -285,6 +295,14 @@ export default function GamePage() {
           ))}
         </div>
       </BottomSheet>
+
+      {/* Invite Modal */}
+      <InviteModal
+        gameId={game.id}
+        gameName={`${game.players.length} Player Game`}
+        open={showInviteModal}
+        onOpenChange={setShowInviteModal}
+      />
     </main>
   )
 }

@@ -1,7 +1,7 @@
 /**
  * Game Context for Killerpool
- * 
- * React Context for managing global game state.
+ *
+ * React Context for managing global game state with realtime sync.
  */
 
 'use client'
@@ -11,11 +11,14 @@ import { Game, GameAction } from '@/lib/types'
 import { applyAction, undoLastAction, getCurrentPlayer } from '@/lib/game-logic'
 import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
 import { autoSyncGame } from '@/lib/sync'
+import { useRealtimeGame, useSyncGameForRealtime } from '@/hooks/use-realtime-game'
+import { broadcastGameAction, updateGameStatus } from '@/lib/realtime'
 
 interface GameContextValue {
   game: Game | null
   isLoading: boolean
-  startGame: (game: Game) => void
+  isRealtimeConnected: boolean
+  startGame: (game: Game, enableRealtime?: boolean) => void
   performAction: (action: GameAction) => void
   undoAction: () => void
   endGame: () => void
@@ -27,6 +30,30 @@ const GameContext = React.createContext<GameContextValue | undefined>(undefined)
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [game, setGame] = React.useState<Game | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
+  const [realtimeEnabled, setRealtimeEnabled] = React.useState(false)
+
+  // Sync game for realtime when enabled
+  const { isSynced } = useSyncGameForRealtime(realtimeEnabled ? game : null)
+
+  // Setup realtime subscription
+  const { isConnected: isRealtimeConnected } = useRealtimeGame(
+    realtimeEnabled && game ? game.id : null,
+    {
+      enabled: realtimeEnabled && isSynced,
+      onGameUpdate: (gameUpdate) => {
+        setGame((currentGame) => {
+          if (!currentGame) return null
+          return {
+            ...currentGame,
+            ...gameUpdate,
+          } as Game
+        })
+      },
+      onNewAction: (action) => {
+        console.log('New action from realtime:', action)
+      },
+    }
+  )
 
   // Load game from localStorage on mount
   React.useEffect(() => {
@@ -49,12 +76,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         autoSyncGame(game).catch((error) => {
           console.error('Failed to auto-sync game:', error)
         })
+        // Update status in realtime if enabled
+        if (realtimeEnabled) {
+          updateGameStatus(game.id, 'completed', game.winnerId).catch((error) => {
+            console.error('Failed to update game status in realtime:', error)
+          })
+        }
       }
     }
-  }, [game])
+  }, [game, realtimeEnabled])
 
-  const startGame = React.useCallback((newGame: Game) => {
+  const startGame = React.useCallback((newGame: Game, enableRealtime = false) => {
     setGame(newGame)
+    setRealtimeEnabled(enableRealtime)
   }, [])
 
   const performAction = React.useCallback((action: GameAction) => {
@@ -63,10 +97,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     try {
       const updatedGame = applyAction(game, action)
       setGame(updatedGame)
+
+      // Broadcast action via realtime if enabled and synced
+      if (realtimeEnabled && isSynced) {
+        const lastAction = updatedGame.history[updatedGame.history.length - 1]
+        if (lastAction) {
+          broadcastGameAction(game.id, lastAction).catch((error) => {
+            console.error('Failed to broadcast game action:', error)
+          })
+        }
+      }
     } catch (error) {
       console.error('Failed to perform action:', error)
     }
-  }, [game])
+  }, [game, realtimeEnabled, isSynced])
 
   const undoAction = React.useCallback(() => {
     if (!game || game.history.length === 0) return
@@ -94,6 +138,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const value: GameContextValue = {
     game,
     isLoading,
+    isRealtimeConnected,
     startGame,
     performAction,
     undoAction,
