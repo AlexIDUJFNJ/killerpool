@@ -24,15 +24,22 @@ export function generateInviteLink(gameId: string): string {
 export async function generateInviteQRCode(gameId: string): Promise<string> {
   const inviteLink = generateInviteLink(gameId)
 
+  // Ensure URL is properly formatted without any line breaks or extra spaces
+  const cleanUrl = inviteLink.trim().replace(/\s+/g, '')
+
   try {
-    const qrCodeDataUrl = await QRCode.toDataURL(inviteLink, {
-      width: 300,
-      margin: 2,
+    const qrCodeDataUrl = await QRCode.toDataURL(cleanUrl, {
+      width: 400, // Larger size for better scanning
+      margin: 3, // Larger margin for better scanner recognition
       color: {
-        dark: '#10b981', // emerald-500
-        light: '#ffffff', // white background for proper scanning
+        dark: '#000000', // Black for maximum contrast and better scanning
+        light: '#ffffff', // White background for proper scanning
       },
-      errorCorrectionLevel: 'M', // Medium error correction
+      errorCorrectionLevel: 'H', // High error correction for better reliability
+      type: 'image/png',
+      rendererOpts: {
+        quality: 1.0, // Maximum quality
+      },
     })
 
     return qrCodeDataUrl
