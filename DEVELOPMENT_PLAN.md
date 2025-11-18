@@ -461,6 +461,15 @@
 - **Week 3 (Days 17-21):** ✅ **85% Завершено** - Realtime, Light Theme, Stats страница
 
 ### Последние обновления (18 ноября 2025):
+- ✅ **Build & Deployment Fixes**
+  - Исправлены все критические ESLint ошибки, блокирующие деплой на Vercel
+  - Fix stats/page.tsx: заменен несуществующий импорт getAllGames на loadGameHistory
+  - Fix help/page.tsx: эскейпированы кавычки и апострофы в JSX тексте
+  - Fix invite-modal.tsx, player-card.tsx: эскейпированы апострофы
+  - Fix ui/input.tsx: пустой интерфейс заменен на type alias
+  - Fix lib/sync-manager.ts: удален triple-slash reference
+  - Production build теперь проходит успешно ✅
+
 - ✅ **Quick Wins завершены**
   - Исправлены Next.js metadata warnings (viewport/themeColor)
   - Настроен ESLint + Prettier для code quality
