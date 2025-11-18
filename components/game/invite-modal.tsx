@@ -73,11 +73,19 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
           {/* QR Code */}
           {qrCodeDataUrl && (
             <div className="flex flex-col items-center gap-3 p-4 bg-muted rounded-lg">
-              <img
-                src={qrCodeDataUrl}
-                alt="Game Invite QR Code"
-                className="w-64 h-64 rounded-lg"
-              />
+              <a
+                href={inviteLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                title="Click to open invite link"
+              >
+                <img
+                  src={qrCodeDataUrl}
+                  alt="Game Invite QR Code"
+                  className="w-64 h-64 rounded-lg"
+                />
+              </a>
               <Button
                 variant="outline"
                 size="sm"
