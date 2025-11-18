@@ -2,7 +2,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Play, Users, Trophy, QrCode, Cloud, Share2, Moon, Sun } from 'lucide-react'
+import { ArrowLeft, Play, Users, Trophy, QrCode, Cloud, Share2, Sun } from 'lucide-react'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -83,7 +83,7 @@ export default function HelpPage() {
                 <h3 className="font-semibold">Quick Start</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                Tap "Start New Game" on the home screen, add 2+ players with names and avatars, then tap "Start Game". Swipe cards to record actions - left for MISS, right for BLACK, up for POT.
+                Tap &quot;Start New Game&quot; on the home screen, add 2+ players with names and avatars, then tap &quot;Start Game&quot;. Swipe cards to record actions - left for MISS, right for BLACK, up for POT.
               </p>
             </div>
 
@@ -113,7 +113,7 @@ export default function HelpPage() {
                 <h3 className="font-semibold">Share Results</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                After a game, view game details from the History page. Export results as CSV, take a screenshot, or share directly using your device's share menu.
+                After a game, view game details from the History page. Export results as CSV, take a screenshot, or share directly using your device&apos;s share menu.
               </p>
             </div>
 
@@ -146,7 +146,7 @@ export default function HelpPage() {
               </li>
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
-                <span>The app works offline - your games are saved locally and sync when you're back online</span>
+                <span>The app works offline - your games are saved locally and sync when you&apos;re back online</span>
               </li>
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
@@ -176,14 +176,14 @@ export default function HelpPage() {
             <div>
               <h3 className="font-semibold mb-2">How do I recover a lost game?</h3>
               <p className="text-muted-foreground">
-                If you accidentally closed the app, tap "Resume Game" on the home screen to continue where you left off. Games are automatically saved.
+                If you accidentally closed the app, tap &quot;Resume Game&quot; on the home screen to continue where you left off. Games are automatically saved.
               </p>
             </div>
 
             <div>
               <h3 className="font-semibold mb-2">Can multiple people control the same game?</h3>
               <p className="text-muted-foreground">
-                Yes! If you're signed in and enable realtime sync, multiple devices can view and control the same game simultaneously.
+                Yes! If you&apos;re signed in and enable realtime sync, multiple devices can view and control the same game simultaneously.
               </p>
             </div>
 

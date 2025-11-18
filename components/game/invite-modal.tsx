@@ -142,7 +142,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
             <ul className="list-disc list-inside space-y-1 ml-2">
               <li>Share the link or QR code with other players</li>
               <li>They can scan the QR code or open the link</li>
-              <li>They'll be taken directly to the game</li>
+              <li>They&apos;ll be taken directly to the game</li>
             </ul>
           </div>
         </div>

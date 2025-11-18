@@ -3,8 +3,6 @@
  * Handles syncing game data to Supabase when connection is restored
  */
 
-/// <reference path="./types/sync.d.ts" />
-
 export interface PendingSyncItem {
   id: string
   type: 'game_create' | 'game_update' | 'game_complete'

@@ -36,7 +36,7 @@ export function PlayerCard({
     return (
       <div className={cn('flex items-center gap-3', className)}>
         <span className="text-2xl">{avatar}</span>
-        <span className="font-bold text-lg">{name}'s Turn</span>
+        <span className="font-bold text-lg">{name}&apos;s Turn</span>
         <div className="flex gap-0.5 ml-auto">
           {Array.from({ length: Math.min(lives, 5) }).map((_, i) => (
             <div key={i} className="h-2 w-2 rounded-full bg-emerald-500" />

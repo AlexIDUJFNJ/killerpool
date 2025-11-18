@@ -3,13 +3,12 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Trophy, Target, TrendingUp, Activity, Award, Zap } from 'lucide-react'
+import { ArrowLeft, Trophy, TrendingUp, Activity, Award, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
-import { getAllGames } from '@/lib/storage'
-import type { Game } from '@/lib/types'
+import { loadGameHistory } from '@/lib/storage'
 
 interface PlayerStats {
   totalGames: number
@@ -33,7 +32,6 @@ interface PlayerStats {
 export default function StatsPage() {
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
     loadStats()
@@ -44,12 +42,8 @@ export default function StatsPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
 
-      if (user) {
-        setUserId(user.id)
-      }
-
       // Get all completed games from localStorage
-      const allGames = getAllGames().filter(game => game.status === 'completed')
+      const allGames = loadGameHistory().filter(game => game.status === 'completed')
 
       if (allGames.length === 0) {
         setStats(null)
