@@ -80,6 +80,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
                 className="cursor-pointer hover:opacity-80 transition-opacity"
                 title="Click to open invite link"
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={qrCodeDataUrl}
                   alt="Game Invite QR Code"

@@ -10,7 +10,7 @@ import { loadGameHistory, deleteGameFromHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check, Search, Filter } from 'lucide-react'
-import { syncAllGamesToSupabase, mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
+import { mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
 
 type DateFilter = 'all' | 'today' | 'week' | 'month'
 type StatusFilter = 'all' | 'completed' | 'abandoned'

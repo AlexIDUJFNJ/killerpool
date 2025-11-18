@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -22,11 +22,7 @@ export default function ProfilePage() {
   const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    loadUser()
-  }, [])
-
-  const loadUser = async () => {
+  const loadUser = useCallback(async () => {
     const supabase = createClient()
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -65,7 +61,11 @@ export default function ProfilePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
+
+  useEffect(() => {
+    loadUser()
+  }, [loadUser])
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
