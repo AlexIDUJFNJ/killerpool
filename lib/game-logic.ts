@@ -92,7 +92,7 @@ export function applyAction(game: Game, action: GameAction): Game {
   )
 
   // Find next active player
-  let nextPlayerIndex = findNextActivePlayer(updatedPlayers, game.currentPlayerIndex)
+  const nextPlayerIndex = findNextActivePlayer(updatedPlayers, game.currentPlayerIndex)
 
   // Check for winner
   const activePlayers = updatedPlayers.filter(p => !p.eliminated)
@@ -157,7 +157,7 @@ export function getEliminatedPlayers(game: Game): Player[] {
 export function getNextPlayers(game: Game, count: number = 2): Player[] {
   const totalPlayers = game.players.length
   const nextPlayers: Player[] = []
-  let currentIndex = game.currentPlayerIndex
+  const currentIndex = game.currentPlayerIndex
   let found = 0
 
   for (let i = 0; i < totalPlayers && found < count; i++) {

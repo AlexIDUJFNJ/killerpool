@@ -44,11 +44,11 @@ export function PWAInit() {
       })
 
     // Handle app install prompt
-    let deferredPrompt: any = null
+    let _deferredPrompt: any = null
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
-      deferredPrompt = e
+      _deferredPrompt = e
       // You can show install button here
       console.log('PWA install prompt ready')
     }
@@ -58,7 +58,7 @@ export function PWAInit() {
     // Handle successful install
     window.addEventListener('appinstalled', () => {
       console.log('PWA installed successfully')
-      deferredPrompt = null
+      _deferredPrompt = null
     })
 
     return () => {

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
-import { Game, GameHistoryEntry, Player } from '@/lib/types'
+import { Game } from '@/lib/types'
 import { motion } from 'framer-motion'
 import {
   ArrowLeft,
@@ -17,7 +17,6 @@ import {
   TrendingDown,
   TrendingUp,
   Minus,
-  Download,
   Share2,
   Calendar,
   FileText,

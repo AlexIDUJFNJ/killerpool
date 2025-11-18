@@ -82,32 +82,6 @@ export default function HistoryPage() {
     setFilteredGames(filtered)
   }, [searchQuery, dateFilter, statusFilter, allGames])
 
-  const handleSync = async () => {
-    setIsSyncing(true)
-    setSyncStatus('syncing')
-
-    try {
-      const result = await syncAllGamesToSupabase()
-      console.log('Sync result:', result)
-      setSyncStatus('success')
-
-      // Auto-hide success message after 3 seconds
-      setTimeout(() => {
-        setSyncStatus('idle')
-      }, 3000)
-    } catch (error) {
-      console.error('Sync error:', error)
-      setSyncStatus('error')
-
-      // Auto-hide error message after 3 seconds
-      setTimeout(() => {
-        setSyncStatus('idle')
-      }, 3000)
-    } finally {
-      setIsSyncing(false)
-    }
-  }
-
   const handleMerge = async () => {
     setIsSyncing(true)
     setSyncStatus('syncing')

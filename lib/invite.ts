@@ -5,7 +5,6 @@
  */
 
 import QRCode from 'qrcode'
-import { Game } from './types'
 
 /**
  * Generate an invite link for a game

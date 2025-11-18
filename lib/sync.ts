@@ -6,7 +6,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { Game } from './types'
-import { loadGameHistory, saveToHistory } from './storage'
+import { loadGameHistory } from './storage'
 
 /**
  * Sync a completed game to Supabase
@@ -191,7 +191,7 @@ export async function isSupabaseAvailable(): Promise<boolean> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     return !!user
-  } catch (error) {
+  } catch {
     return false
   }
 }

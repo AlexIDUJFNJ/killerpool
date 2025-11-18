@@ -5,7 +5,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
-import { Game, GameAction, GameHistoryEntry } from './types'
+import { Game, GameHistoryEntry } from './types'
 import { RealtimeChannel } from '@supabase/supabase-js'
 
 /**
@@ -188,7 +188,7 @@ export async function isRealtimeAvailable(): Promise<boolean> {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     return !!user
-  } catch (error) {
+  } catch {
     return false
   }
 }
