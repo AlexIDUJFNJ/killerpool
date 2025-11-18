@@ -30,8 +30,9 @@ export async function generateInviteQRCode(gameId: string): Promise<string> {
       margin: 2,
       color: {
         dark: '#10b981', // emerald-500
-        light: '#000000',
+        light: '#ffffff', // white background for proper scanning
       },
+      errorCorrectionLevel: 'M', // Medium error correction
     })
 
     return qrCodeDataUrl
