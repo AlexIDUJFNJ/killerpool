@@ -197,9 +197,12 @@ export function undoLastAction(game: Game): Game {
   // Restore player state
   const updatedPlayers = game.players.map(p =>
     p.id === lastEntry.playerId
-      ? { ...p, lives: lastEntry.livesBefore, eliminated: lastEntry.livesBefore > 0 }
+      ? { ...p, lives: lastEntry.livesBefore, eliminated: lastEntry.livesBefore <= 0 }
       : p
   )
+
+  // Find the player who performed the undone action
+  const playerIndex = updatedPlayers.findIndex(p => p.id === lastEntry.playerId)
 
   // Recalculate current player and winner
   const activePlayers = updatedPlayers.filter(p => !p.eliminated)
@@ -208,6 +211,7 @@ export function undoLastAction(game: Game): Game {
   return {
     ...game,
     players: updatedPlayers,
+    currentPlayerIndex: playerIndex >= 0 ? playerIndex : game.currentPlayerIndex,
     winnerId,
     status: winnerId ? 'completed' : 'active',
     history: updatedHistory,
