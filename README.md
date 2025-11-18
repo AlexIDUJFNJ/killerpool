@@ -81,12 +81,20 @@
 - [x] Профиль
 - [x] История игр (базовая)
 
-### 🚧 В процессе разработки
+### ✅ Дополнительный функционал
 
-- [ ] Полная интеграция истории с Supabase
-- [ ] Детальная статистика игроков
-- [ ] Export функционал (CSV, screenshot)
-- [ ] Web Share API
+- [x] Полная интеграция истории с Supabase
+- [x] Детальная статистика игроков (Stats страница)
+- [x] Export функционал (CSV, JSON, Screenshot)
+- [x] Web Share API для шаринга
+- [x] QR code invites для игр
+- [x] Realtime мультиплеер (Supabase Realtime)
+- [x] Light Theme поддержка (light/dark/system)
+- [x] Theme Switcher компонент
+- [x] Swipeable player cards
+- [x] Haptic feedback
+- [x] Bottom sheet UI
+- [x] Invite modal с QR кодами
 
 ### ✅ Week 3 - PWA Setup (Days 15-16 завершены)
 
@@ -97,13 +105,14 @@
 - [x] Кеширование статики и API
 - [x] Установка на iOS/Android
 
-### 🔜 Запланировано (Week 3 - продолжение)
+### 🔜 Запланировано
 
-- [ ] Realtime мультиплеер (Day 17)
-- [ ] Performance optimization (Days 18-19)
-- [ ] Достижения и badges
-- [ ] Light theme
+- [ ] Performance optimization
+- [ ] Достижения и badges система
 - [ ] Apple Sign In
+- [ ] Unit & Integration тесты (Jest + React Testing Library)
+- [ ] E2E тестирование (Playwright/Cypress)
+- [ ] Advanced analytics и метрики
 
 ## 📦 Установка
 

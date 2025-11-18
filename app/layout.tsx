@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { GameProvider } from '@/contexts/game-context'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -15,12 +15,6 @@ export const metadata: Metadata = {
   creator: 'Killerpool',
   publisher: 'Killerpool',
   manifest: '/manifest.json',
-  themeColor: '#10b981',
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -60,6 +54,13 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#10b981',
 }
 
 export default function RootLayout({

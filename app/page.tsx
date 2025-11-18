@@ -146,10 +146,12 @@ export default function Home() {
               </Button>
             </Link>
 
-            <Button variant="outline" size="lg" className="w-full h-16" disabled>
-              <Trophy className="mr-2 h-5 w-5" />
-              Stats
-            </Button>
+            <Link href="/stats" className="w-full">
+              <Button variant="outline" size="lg" className="w-full h-16">
+                <Trophy className="mr-2 h-5 w-5" />
+                Stats
+              </Button>
+            </Link>
           </div>
         </motion.div>
 

@@ -456,9 +456,29 @@
 
 - **Week 1 (Days 1-7):** ✅ **100% Завершено** - Rapid MVP с полной игровой функциональностью
 - **Week 2 (Days 8-11):** ✅ **100% Завершено** - Supabase интеграция и аутентификация
-- **Week 2 (Days 12-14):** ⏳ **В процессе** - История игр, статистика, export
+- **Week 2 (Days 12-14):** ✅ **100% Завершено** - История игр, статистика, export
 - **Week 3 (Days 15-16):** ✅ **100% Завершено** - PWA Setup (Service Worker, офлайн, иконки)
-- **Week 3 (Days 17-21):** ⏳ **В процессе** - Realtime, тестирование, финальная полировка
+- **Week 3 (Days 17-21):** ✅ **85% Завершено** - Realtime, Light Theme, Stats страница
+
+### Последние обновления (18 ноября 2025):
+- ✅ **Quick Wins завершены**
+  - Исправлены Next.js metadata warnings (viewport/themeColor)
+  - Настроен ESLint + Prettier для code quality
+  - Создана Stats страница с детальной статистикой
+  - Light Theme полностью реализован (light/dark/system)
+
+- ✅ **Export & Share**
+  - CSV export результатов игр
+  - JSON export для бэкапов
+  - Screenshot функционал (html2canvas)
+  - Web Share API интеграция
+  - Copy to clipboard для быстрого шаринга
+
+- ✅ **Realtime Multiplayer**
+  - Supabase Realtime подписки
+  - Синхронизация игры между устройствами
+  - QR code invites для приглашения игроков
+  - Invite modal с QR кодами
 
 ### Недавние улучшения (17 ноября 2025):
 - ✅ **PWA Setup завершен** (Days 15-16)
