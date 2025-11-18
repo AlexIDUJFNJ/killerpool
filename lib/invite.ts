@@ -36,10 +36,6 @@ export async function generateInviteQRCode(gameId: string): Promise<string> {
         light: '#ffffff', // White background for proper scanning
       },
       errorCorrectionLevel: 'H', // High error correction for better reliability
-      type: 'image/png',
-      rendererOpts: {
-        quality: 1.0, // Maximum quality
-      },
     })
 
     return qrCodeDataUrl
