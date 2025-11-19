@@ -42,12 +42,25 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### 4. Запустите миграции
 
+⚠️ **ВАЖНО:** Нужно запустить ОБЕ миграции по порядку!
+
 #### Вариант A: SQL Editor (рекомендуется для начала)
+
+**Миграция 1: Создание таблиц**
 
 1. Откройте **SQL Editor** в Supabase Dashboard
 2. Скопируйте содержимое `supabase/migrations/00001_initial_schema.sql`
 3. Вставьте в SQL Editor
 4. Нажмите **Run** или `Ctrl+Enter`
+5. Убедитесь, что нет ошибок (должно быть "Success. No rows returned")
+
+**Миграция 2: Создание функции leaderboard**
+
+1. В том же **SQL Editor** очистите поле
+2. Скопируйте содержимое `supabase/migrations/00002_leaderboard_function.sql`
+3. Вставьте в SQL Editor
+4. Нажмите **Run** или `Ctrl+Enter`
+5. Убедитесь, что нет ошибок
 
 #### Вариант B: Supabase CLI (для продвинутых)
 
@@ -61,17 +74,29 @@ supabase login
 # Свяжите локальный проект с Supabase
 supabase link --project-ref your-project-ref
 
-# Примените миграции
+# Примените миграции (применяет все файлы в порядке)
 supabase db push
 ```
 
-### 5. Проверьте таблицы
+### 5. Проверьте таблицы и функции
+
+**Проверка таблиц:**
 
 В Supabase Dashboard откройте **Table Editor** и убедитесь, что созданы таблицы:
 
 - ✅ `player_profiles`
 - ✅ `games`
 - ✅ `rulesets`
+
+**Проверка функции leaderboard:**
+
+1. Откройте **Database** → **Functions** в Supabase Dashboard
+2. Убедитесь, что создана функция `get_leaderboard`
+3. Или запустите в SQL Editor:
+   ```sql
+   SELECT get_leaderboard(15);
+   ```
+   Должно вернуться 0 строк (если нет игр) или список игроков
 
 ## 📊 Структура базы данных
 
