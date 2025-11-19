@@ -62,16 +62,16 @@ BEGIN
             pgs.player_id,
             COALESCE(pp.display_name, MAX(pgs.player_name)) AS display_name,
             pp.avatar_url,
-            COUNT(DISTINCT pgs.game_id) AS total_games,
-            SUM(pgs.is_winner) AS games_won,
-            COUNT(DISTINCT pgs.game_id) - SUM(pgs.is_winner) AS games_lost,
+            COUNT(DISTINCT pgs.game_id)::BIGINT AS total_games,
+            SUM(pgs.is_winner)::BIGINT AS games_won,
+            (COUNT(DISTINCT pgs.game_id) - SUM(pgs.is_winner))::BIGINT AS games_lost,
             CASE
                 WHEN COUNT(DISTINCT pgs.game_id) > 0
                 THEN (SUM(pgs.is_winner)::NUMERIC / COUNT(DISTINCT pgs.game_id)::NUMERIC * 100)
                 ELSE 0
             END AS win_rate,
-            COALESCE(SUM(pa.total_game_actions), 0) AS total_actions,
-            COALESCE(SUM(pa.black_pots), 0) AS total_black_pots
+            COALESCE(SUM(pa.total_game_actions), 0)::BIGINT AS total_actions,
+            COALESCE(SUM(pa.black_pots), 0)::BIGINT AS total_black_pots
         FROM player_game_stats pgs
         LEFT JOIN player_profiles pp ON pgs.user_id = pp.user_id
         LEFT JOIN player_actions pa ON pgs.player_id = pa.player_id AND pgs.game_id = pa.game_id
