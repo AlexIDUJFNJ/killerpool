@@ -80,6 +80,7 @@
 - [x] Аутентификация
 - [x] Профиль
 - [x] История игр (базовая)
+- [x] Leaderboard (топ игроков)
 
 ### ✅ Дополнительный функционал
 
@@ -95,6 +96,7 @@
 - [x] Haptic feedback
 - [x] Bottom sheet UI
 - [x] Invite modal с QR кодами
+- [x] Leaderboard (топ-15 игроков)
 
 ### ✅ Week 3 - PWA Setup (Days 15-16 завершены)
 

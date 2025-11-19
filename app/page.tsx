@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useGame } from '@/contexts/game-context'
 import { motion } from 'framer-motion'
-import { Play, History, Trophy, Users, UserCircle, LogIn } from 'lucide-react'
+import { Play, History, Trophy, Users, UserCircle, LogIn, Award } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 
@@ -138,7 +138,7 @@ export default function Home() {
             </Button>
           </Link>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <Link href="/history" className="w-full">
               <Button variant="outline" size="lg" className="w-full h-16">
                 <History className="mr-2 h-5 w-5" />
@@ -150,6 +150,13 @@ export default function Home() {
               <Button variant="outline" size="lg" className="w-full h-16">
                 <Trophy className="mr-2 h-5 w-5" />
                 Stats
+              </Button>
+            </Link>
+
+            <Link href="/leaderboard" className="w-full">
+              <Button variant="outline" size="lg" className="w-full h-16">
+                <Award className="mr-2 h-5 w-5" />
+                Top
               </Button>
             </Link>
           </div>
