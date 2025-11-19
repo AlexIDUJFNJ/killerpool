@@ -108,17 +108,22 @@
 ### ✅ Тестирование
 
 - [x] Jest + React Testing Library настроено
-- [x] Unit тесты для game logic (97% покрытие)
-- [x] Unit тесты для storage utilities (100% покрытие)
-- [x] Unit тесты для utils (100% покрытие)
-- [x] 63+ тестов успешно проходят
+- [x] Unit тесты для game logic (97% покрытие, 33 теста)
+- [x] Unit тесты для storage utilities (100% покрытие, 22 теста)
+- [x] Unit тесты для utils (100% покрытие, 8 тестов)
+- [x] Component тесты для UI компонентов (100% покрытие, 45 тестов):
+  - Button, Badge, Card, Avatar
+- [x] Component тесты для игровых компонентов (100% покрытие, 39 тестов):
+  - ActionButtons, PlayerCard
+- [x] **147 тестов** успешно проходят
 
 ### 🔜 Запланировано
 
 - [ ] Performance optimization
 - [ ] Достижения и badges система
 - [ ] Apple Sign In
-- [ ] Component тесты (React Testing Library)
+- [ ] Больше component тестов (Dialog, Input, Label, etc.)
+- [ ] Integration тесты
 - [ ] E2E тестирование (Playwright/Cypress)
 - [ ] Advanced analytics и метрики
 
