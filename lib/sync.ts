@@ -39,6 +39,10 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
     }
 
     // Prepare game data for Supabase
+    // Note: ruleset_id in database is UUID, but game.rulesetId may be a string like "classic"
+    // We only set ruleset_id if it's a valid UUID format, otherwise set to null
+    const isValidUUID = game.rulesetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.rulesetId)
+
     const gameData = {
       id: game.id,
       created_at: game.createdAt,
@@ -46,7 +50,7 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
       status: game.status,
       participants: game.players,
       winner_id: game.winnerId,
-      ruleset_id: game.rulesetId,
+      ruleset_id: isValidUUID ? game.rulesetId : null,
       history: game.history,
       created_by: user?.id || null,
     }
