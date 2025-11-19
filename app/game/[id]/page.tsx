@@ -11,9 +11,11 @@ import { useGame } from '@/contexts/game-context'
 import { getCurrentPlayer, getActivePlayers, getNextPlayers } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode } from 'lucide-react'
+import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode, Trophy, LogIn } from 'lucide-react'
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { Card, CardContent } from '@/components/ui/card'
 
 export default function GamePage() {
   const router = useRouter()
@@ -24,6 +26,7 @@ export default function GamePage() {
   const [showAllPlayers, setShowAllPlayers] = React.useState(false)
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
+  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
 
   React.useEffect(() => {
     if (!game) {
@@ -41,6 +44,14 @@ export default function GamePage() {
       haptics.victory()
     }
   }, [game, gameId, router])
+
+  // Check authentication status
+  React.useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsAuthenticated(!!user)
+    })
+  }, [])
 
   if (!game) {
     return null
@@ -120,6 +131,56 @@ export default function GamePage() {
               {game.history.length} actions • {game.players.length - activePlayers.length} players eliminated
             </p>
           </motion.div>
+
+          {/* Authentication Info */}
+          {isAuthenticated === false && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="mb-6"
+            >
+              <Card className="border-amber-500/50 bg-gradient-to-br from-amber-500/10 to-amber-600/5">
+                <CardContent className="p-5">
+                  <div className="flex items-start gap-4">
+                    <div className="shrink-0 mt-0.5">
+                      <Trophy className="h-6 w-6 text-amber-500" />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <h3 className="font-semibold text-base">Compete on the Leaderboard!</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Sign in to save your wins and climb the global rankings. Track your stats and prove you're the best!
+                      </p>
+                      <Link href="/auth" className="inline-block mt-2">
+                        <Button size="sm" variant="outline" className="border-amber-500/50 hover:bg-amber-500/10">
+                          <LogIn className="mr-2 h-4 w-4" />
+                          Sign In to Compete
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {isAuthenticated === true && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="mb-6"
+            >
+              <Card className="border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <Trophy className="h-5 w-5 text-emerald-500" />
+                    <p className="text-sm font-medium">Your victory has been saved to the leaderboard!</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
           <motion.div
             initial={{ y: 50, opacity: 0 }}

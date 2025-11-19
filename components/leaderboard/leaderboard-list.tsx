@@ -4,8 +4,11 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LeaderboardCard, LeaderboardEntry } from './leaderboard-card'
 import { Card, CardContent } from '@/components/ui/card'
-import { Trophy, TrendingUp } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Trophy, TrendingUp, LogIn, Crown, Target, Star } from 'lucide-react'
 import { motion } from 'framer-motion'
+import Link from 'next/link'
+import type { User } from '@supabase/supabase-js'
 
 interface LeaderboardListProps {
   limit?: number
@@ -16,11 +19,28 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
 
   useEffect(() => {
     loadLeaderboard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit])
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    // Get initial user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user)
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   const loadLeaderboard = async () => {
     try {
@@ -92,14 +112,118 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
   if (entries.length === 0) {
     return (
       <div className={className}>
-        <Card>
+        <Card className="overflow-hidden">
           <CardContent className="pt-6">
-            <div className="text-center py-12">
-              <Trophy className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-xl font-semibold mb-2">No Players Yet</h3>
-              <p className="text-muted-foreground">
-                Be the first to complete a game and claim your spot on the leaderboard!
-              </p>
+            <div className="text-center py-12 px-6">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', duration: 0.6 }}
+                className="mb-6"
+              >
+                <div className="relative inline-block">
+                  <Trophy className="h-20 w-20 mx-auto text-amber-500" />
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+                    className="absolute -top-2 -right-2"
+                  >
+                    <Crown className="h-8 w-8 text-amber-400" />
+                  </motion.div>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="space-y-4"
+              >
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+                  The Leaderboard Awaits!
+                </h3>
+
+                {!user ? (
+                  <>
+                    <p className="text-base text-muted-foreground max-w-md mx-auto leading-relaxed">
+                      Sign in now to compete for glory! Every victory, every pot black, every brilliant play will be recorded for all to see.
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto my-8">
+                      <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.3 }}
+                        className="text-center"
+                      >
+                        <div className="bg-primary/10 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                          <Trophy className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium">Track Wins</p>
+                      </motion.div>
+
+                      <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.4 }}
+                        className="text-center"
+                      >
+                        <div className="bg-primary/10 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                          <Target className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium">Climb Ranks</p>
+                      </motion.div>
+
+                      <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.5 }}
+                        className="text-center"
+                      >
+                        <div className="bg-primary/10 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                          <Star className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium">Earn Glory</p>
+                      </motion.div>
+                    </div>
+
+                    <motion.div
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.6 }}
+                    >
+                      <Link href="/auth">
+                        <Button size="lg" className="shadow-lg shadow-primary/20">
+                          <LogIn className="mr-2 h-5 w-5" />
+                          Sign In to Compete
+                        </Button>
+                      </Link>
+                      <p className="text-xs text-muted-foreground mt-3">
+                        Join the competition and make your mark!
+                      </p>
+                    </motion.div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-base text-muted-foreground max-w-md mx-auto leading-relaxed">
+                      The leaderboard is empty. Be the first champion! Complete a game and claim your legendary status.
+                    </p>
+                    <motion.div
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.4 }}
+                      className="pt-4"
+                    >
+                      <Link href="/game/new">
+                        <Button size="lg" className="shadow-lg shadow-primary/20">
+                          <Trophy className="mr-2 h-5 w-5" />
+                          Start Your First Game
+                        </Button>
+                      </Link>
+                    </motion.div>
+                  </>
+                )}
+              </motion.div>
             </div>
           </CardContent>
         </Card>
