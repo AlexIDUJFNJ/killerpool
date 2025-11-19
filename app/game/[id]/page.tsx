@@ -149,7 +149,7 @@ export default function GamePage() {
                     <div className="flex-1 space-y-2">
                       <h3 className="font-semibold text-base">Compete on the Leaderboard!</h3>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Sign in to save your wins and climb the global rankings. Track your stats and prove you're the best!
+                        Sign in to save your wins and climb the global rankings. Track your stats and prove you&apos;re the best!
                       </p>
                       <Link href="/auth" className="inline-block mt-2">
                         <Button size="sm" variant="outline" className="border-amber-500/50 hover:bg-amber-500/10">
