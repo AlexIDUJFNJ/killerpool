@@ -9,12 +9,12 @@
 -- This is needed for proper upsert functionality
 -- ====================================
 
--- First, remove any duplicate user_id entries (keep the oldest one)
+-- First, remove any duplicate user_id entries (keep the oldest one based on created_at)
 DELETE FROM player_profiles
 WHERE id NOT IN (
-    SELECT MIN(id)
+    SELECT DISTINCT ON (user_id) id
     FROM player_profiles
-    GROUP BY user_id
+    ORDER BY user_id, created_at ASC
 );
 
 -- Add UNIQUE constraint on user_id
