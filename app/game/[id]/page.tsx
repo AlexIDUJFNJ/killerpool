@@ -105,7 +105,8 @@ export default function GamePage() {
       saveRematchPlayers(players)
     }
 
-    endGame()
+    // Don't call endGame() here - it causes redirect to home
+    // The new game will replace the current one via startGame()
     router.push('/game/new')
   }
 
