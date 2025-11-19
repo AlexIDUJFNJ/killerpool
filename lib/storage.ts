@@ -10,6 +10,8 @@ const STORAGE_KEYS = {
   CURRENT_GAME: 'killerpool_current_game',
   GAME_HISTORY: 'killerpool_game_history',
   SETTINGS: 'killerpool_settings',
+  GUEST_ID: 'killerpool_guest_id',
+  REMATCH_PLAYERS: 'killerpool_rematch_players',
 } as const
 
 /**
@@ -118,4 +120,78 @@ export function deleteGameFromHistory(gameId: string): void {
  */
 export function hasCurrentGame(): boolean {
   return loadCurrentGame() !== null
+}
+
+/**
+ * Get or create a stable guest ID for guest users
+ */
+export function getGuestId(): string {
+  try {
+    let guestId = localStorage.getItem(STORAGE_KEYS.GUEST_ID)
+
+    if (!guestId) {
+      guestId = `guest_${crypto.randomUUID()}`
+      localStorage.setItem(STORAGE_KEYS.GUEST_ID, guestId)
+    }
+
+    return guestId
+  } catch (error) {
+    console.error('Failed to get/create guest ID:', error)
+    return `guest_${crypto.randomUUID()}`
+  }
+}
+
+/**
+ * Get unique player names from game history for autocomplete
+ */
+export function getPlayerNamesSuggestions(): string[] {
+  try {
+    const history = loadGameHistory()
+    const namesSet = new Set<string>()
+
+    // Extract all player names from history
+    history.forEach(game => {
+      game.players.forEach(player => {
+        if (player.name.trim()) {
+          namesSet.add(player.name)
+        }
+      })
+    })
+
+    // Convert to array and sort alphabetically
+    return Array.from(namesSet).sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase())
+    )
+  } catch (error) {
+    console.error('Failed to get player names:', error)
+    return []
+  }
+}
+
+/**
+ * Save players for rematch (to reuse in next game)
+ */
+export function saveRematchPlayers(players: Array<{ name: string; avatar: string }>): void {
+  try {
+    sessionStorage.setItem(STORAGE_KEYS.REMATCH_PLAYERS, JSON.stringify(players))
+  } catch (error) {
+    console.error('Failed to save rematch players:', error)
+  }
+}
+
+/**
+ * Load players for rematch and clear the storage
+ */
+export function loadRematchPlayers(): Array<{ name: string; avatar: string }> | null {
+  try {
+    const data = sessionStorage.getItem(STORAGE_KEYS.REMATCH_PLAYERS)
+    if (data) {
+      sessionStorage.removeItem(STORAGE_KEYS.REMATCH_PLAYERS)
+      return JSON.parse(data)
+    }
+    return null
+  } catch (error) {
+    console.error('Failed to load rematch players:', error)
+    return null
+  }
 }

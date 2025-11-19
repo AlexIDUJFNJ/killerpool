@@ -15,6 +15,7 @@ import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode, Trophy, LogIn } from 
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { saveRematchPlayers } from '@/lib/storage'
 import { Card, CardContent } from '@/components/ui/card'
 
 export default function GamePage() {
@@ -95,6 +96,15 @@ export default function GamePage() {
   }
 
   const handleNewGame = () => {
+    // Save current players for rematch
+    if (game) {
+      const players = game.players.map(p => ({
+        name: p.name,
+        avatar: p.avatar
+      }))
+      saveRematchPlayers(players)
+    }
+
     endGame()
     router.push('/game/new')
   }

@@ -9,8 +9,9 @@ import { useGame } from '@/contexts/game-context'
 import { createGame } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
+import { getGuestId, getPlayerNamesSuggestions, loadRematchPlayers } from '@/lib/storage'
 import { motion } from 'framer-motion'
-import { Plus, Trash2, ArrowLeft, Play } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, Play, Shuffle } from 'lucide-react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
 
@@ -24,19 +25,51 @@ export default function NewGamePage() {
   ])
   const [selectedPlayerIndex, setSelectedPlayerIndex] = React.useState<number | null>(null)
   const [user, setUser] = React.useState<User | null>(null)
+  const [playerSuggestions, setPlayerSuggestions] = React.useState<string[]>([])
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = React.useState<number | null>(null)
+  const [filteredSuggestions, setFilteredSuggestions] = React.useState<string[]>([])
 
   React.useEffect(() => {
     const supabase = createClient()
 
     // Get initial user
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       setUser(user)
     })
+
+    // Check for rematch players first (takes priority over pre-filling)
+    const rematchPlayers = loadRematchPlayers()
+    if (rematchPlayers && rematchPlayers.length >= 2) {
+      setPlayers(rematchPlayers)
+    } else {
+      // Pre-fill first player with user's name if authenticated
+      supabase.auth.getUser().then(async ({ data: { user } }) => {
+        if (user) {
+          const { data: profile } = await supabase
+            .from('player_profiles')
+            .select('display_name')
+            .eq('user_id', user.id)
+            .single()
+
+          if (profile?.display_name) {
+            // Pre-fill first player with user's name
+            setPlayers(prev => [
+              { name: profile.display_name, avatar: prev[0].avatar },
+              ...prev.slice(1)
+            ])
+          }
+        }
+      })
+    }
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
+
+    // Load player name suggestions from history
+    const suggestions = getPlayerNamesSuggestions()
+    setPlayerSuggestions(suggestions)
 
     return () => subscription.unsubscribe()
   }, [])
@@ -56,6 +89,27 @@ export default function NewGamePage() {
     const updated = [...players]
     updated[index].name = name
     setPlayers(updated)
+
+    // Update filtered suggestions for autocomplete
+    if (name.trim()) {
+      const filtered = playerSuggestions.filter(suggestion =>
+        suggestion.toLowerCase().includes(name.toLowerCase()) &&
+        suggestion.toLowerCase() !== name.toLowerCase()
+      )
+      setFilteredSuggestions(filtered)
+      setActiveSuggestionIndex(index)
+    } else {
+      setFilteredSuggestions([])
+      setActiveSuggestionIndex(null)
+    }
+  }
+
+  const handleSelectSuggestion = (index: number, suggestion: string) => {
+    const updated = [...players]
+    updated[index].name = suggestion
+    setPlayers(updated)
+    setFilteredSuggestions([])
+    setActiveSuggestionIndex(null)
   }
 
   const handleAvatarSelect = (avatar: string) => {
@@ -67,6 +121,15 @@ export default function NewGamePage() {
     }
   }
 
+  const handleShuffle = () => {
+    const shuffled = [...players]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    setPlayers(shuffled)
+  }
+
   const handleStartGame = () => {
     // Validate
     const validPlayers = players.filter(p => p.name.trim().length > 0)
@@ -75,8 +138,9 @@ export default function NewGamePage() {
       return
     }
 
-    // Create game with userId if authenticated
-    const game = createGame(validPlayers, DEFAULT_RULESET, user?.id)
+    // Use userId if authenticated, otherwise use stable guest_id
+    const userId = user?.id || getGuestId()
+    const game = createGame(validPlayers, DEFAULT_RULESET, userId)
     startGame(game)
 
     // Navigate to game
@@ -121,14 +185,41 @@ export default function NewGamePage() {
                       </Avatar>
                     </button>
 
-                    <input
-                      type="text"
-                      placeholder={`Player ${index + 1} name`}
-                      value={player.name}
-                      onChange={(e) => handleNameChange(index, e.target.value)}
-                      className="flex-1 min-w-0 bg-background border border-input rounded-md px-3 py-3 text-base sm:text-lg sm:px-4 focus:outline-none focus:ring-2 focus:ring-ring"
-                      maxLength={20}
-                    />
+                    <div className="flex-1 min-w-0 relative">
+                      <input
+                        type="text"
+                        placeholder={`Player ${index + 1} name`}
+                        value={player.name}
+                        onChange={(e) => handleNameChange(index, e.target.value)}
+                        onFocus={() => {
+                          if (player.name.trim() && filteredSuggestions.length > 0) {
+                            setActiveSuggestionIndex(index)
+                          }
+                        }}
+                        onBlur={() => {
+                          // Delay to allow click on suggestion
+                          setTimeout(() => setActiveSuggestionIndex(null), 200)
+                        }}
+                        className="w-full bg-background border border-input rounded-md px-3 py-3 text-base sm:text-lg sm:px-4 focus:outline-none focus:ring-2 focus:ring-ring"
+                        maxLength={20}
+                      />
+
+                      {/* Autocomplete Suggestions */}
+                      {activeSuggestionIndex === index && filteredSuggestions.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                          {filteredSuggestions.slice(0, 5).map((suggestion, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => handleSelectSuggestion(index, suggestion)}
+                              className="w-full px-4 py-2 text-left hover:bg-accent hover:text-accent-foreground transition-colors text-sm"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     {players.length > 2 && (
                       <Button
@@ -188,6 +279,19 @@ export default function NewGamePage() {
               </CardContent>
             </Card>
           </motion.div>
+        )}
+
+        {/* Shuffle Button */}
+        {canStartGame && (
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full h-14 text-base mb-4 border-yellow-500/50 text-yellow-600 hover:bg-yellow-500/10 hover:text-yellow-600 hover:border-yellow-500"
+            onClick={handleShuffle}
+          >
+            <Shuffle className="mr-2 h-5 w-5" />
+            Shuffle Players
+          </Button>
         )}
 
         <Button
