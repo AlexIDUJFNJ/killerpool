@@ -42,7 +42,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### 4. Запустите миграции
 
-⚠️ **ВАЖНО:** Нужно запустить ОБЕ миграции по порядку!
+⚠️ **ВАЖНО:** Нужно запустить ВСЕ миграции по порядку!
 
 #### Вариант A: SQL Editor (рекомендуется для начала)
 
@@ -61,6 +61,20 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 3. Вставьте в SQL Editor
 4. Нажмите **Run** или `Ctrl+Enter`
 5. Убедитесь, что нет ошибок
+
+**Миграция 3: Исправления для leaderboard и профиля** ⚡ НОВОЕ!
+
+1. В том же **SQL Editor** очистите поле
+2. Скопируйте содержимое `supabase/migrations/00003_fix_leaderboard_and_profile.sql`
+3. Вставьте в SQL Editor
+4. Нажмите **Run** или `Ctrl+Enter`
+5. Убедитесь, что нет ошибок
+
+Что исправляет эта миграция:
+- ✅ Лидерборд теперь показывает всех игроков (был виден только свой аккаунт)
+- ✅ Исправлено обновление Display Name в настройках профиля
+- ✅ Добавлен UNIQUE constraint на `user_id` в таблице `player_profiles`
+- ✅ Функция `get_leaderboard` теперь использует `SECURITY DEFINER` для обхода RLS
 
 #### Вариант B: Supabase CLI (для продвинутых)
 
@@ -107,7 +121,7 @@ supabase db push
 | Колонка | Тип | Описание |
 |---------|-----|----------|
 | id | UUID | Primary key |
-| user_id | UUID | Ссылка на auth.users (nullable для гостей) |
+| user_id | UUID | Ссылка на auth.users (UNIQUE, nullable для гостей) |
 | display_name | TEXT | Имя игрока (1-50 символов) |
 | avatar_url | TEXT | URL аватара |
 | created_at | TIMESTAMPTZ | Дата создания |
@@ -194,6 +208,7 @@ supabase db push
 - ✅ Пользователи видят только свои игры
 - ✅ Создатель игры может её обновлять
 - ✅ Анонимные пользователи могут создавать и управлять играми (для offline-режима)
+- ⚡ **Функция `get_leaderboard` использует SECURITY DEFINER** и видит все завершенные игры для расчета глобального лидерборда
 
 ### `rulesets`
 - ✅ Все могут читать rulesets

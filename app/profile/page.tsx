@@ -50,9 +50,11 @@ export default function ProfilePage() {
 
         await supabase
           .from('player_profiles')
-          .insert({
+          .upsert({
             user_id: user.id,
             display_name: defaultName,
+          }, {
+            onConflict: 'user_id',
           })
       }
     } catch (err: any) {
@@ -82,6 +84,8 @@ export default function ProfilePage() {
         .upsert({
           user_id: user.id,
           display_name: displayName,
+        }, {
+          onConflict: 'user_id',
         })
 
       if (error) throw error
