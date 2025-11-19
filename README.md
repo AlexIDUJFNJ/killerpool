@@ -105,12 +105,20 @@
 - [x] Кеширование статики и API
 - [x] Установка на iOS/Android
 
+### ✅ Тестирование
+
+- [x] Jest + React Testing Library настроено
+- [x] Unit тесты для game logic (97% покрытие)
+- [x] Unit тесты для storage utilities (100% покрытие)
+- [x] Unit тесты для utils (100% покрытие)
+- [x] 63+ тестов успешно проходят
+
 ### 🔜 Запланировано
 
 - [ ] Performance optimization
 - [ ] Достижения и badges система
 - [ ] Apple Sign In
-- [ ] Unit & Integration тесты (Jest + React Testing Library)
+- [ ] Component тесты (React Testing Library)
 - [ ] E2E тестирование (Playwright/Cypress)
 - [ ] Advanced analytics и метрики
 
@@ -242,6 +250,16 @@ npm run dev          # Запустить dev server
 npm run build        # Production build
 npm run start        # Запустить production server
 npm run lint         # Проверить код с ESLint
+npm run lint:fix     # Исправить проблемы ESLint автоматически
+
+# Testing
+npm test             # Запустить все тесты
+npm run test:watch   # Запустить тесты в watch режиме
+npm run test:coverage # Запустить тесты с отчетом о покрытии
+
+# Formatting
+npm run format       # Отформатировать код с Prettier
+npm run format:check # Проверить форматирование
 ```
 
 ## 🤝 Contributing
