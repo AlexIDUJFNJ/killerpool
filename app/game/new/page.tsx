@@ -8,9 +8,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useGame } from '@/contexts/game-context'
 import { createGame } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
+import { createClient } from '@/lib/supabase/client'
 import { motion } from 'framer-motion'
 import { Plus, Trash2, ArrowLeft, Play } from 'lucide-react'
 import Link from 'next/link'
+import type { User } from '@supabase/supabase-js'
 
 export default function NewGamePage() {
   const router = useRouter()
@@ -21,6 +23,23 @@ export default function NewGamePage() {
     { name: '', avatar: DEFAULT_AVATARS[1] },
   ])
   const [selectedPlayerIndex, setSelectedPlayerIndex] = React.useState<number | null>(null)
+  const [user, setUser] = React.useState<User | null>(null)
+
+  React.useEffect(() => {
+    const supabase = createClient()
+
+    // Get initial user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user)
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   const handleAddPlayer = () => {
     const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
@@ -56,8 +75,8 @@ export default function NewGamePage() {
       return
     }
 
-    // Create game
-    const game = createGame(validPlayers, DEFAULT_RULESET)
+    // Create game with userId if authenticated
+    const game = createGame(validPlayers, DEFAULT_RULESET, user?.id)
     startGame(game)
 
     // Navigate to game
