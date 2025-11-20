@@ -124,20 +124,25 @@ export function hasCurrentGame(): boolean {
 
 /**
  * Get or create a stable guest ID for guest users
+ * Returns a valid UUID that can be cast to PostgreSQL UUID type
  */
 export function getGuestId(): string {
   try {
     let guestId = localStorage.getItem(STORAGE_KEYS.GUEST_ID)
 
-    if (!guestId) {
-      guestId = `guest_${crypto.randomUUID()}`
+    // Check if stored ID is a valid UUID (not the old "guest_xxx" format)
+    const isValidUUID = guestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guestId)
+
+    if (!guestId || !isValidUUID) {
+      // Create a new valid UUID (without "guest_" prefix)
+      guestId = crypto.randomUUID()
       localStorage.setItem(STORAGE_KEYS.GUEST_ID, guestId)
     }
 
     return guestId
   } catch (error) {
     console.error('Failed to get/create guest ID:', error)
-    return `guest_${crypto.randomUUID()}`
+    return crypto.randomUUID()
   }
 }
 
