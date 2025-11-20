@@ -24,18 +24,23 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
     const { data: { user } } = await supabase.auth.getUser()
 
     // Ensure user profile exists before syncing game
+    // Only create profile with default name if it doesn't exist - don't overwrite custom names
     if (user) {
-      const defaultName = user.email?.split('@')[0] || 'Player'
-      await supabase
+      const { data: existingProfile } = await supabase
         .from('player_profiles')
-        .upsert({
-          user_id: user.id,
-          display_name: defaultName,
-        }, {
-          onConflict: 'user_id',
-        })
-        .select()
+        .select('user_id')
+        .eq('user_id', user.id)
         .single()
+
+      if (!existingProfile) {
+        const defaultName = user.email?.split('@')[0] || 'Player'
+        await supabase
+          .from('player_profiles')
+          .insert({
+            user_id: user.id,
+            display_name: defaultName,
+          })
+      }
     }
 
     // Prepare game data for Supabase

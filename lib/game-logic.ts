@@ -33,8 +33,10 @@ export function createGame(
   ruleset: Ruleset = DEFAULT_RULESET,
   userId?: string | null
 ): Game {
-  const gamePlayers = players.map(p =>
-    createPlayer(p.name, p.avatar, ruleset.params.starting_lives, userId)
+  // Only assign userId to the first player (the authenticated user)
+  // Other players should have null userId so they're tracked by their unique player_id
+  const gamePlayers = players.map((p, index) =>
+    createPlayer(p.name, p.avatar, ruleset.params.starting_lives, index === 0 ? userId : null)
   )
 
   return {
