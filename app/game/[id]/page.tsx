@@ -119,7 +119,7 @@ export default function GamePage() {
     const winner = game.players.find((p) => p.id === game.winnerId)
 
     return (
-      <main className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+      <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 via-background to-background" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(16,185,129,0.2),transparent)]" />
 
@@ -134,12 +134,12 @@ export default function GamePage() {
             transition={{ delay: 0.2 }}
             className="mb-8"
           >
-            <div className="text-8xl mb-4">{winner?.avatar || '🏆'}</div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent mb-2">
+            <div className="text-6xl sm:text-8xl mb-4">{winner?.avatar || '🏆'}</div>
+            <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent mb-2">
               {winner?.name} Wins!
             </h1>
-            <p className="text-muted-foreground">
-              {game.history.length} actions • {game.players.length - activePlayers.length} players eliminated
+            <p className="text-sm sm:text-base text-muted-foreground">
+              {game.history.length} actions • {game.players.length - activePlayers.length} eliminated
             </p>
           </motion.div>
 
@@ -152,20 +152,20 @@ export default function GamePage() {
               className="mb-6"
             >
               <Card className="border-amber-500/50 bg-gradient-to-br from-amber-500/10 to-amber-600/5">
-                <CardContent className="p-5">
-                  <div className="flex items-start gap-4">
+                <CardContent className="p-4 sm:p-5">
+                  <div className="flex items-start gap-3 sm:gap-4">
                     <div className="shrink-0 mt-0.5">
-                      <Trophy className="h-6 w-6 text-amber-500" />
+                      <Trophy className="h-5 w-5 sm:h-6 sm:w-6 text-amber-500" />
                     </div>
                     <div className="flex-1 space-y-2">
-                      <h3 className="font-semibold text-base">Compete on the Leaderboard!</h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        Sign in to save your wins and climb the global rankings. Track your stats and prove you&apos;re the best!
+                      <h3 className="font-semibold text-sm sm:text-base">Compete on the Leaderboard!</h3>
+                      <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                        Sign in to save your wins and climb the global rankings.
                       </p>
                       <Link href="/auth" className="inline-block mt-2">
-                        <Button size="sm" variant="outline" className="border-amber-500/50 hover:bg-amber-500/10">
-                          <LogIn className="mr-2 h-4 w-4" />
-                          Sign In to Compete
+                        <Button size="sm" variant="outline" className="border-amber-500/50 hover:bg-amber-500/10 text-xs sm:text-sm">
+                          <LogIn className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                          Sign In
                         </Button>
                       </Link>
                     </div>
@@ -264,7 +264,7 @@ export default function GamePage() {
       </div>
 
       {/* Main Content */}
-      <div className="container max-w-2xl mx-auto px-4 py-8 overflow-x-hidden">
+      <div className="container max-w-2xl mx-auto px-3 sm:px-4 py-6 sm:py-8 overflow-x-hidden">
         {/* Next Up Indicator */}
         <AnimatePresence mode="wait">
           {nextPlayer && (
@@ -292,7 +292,7 @@ export default function GamePage() {
         </AnimatePresence>
 
         {/* Current Player Card */}
-        <div className="relative min-h-[500px] flex items-center justify-center">
+        <div className="relative min-h-[400px] sm:min-h-[500px] flex items-center justify-center">
           <AnimatePresence mode="wait">
             {currentPlayer && (
               <motion.div
@@ -354,7 +354,7 @@ export default function GamePage() {
         onClose={() => setShowAllPlayers(false)}
         title="All Players"
       >
-        <div className="p-6 space-y-3">
+        <div className="p-4 sm:p-6 space-y-2 sm:space-y-3">
           {game.players.map((player, index) => (
             <PlayerCard
               key={player.id}

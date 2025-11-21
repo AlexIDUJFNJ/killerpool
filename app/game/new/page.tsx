@@ -150,7 +150,7 @@ export default function NewGamePage() {
   const canStartGame = players.filter(p => p.name.trim().length > 0).length >= 2
 
   return (
-    <main className="min-h-screen p-6">
+    <main className="min-h-screen p-4 sm:p-6">
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
@@ -159,7 +159,7 @@ export default function NewGamePage() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-3xl font-bold">New Game</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">New Game</h1>
         </div>
 
         {/* Players */}
@@ -172,14 +172,14 @@ export default function NewGamePage() {
               transition={{ delay: index * 0.1 }}
             >
               <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex items-center gap-3 sm:gap-4">
                     <button
                       onClick={() => setSelectedPlayerIndex(index)}
                       className="shrink-0"
                     >
-                      <Avatar className="h-16 w-16 border-2 border-primary/20 cursor-pointer hover:border-primary transition-colors">
-                        <AvatarFallback className="text-3xl bg-primary/10">
+                      <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-primary/20 cursor-pointer hover:border-primary transition-colors">
+                        <AvatarFallback className="text-2xl sm:text-3xl bg-primary/10">
                           {player.avatar}
                         </AvatarFallback>
                       </Avatar>
@@ -257,12 +257,12 @@ export default function NewGamePage() {
                 <CardTitle>Select Avatar for Player {selectedPlayerIndex + 1}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-8 gap-2">
+                <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 sm:gap-2">
                   {DEFAULT_AVATARS.map((avatar) => (
                     <button
                       key={avatar}
                       onClick={() => handleAvatarSelect(avatar)}
-                      className="aspect-square flex items-center justify-center text-2xl hover:bg-primary/10 rounded-lg transition-colors border-2 border-transparent hover:border-primary"
+                      className="aspect-square flex items-center justify-center text-xl sm:text-2xl hover:bg-primary/10 rounded-lg transition-colors border-2 border-transparent hover:border-primary"
                     >
                       {avatar}
                     </button>

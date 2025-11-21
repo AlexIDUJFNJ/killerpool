@@ -45,7 +45,7 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 relative overflow-hidden">
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       {/* Animated background */}
       <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.1),transparent)]" />
@@ -84,10 +84,10 @@ export default function Home() {
           transition={{ duration: 0.5 }}
           className="text-center mb-12"
         >
-          <h1 className="text-6xl md:text-7xl font-bold bg-gradient-to-r from-emerald-400 via-green-500 to-emerald-600 bg-clip-text text-transparent mb-4">
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold bg-gradient-to-r from-emerald-400 via-green-500 to-emerald-600 bg-clip-text text-transparent mb-4">
             Killerpool
           </h1>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-base sm:text-xl text-muted-foreground">
             Modern Killer Pool For You And Your Friends
           </p>
         </motion.div>
@@ -100,21 +100,21 @@ export default function Home() {
             className="mb-8"
           >
             <Card className="border-primary/50 bg-primary/5">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-                      <Play className="h-6 w-6 text-primary" />
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                      <Play className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold">Game in Progress</h3>
-                      <p className="text-sm text-muted-foreground">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-sm sm:text-base">Game in Progress</h3>
+                      <p className="text-xs sm:text-sm text-muted-foreground truncate">
                         {game.players.filter(p => !p.eliminated).length} players remaining
                       </p>
                     </div>
                   </div>
                   <Link href={`/game/${game.id}`}>
-                    <Button size="lg">
+                    <Button size="default" className="sm:size-lg shrink-0">
                       Resume
                     </Button>
                   </Link>
@@ -138,25 +138,25 @@ export default function Home() {
             </Button>
           </Link>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
             <Link href="/history" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-16">
-                <History className="mr-2 h-5 w-5" />
-                History
+              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+                <History className="h-5 w-5 sm:mr-2" />
+                <span className="hidden sm:inline">History</span>
               </Button>
             </Link>
 
             <Link href="/stats" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-16">
-                <Trophy className="mr-2 h-5 w-5" />
-                Stats
+              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+                <Trophy className="h-5 w-5 sm:mr-2" />
+                <span className="hidden sm:inline">Stats</span>
               </Button>
             </Link>
 
             <Link href="/leaderboard" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-16">
-                <Award className="mr-2 h-5 w-5" />
-                Top
+              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+                <Award className="h-5 w-5 sm:mr-2" />
+                <span className="hidden sm:inline">Top</span>
               </Button>
             </Link>
           </div>
@@ -169,23 +169,23 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 0.4 }}
         >
           <Card>
-            <CardContent className="p-6">
-              <h3 className="font-semibold mb-3">Classic Rules</h3>
-              <div className="grid grid-cols-3 gap-4 text-center">
+            <CardContent className="p-4 sm:p-6">
+              <h3 className="font-semibold mb-3 text-sm sm:text-base">Classic Rules</h3>
+              <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
                 <div>
-                  <div className="text-2xl font-bold text-red-500">-1</div>
+                  <div className="text-xl sm:text-2xl font-bold text-red-500">-1</div>
                   <div className="text-xs text-muted-foreground">MISS</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-slate-400">0</div>
+                  <div className="text-xl sm:text-2xl font-bold text-slate-400">0</div>
                   <div className="text-xs text-muted-foreground">POT</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-emerald-500">+1</div>
+                  <div className="text-xl sm:text-2xl font-bold text-emerald-500">+1</div>
                   <div className="text-xs text-muted-foreground">POT BLACK</div>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground mt-4 text-center">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-4 text-center">
                 3 starting lives • Last player standing wins
               </p>
             </CardContent>

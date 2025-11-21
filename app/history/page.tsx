@@ -134,15 +134,15 @@ export default function HistoryPage() {
 
   if (allGames.length === 0) {
     return (
-      <main className="min-h-screen p-6">
+      <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
             <Link href="/">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold">Game History</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">Game History</h1>
           </div>
 
           <div className="text-center py-12">
@@ -161,16 +161,16 @@ export default function HistoryPage() {
   }
 
   return (
-    <main className="min-h-screen p-6">
+    <main className="min-h-screen p-4 sm:p-6">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <div className="flex items-center gap-3 sm:gap-4">
             <Link href="/">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold">Game History</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">History</h1>
           </div>
 
           {isOnline && (
@@ -202,7 +202,7 @@ export default function HistoryPage() {
         </div>
 
         {/* Search and Filters */}
-        <div className="mb-6 space-y-4">
+        <div className="mb-4 sm:mb-6 space-y-3 sm:space-y-4">
           {/* Search Bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />

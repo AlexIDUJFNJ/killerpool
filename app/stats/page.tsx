@@ -150,15 +150,15 @@ export default function StatsPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen p-6">
+      <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
             <Link href="/">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold">Statistics</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">Statistics</h1>
           </div>
           <div className="flex justify-center items-center h-64">
             <div className="text-muted-foreground">Loading stats...</div>
@@ -170,22 +170,22 @@ export default function StatsPage() {
 
   if (!stats) {
     return (
-      <main className="min-h-screen p-6">
+      <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
             <Link href="/">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold">Statistics</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">Statistics</h1>
           </div>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-center py-12">
-                <Trophy className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-xl font-semibold mb-2">No Games Played</h3>
-                <p className="text-muted-foreground mb-6">
+              <div className="text-center py-8 sm:py-12">
+                <Trophy className="h-12 w-12 sm:h-16 sm:w-16 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg sm:text-xl font-semibold mb-2">No Games Played</h3>
+                <p className="text-sm sm:text-base text-muted-foreground mb-6">
                   Play some games to see your statistics here!
                 </p>
                 <Link href="/game/new">
@@ -200,18 +200,18 @@ export default function StatsPage() {
   }
 
   return (
-    <main className="min-h-screen p-6">
+    <main className="min-h-screen p-4 sm:p-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
           <Link href="/">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold">Your Statistics</h1>
-            <p className="text-muted-foreground">Track your performance and progress</p>
+            <h1 className="text-2xl sm:text-3xl font-bold">Your Statistics</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">Track your performance and progress</p>
           </div>
         </div>
 
@@ -221,13 +221,13 @@ export default function StatsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <Card className="mb-6 bg-gradient-to-br from-primary/20 to-primary/5 border-primary/20">
-            <CardContent className="pt-6">
+          <Card className="mb-4 sm:mb-6 bg-gradient-to-br from-primary/20 to-primary/5 border-primary/20">
+            <CardContent className="pt-4 sm:pt-6">
               <div className="text-center">
-                <Trophy className="h-12 w-12 mx-auto mb-4 text-primary" />
-                <div className="text-5xl font-bold mb-2">{stats.winRate.toFixed(1)}%</div>
-                <div className="text-muted-foreground mb-4">Win Rate</div>
-                <div className="flex justify-center gap-4 text-sm">
+                <Trophy className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-primary" />
+                <div className="text-3xl sm:text-5xl font-bold mb-2">{stats.winRate.toFixed(1)}%</div>
+                <div className="text-sm sm:text-base text-muted-foreground mb-3 sm:mb-4">Win Rate</div>
+                <div className="flex justify-center gap-3 sm:gap-4 text-xs sm:text-sm">
                   <div>
                     <div className="font-semibold text-green-500">{stats.gamesWon}</div>
                     <div className="text-muted-foreground">Wins</div>
@@ -249,7 +249,7 @@ export default function StatsPage() {
         </motion.div>
 
         {/* Stats Grid */}
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
+        <div className="grid md:grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
           {/* Actions Stats */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}

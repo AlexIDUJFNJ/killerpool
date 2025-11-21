@@ -172,7 +172,7 @@ export function SwipeablePlayerCard({
         <Card className="overflow-hidden border-2 border-primary/20 shadow-2xl">
           <CardContent className="p-0">
             {/* Card Content */}
-            <div className="relative bg-gradient-to-br from-background via-background to-primary/5 p-8">
+            <div className="relative bg-gradient-to-br from-background via-background to-primary/5 p-6 sm:p-8">
               {/* Active Indicator */}
               {swipeDirection && (
                 <motion.div
@@ -202,25 +202,25 @@ export function SwipeablePlayerCard({
               )}
 
               {/* Avatar */}
-              <div className="flex justify-center mb-6">
-                <Avatar className="h-32 w-32 border-4 border-primary/30 shadow-xl">
-                  <AvatarFallback className="text-8xl bg-primary/10">
+              <div className="flex justify-center mb-4 sm:mb-6">
+                <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-primary/30 shadow-xl">
+                  <AvatarFallback className="text-6xl sm:text-8xl bg-primary/10">
                     {avatar}
                   </AvatarFallback>
                 </Avatar>
               </div>
 
               {/* Player Name */}
-              <h2 className="text-4xl font-bold text-center mb-8">
+              <h2 className="text-2xl sm:text-4xl font-bold text-center mb-6 sm:mb-8">
                 {name}
               </h2>
 
               {/* Lives Display */}
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground text-center uppercase tracking-wide">
+              <div className="space-y-2 sm:space-y-3">
+                <p className="text-xs sm:text-sm text-muted-foreground text-center uppercase tracking-wide">
                   Lives Remaining
                 </p>
-                <div className="flex justify-center gap-3">
+                <div className="flex justify-center gap-2 sm:gap-3">
                   {Array.from({ length: maxLives }).map((_, i) => (
                     <motion.div
                       key={i}
@@ -228,7 +228,7 @@ export function SwipeablePlayerCard({
                       animate={{ scale: i < lives ? 1 : 0.5 }}
                       transition={{ delay: i * 0.1 }}
                       className={cn(
-                        'h-12 w-12 rounded-full border-4 transition-all',
+                        'h-8 w-8 sm:h-12 sm:w-12 rounded-full border-2 sm:border-4 transition-all',
                         i < lives
                           ? 'bg-emerald-500 border-emerald-400 shadow-lg shadow-emerald-500/50'
                           : 'bg-muted border-muted-foreground/20'
@@ -236,12 +236,12 @@ export function SwipeablePlayerCard({
                     />
                   ))}
                   {lives > maxLives && (
-                    <Badge variant="secondary" className="text-2xl px-4 py-2 ml-2">
+                    <Badge variant="secondary" className="text-lg sm:text-2xl px-3 sm:px-4 py-1.5 sm:py-2 ml-2">
                       +{lives - maxLives}
                     </Badge>
                   )}
                 </div>
-                <p className="text-6xl font-bold text-center text-primary mt-4">
+                <p className="text-4xl sm:text-6xl font-bold text-center text-primary mt-3 sm:mt-4">
                   {lives}
                 </p>
               </div>
@@ -252,12 +252,12 @@ export function SwipeablePlayerCard({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.5 }}
-                  className="mt-8 pt-6 border-t border-border"
+                  className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-border"
                 >
-                  <p className="text-xs text-muted-foreground text-center uppercase tracking-widest mb-3">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground text-center uppercase tracking-widest mb-2 sm:mb-3">
                     Swipe to play
                   </p>
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="grid grid-cols-3 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs">
                     <div className="flex flex-col items-center gap-1">
                       <div className="text-red-500">
                         <X className="h-5 w-5 mx-auto" />
