@@ -221,15 +221,13 @@ export async function isSupabaseAvailable(): Promise<boolean> {
 }
 
 /**
- * Auto-sync completed game to Supabase if user is authenticated
+ * Auto-sync completed game to Supabase (for both authenticated and guest users)
  */
 export async function autoSyncGame(game: Game): Promise<void> {
   if (game.status !== 'completed') {
     return
   }
 
-  const isAvailable = await isSupabaseAvailable()
-  if (isAvailable) {
-    await syncGameToSupabase(game)
-  }
+  // Always try to sync to Supabase (for sharing game links)
+  await syncGameToSupabase(game)
 }

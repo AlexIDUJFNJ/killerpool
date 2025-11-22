@@ -1,12 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
+import { createClient } from '@/lib/supabase/client'
 import { Game } from '@/lib/types'
 import { motion } from 'framer-motion'
 import {
@@ -27,22 +28,78 @@ import { exportGameToCSV, exportScreenshot, shareGame, copyGameSummary } from '@
 
 export default function GameDetailsPage() {
   const params = useParams()
-  const router = useRouter()
   const [game, setGame] = React.useState<Game | null>(null)
+  const [isLoading, setIsLoading] = React.useState(true)
+  const [notFound, setNotFound] = React.useState(false)
   const [isExporting, setIsExporting] = React.useState(false)
   const [exportStatus, setExportStatus] = React.useState<'idle' | 'csv' | 'screenshot' | 'share'>('idle')
 
   React.useEffect(() => {
-    const gameId = params.id as string
-    const foundGame = getGameFromHistory(gameId)
+    const loadGame = async () => {
+      const gameId = params.id as string
+      setIsLoading(true)
+      setNotFound(false)
 
-    if (!foundGame) {
-      router.push('/history')
-      return
+      // First try localStorage
+      const localGame = getGameFromHistory(gameId)
+      if (localGame) {
+        setGame(localGame)
+        setIsLoading(false)
+        return
+      }
+
+      // If not in localStorage, try Supabase
+      try {
+        const supabase = createClient()
+        const { data: gameData, error } = await supabase
+          .from('games')
+          .select('*')
+          .eq('id', gameId)
+          .single()
+
+        if (error || !gameData) {
+          setNotFound(true)
+          setIsLoading(false)
+          return
+        }
+
+        // Convert Supabase game to our Game type
+        const convertedGame: Game = {
+          id: gameData.id,
+          createdAt: gameData.created_at,
+          updatedAt: gameData.updated_at,
+          status: gameData.status,
+          players: gameData.participants,
+          currentPlayerIndex: 0,
+          winnerId: gameData.winner_id,
+          rulesetId: gameData.ruleset_id,
+          ruleset: {
+            id: 'classic',
+            name: 'Classic Killer Pool',
+            params: {
+              starting_lives: 3,
+              miss: -1,
+              pot: 0,
+              pot_black: 1,
+              max_lives: 10,
+            },
+            is_default: true,
+          },
+          history: gameData.history,
+          createdBy: gameData.created_by,
+        }
+
+        setGame(convertedGame)
+      } catch (error) {
+        console.error('Failed to load game from Supabase:', error)
+        setNotFound(true)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    setGame(foundGame)
-  }, [params.id, router])
+    loadGame()
+  }, [params.id])
 
   const handleExportCSV = () => {
     if (!game) return
@@ -104,12 +161,33 @@ export default function GameDetailsPage() {
     }
   }
 
-  if (!game) {
+  if (isLoading) {
     return (
       <main className="min-h-screen p-6">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">Loading game...</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (notFound || !game) {
+    return (
+      <main className="min-h-screen p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-12">
+            <h2 className="text-2xl font-bold mb-4">Game Not Found</h2>
+            <p className="text-muted-foreground mb-6">
+              This game history could not be found. It may have been deleted or the link is incorrect.
+            </p>
+            <Link href="/history">
+              <Button>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to History
+              </Button>
+            </Link>
           </div>
         </div>
       </main>
