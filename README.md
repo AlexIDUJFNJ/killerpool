@@ -103,6 +103,7 @@
 - [x] Публичный доступ к истории игр по shared links
 - [x] Улучшенное отображение жизней (лимит 6, красный цвет для последней)
 - [x] Улучшения мобильного responsive дизайна
+- [x] Система достижений и badges
 
 ### ✅ Week 3 - PWA Setup (Days 15-16 завершены)
 
@@ -128,7 +129,6 @@
 ### 🔜 Запланировано
 
 - [ ] Performance optimization
-- [ ] Достижения и badges система
 - [ ] Apple Sign In
 - [ ] Больше component тестов (Dialog, Input, Label, etc.)
 - [ ] Integration тесты
@@ -329,9 +329,11 @@ npm run format:check # Проверить форматирование
 - **Week 2 (Days 8-11):** ✅ Завершено - Supabase интеграция и аутентификация
 - **Week 2 (Days 12-14):** ✅ Завершено - История игр, статистика, export
 - **Week 3 (Days 15-16):** ✅ Завершено - PWA Setup (Service Worker, офлайн режим, иконки)
-- **Week 3 (Days 17-21):** ✅ 95% Завершено - Realtime, Light Theme, Stats, Performance Optimization
+- **Week 3 (Days 17-21):** ✅ 99% Завершено - Realtime, Light Theme, Stats, Performance Optimization, Achievements
 
 **Последнее обновление (23 ноября 2025):**
+- ✅ **Система достижений (Achievements)** - 7 типов бейджей:
+  - First Win, 10/25/50 Wins, Survivor, Pot Black Master, Social Player
 - ✅ Добавлен Spectator mode для QR code гостей
 - ✅ Изменен лимит жизней по умолчанию с 10 на 6
 - ✅ Улучшено отображение жизней (лимит 6 max, красный цвет для последней жизни)

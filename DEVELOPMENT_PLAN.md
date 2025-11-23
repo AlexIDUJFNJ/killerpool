@@ -3,7 +3,7 @@
 **Дата создания:** 15 ноября 2025
 **Последнее обновление:** 23 ноября 2025
 **Домен:** killerpool.app
-**Статус:** 🚀 Активная разработка - Week 3 (MVP завершен на 98%)
+**Статус:** 🚀 Активная разработка - Week 3 (MVP завершен на 99%)
 
 ---
 
@@ -301,11 +301,11 @@
 
 ### 🟢 Желательные (Nice to Have)
 
-13. ⏳ Realtime мультиплеер (Week 3)
-14. ⏳ QR invites (Week 2, Days 12-14)
-15. ⏳ Достижения/badges (Week 3)
-16. ⏳ Статистика игрока (Week 2, Days 12-13)
-17. ⏳ Light mode (Week 3)
+13. ✅ Realtime мультиплеер (Week 3)
+14. ✅ QR invites (Week 2, Days 12-14)
+15. ✅ Достижения/badges (Week 3)
+16. ✅ Статистика игрока (Week 2, Days 12-13)
+17. ✅ Light mode (Week 3)
 18. ⏳ Apple Sign In (запланировано)
 
 ---
@@ -458,9 +458,20 @@
 - **Week 2 (Days 8-11):** ✅ **100% Завершено** - Supabase интеграция и аутентификация
 - **Week 2 (Days 12-14):** ✅ **100% Завершено** - История игр, статистика, export
 - **Week 3 (Days 15-16):** ✅ **100% Завершено** - PWA Setup (Service Worker, офлайн, иконки)
-- **Week 3 (Days 17-21):** ✅ **98% Завершено** - Realtime, Light Theme, Stats, Performance Optimization, Spectator Mode
+- **Week 3 (Days 17-21):** ✅ **99% Завершено** - Realtime, Light Theme, Stats, Performance Optimization, Spectator Mode, Achievements
 
 ### Последние обновления (23 ноября 2025):
+
+- ✅ **Achievements System (Система достижений)**
+  - Таблица `user_achievements` в Supabase
+  - Функция `check_achievements()` для автоматической выдачи
+  - 7 типов достижений:
+    - `first_win` - Первая победа
+    - `wins_10` / `wins_25` / `wins_50` - Milestones побед
+    - `survivor` - Победа с 1 жизнью
+    - `pot_black_master` - 5+ pot blacks в игре
+    - `social_player` - 10 игр с 4+ игроками
+  - RLS политики для безопасного доступа
 
 - ✅ **Spectator Mode & Shared Access**
   - Добавлен режим зрителя для QR code гостей
