@@ -14,7 +14,7 @@ export interface LifeBarProps {
 
 export function LifeBar({
   lives,
-  maxLives = 10,
+  maxLives = 6,
   animated = true,
   size = 'md',
   className,
@@ -30,14 +30,14 @@ export function LifeBar({
   // Color based on lives remaining
   const getColor = () => {
     if (lives <= 0) return 'bg-destructive'
-    if (lives === 1) return 'bg-orange-500'
+    if (lives === 1) return 'bg-red-500'
     if (lives === 2) return 'bg-yellow-500'
     return 'bg-emerald-500'
   }
 
   const getShadowColor = () => {
     if (lives <= 0) return 'shadow-destructive/50'
-    if (lives === 1) return 'shadow-orange-500/50'
+    if (lives === 1) return 'shadow-red-500/50'
     if (lives === 2) return 'shadow-yellow-500/50'
     return 'shadow-emerald-500/50'
   }

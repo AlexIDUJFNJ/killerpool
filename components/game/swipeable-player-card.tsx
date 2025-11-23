@@ -27,7 +27,7 @@ export function SwipeablePlayerCard({
   name,
   avatar = '🎱',
   lives,
-  maxLives = 3,
+  maxLives = 6,
   onSwipe,
   disabled = false,
 }: SwipeablePlayerCardProps) {
@@ -230,7 +230,9 @@ export function SwipeablePlayerCard({
                       className={cn(
                         'h-8 w-8 sm:h-12 sm:w-12 rounded-full border-2 sm:border-4 transition-all',
                         i < lives
-                          ? 'bg-emerald-500 border-emerald-400 shadow-lg shadow-emerald-500/50'
+                          ? lives === 1
+                            ? 'bg-red-500 border-red-400 shadow-lg shadow-red-500/50'
+                            : 'bg-emerald-500 border-emerald-400 shadow-lg shadow-emerald-500/50'
                           : 'bg-muted border-muted-foreground/20'
                       )}
                     />
