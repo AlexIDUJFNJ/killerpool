@@ -69,7 +69,7 @@ export function applyAction(game: Game, action: GameAction): Game {
   let livesAfter = livesBefore + livesChange
 
   // Respect max lives limit
-  const maxLives = game.ruleset.params.max_lives || 10
+  const maxLives = game.ruleset.params.max_lives || 6
   livesAfter = Math.min(livesAfter, maxLives)
 
   // Check if player is eliminated

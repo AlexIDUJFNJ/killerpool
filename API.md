@@ -510,7 +510,7 @@ async function getDefaultRuleset() {
     miss: -1,
     pot: 0,
     pot_black: 1,
-    max_lives: 10
+    max_lives: 6
   }
 }
 ```
@@ -763,7 +763,7 @@ export interface Ruleset {
     miss: number        // -1
     pot: number         // 0
     pot_black: number   // +1
-    max_lives: number   // 10
+    max_lives: number   // 6
   }
   is_default: boolean
 }

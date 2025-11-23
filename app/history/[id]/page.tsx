@@ -81,7 +81,7 @@ export default function GameDetailsPage() {
               miss: -1,
               pot: 0,
               pot_black: 1,
-              max_lives: 10,
+              max_lives: 6,
             },
             is_default: true,
           },
