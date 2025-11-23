@@ -17,34 +17,84 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { saveRematchPlayers } from '@/lib/storage'
 import { Card, CardContent } from '@/components/ui/card'
+import { Eye } from 'lucide-react'
 
 export default function GamePage() {
   const router = useRouter()
   const params = useParams()
   const gameId = params.id as string
-  const { game, performAction, undoAction, endGame } = useGame()
+  const {
+    game,
+    performAction,
+    undoAction,
+    endGame,
+    isSpectatorMode,
+    currentUserId,
+    loadGameFromSupabase,
+    setSpectatorGame,
+    clearSpectatorGame
+  } = useGame()
   const [showWinner, setShowWinner] = React.useState(false)
   const [showAllPlayers, setShowAllPlayers] = React.useState(false)
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
+  const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
 
+  // Load game from Supabase if not in context
   React.useEffect(() => {
-    if (!game) {
-      router.push('/')
-      return
+    const loadGame = async () => {
+      // If we already have a game with correct ID, no need to load
+      if (game && game.id === gameId) {
+        if (game.status === 'completed') {
+          setShowWinner(true)
+          haptics.victory()
+        }
+        return
+      }
+
+      // Try to load from Supabase
+      setIsLoadingFromSupabase(true)
+      setLoadError(null)
+
+      try {
+        const loadedGame = await loadGameFromSupabase(gameId)
+
+        if (loadedGame) {
+          // Set as spectator game (will subscribe to realtime)
+          setSpectatorGame(loadedGame)
+
+          if (loadedGame.status === 'completed') {
+            setShowWinner(true)
+          }
+        } else {
+          setLoadError('Game not found')
+          // Redirect to home after a delay
+          setTimeout(() => {
+            router.push('/')
+          }, 2000)
+        }
+      } catch (error) {
+        console.error('Error loading game:', error)
+        setLoadError('Failed to load game')
+        setTimeout(() => {
+          router.push('/')
+        }, 2000)
+      } finally {
+        setIsLoadingFromSupabase(false)
+      }
     }
 
-    if (game.id !== gameId) {
-      router.push('/')
-      return
-    }
+    loadGame()
 
-    if (game.status === 'completed') {
-      setShowWinner(true)
-      haptics.victory()
+    // Cleanup on unmount
+    return () => {
+      if (isSpectatorMode) {
+        clearSpectatorGame()
+      }
     }
-  }, [game, gameId, router])
+  }, [gameId, game, loadGameFromSupabase, setSpectatorGame, clearSpectatorGame, router, isSpectatorMode])
 
   // Check authentication status
   React.useEffect(() => {
@@ -53,6 +103,30 @@ export default function GamePage() {
       setIsAuthenticated(!!user)
     })
   }, [])
+
+  // Show loading state
+  if (isLoadingFromSupabase) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading game...</p>
+        </div>
+      </main>
+    )
+  }
+
+  // Show error state
+  if (loadError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <p className="text-destructive mb-2">{loadError}</p>
+          <p className="text-sm text-muted-foreground">Redirecting to home...</p>
+        </div>
+      </main>
+    )
+  }
 
   if (!game) {
     return null
@@ -234,23 +308,27 @@ export default function GamePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowInviteModal(true)}
-              title="Invite players"
-            >
-              <QrCode className="h-5 w-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleUndo}
-              disabled={game.history.length === 0}
-              title="Undo last action"
-            >
-              <RotateCcw className="h-5 w-5" />
-            </Button>
+            {!isSpectatorMode && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowInviteModal(true)}
+                  title="Invite players"
+                >
+                  <QrCode className="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleUndo}
+                  disabled={game.history.length === 0}
+                  title="Undo last action"
+                >
+                  <RotateCcw className="h-5 w-5" />
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -261,6 +339,16 @@ export default function GamePage() {
             </Button>
           </div>
         </div>
+
+        {/* Spectator Banner */}
+        {isSpectatorMode && (
+          <div className="bg-amber-500/10 border-t border-amber-500/20 px-4 py-2">
+            <div className="flex items-center justify-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <Eye className="h-4 w-4" />
+              <span>You are watching this game</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
@@ -312,14 +400,26 @@ export default function GamePage() {
                 }}
                 className="w-full"
               >
-                <SwipeablePlayerCard
-                  name={currentPlayer.name}
-                  avatar={currentPlayer.avatar}
-                  lives={currentPlayer.lives}
-                  maxLives={game.ruleset.params.max_lives}
-                  onSwipe={handleSwipe}
-                  disabled={game.status !== 'active'}
-                />
+                {isSpectatorMode ? (
+                  <PlayerCard
+                    id={currentPlayer.id}
+                    name={currentPlayer.name}
+                    avatar={currentPlayer.avatar}
+                    lives={currentPlayer.lives}
+                    eliminated={currentPlayer.eliminated}
+                    maxLives={game.ruleset.params.max_lives}
+                    isActive={true}
+                  />
+                ) : (
+                  <SwipeablePlayerCard
+                    name={currentPlayer.name}
+                    avatar={currentPlayer.avatar}
+                    lives={currentPlayer.lives}
+                    maxLives={game.ruleset.params.max_lives}
+                    onSwipe={handleSwipe}
+                    disabled={game.status !== 'active'}
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -335,7 +435,7 @@ export default function GamePage() {
           <p className="text-sm text-muted-foreground">
             Actions: {game.history.length}
           </p>
-          {game.history.length > 0 && (
+          {!isSpectatorMode && game.history.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
