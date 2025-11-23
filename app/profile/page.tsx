@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { AchievementsList } from '@/components/achievements/achievements-list'
 import { createClient } from '@/lib/supabase/client'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
@@ -256,6 +257,19 @@ export default function ProfilePage() {
                   )}
                 </Button>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* Achievements */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Achievements</CardTitle>
+              <CardDescription>
+                Your unlocked badges and progress
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AchievementsList userId={user.id} />
             </CardContent>
           </Card>
 
