@@ -114,6 +114,8 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },
+  // Turbopack configuration (Next.js 16+ default)
+  turbopack: {},
 }
 
 module.exports = withPWA(nextConfig)
