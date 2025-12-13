@@ -874,6 +874,164 @@ async function fetchGame(gameId: string) {
 
 ---
 
+## Sync API
+
+API для синхронизации игр между localStorage и Supabase.
+
+**Файл:** `lib/sync.ts`
+
+### syncActiveGameToSupabase
+
+Синхронизирует активную игру в Supabase для live sharing. Работает для игр любого статуса.
+
+```typescript
+import { syncActiveGameToSupabase } from '@/lib/sync'
+
+const success = await syncActiveGameToSupabase(game)
+// Returns: boolean
+```
+
+**Особенности:**
+- Работает для авторизованных пользователей и гостей
+- Создаёт профиль пользователя если его нет
+- Валидирует UUID для ruleset_id
+- Использует upsert для создания или обновления
+
+### syncGameToSupabase
+
+Синхронизирует завершённую игру в Supabase.
+
+```typescript
+import { syncGameToSupabase } from '@/lib/sync'
+
+const success = await syncGameToSupabase(game)
+// Returns: boolean
+// Note: Работает только для completed игр
+```
+
+### autoSyncGame
+
+Автоматическая синхронизация завершённой игры.
+
+```typescript
+import { autoSyncGame } from '@/lib/sync'
+
+await autoSyncGame(game)
+// Вызывается автоматически при завершении игры
+```
+
+---
+
+## Realtime API
+
+API для real-time синхронизации игр.
+
+**Файл:** `lib/realtime.ts`
+
+### syncGameForRealtime
+
+Синхронизирует игру в Supabase для realtime обновлений.
+
+```typescript
+import { syncGameForRealtime } from '@/lib/realtime'
+
+const success = await syncGameForRealtime(game)
+// Returns: boolean
+// Работает для авторизованных и гостей
+```
+
+### subscribeToGame
+
+Подписка на обновления игры (для spectators).
+
+```typescript
+import { subscribeToGame } from '@/lib/realtime'
+
+const channel = subscribeToGame(
+  gameId,
+  (gameUpdate) => {
+    // Обновление состояния игры
+    console.log('Game updated:', gameUpdate)
+  },
+  (action) => {
+    // Новое действие
+    console.log('New action:', action)
+  }
+)
+
+// Cleanup
+import { unsubscribeFromGame } from '@/lib/realtime'
+await unsubscribeFromGame(channel)
+```
+
+### broadcastGameAction
+
+Транслирует действие всем подписчикам.
+
+```typescript
+import { broadcastGameAction } from '@/lib/realtime'
+
+const success = await broadcastGameAction(gameId, action)
+// Returns: boolean
+```
+
+---
+
+## GameContext API
+
+React Context для управления игрой.
+
+**Файл:** `contexts/game-context.tsx`
+
+### enableSharing
+
+Включает режим live sharing — синхронизирует игру и активирует realtime.
+
+```typescript
+import { useGame } from '@/contexts/game-context'
+
+function Component() {
+  const { enableSharing, isSharingEnabled } = useGame()
+
+  const handleShare = async () => {
+    const success = await enableSharing()
+    if (success) {
+      console.log('Live sharing enabled!')
+    }
+  }
+
+  return (
+    <button onClick={handleShare} disabled={isSharingEnabled}>
+      {isSharingEnabled ? 'Sharing Active' : 'Enable Sharing'}
+    </button>
+  )
+}
+```
+
+**GameContextValue interface:**
+
+```typescript
+interface GameContextValue {
+  game: Game | null
+  isLoading: boolean
+  isRealtimeConnected: boolean
+  isSpectatorMode: boolean
+  isSharingEnabled: boolean        // NEW: флаг активного sharing
+  currentUserId: string | null
+  startGame: (game: Game, enableRealtime?: boolean) => void
+  performAction: (action: GameAction) => void
+  undoAction: () => void
+  endGame: () => void
+  resumeGame: () => void
+  loadGameFromSupabase: (gameId: string) => Promise<Game | null>
+  setSpectatorGame: (game: Game) => void
+  clearSpectatorGame: () => void
+  enableSharing: () => Promise<boolean>  // NEW: включить live sharing
+}
+```
+
+---
+
 ## Rate Limiting
 
 Supabase имеет следующие лимиты на бесплатном плане:
@@ -899,4 +1057,4 @@ Supabase имеет следующие лимиты на бесплатном п
 
 ---
 
-**Документ обновлен:** 16 ноября 2025
+**Документ обновлен:** 13 декабря 2025
