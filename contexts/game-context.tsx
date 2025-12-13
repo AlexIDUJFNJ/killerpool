@@ -170,14 +170,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     try {
       const supabase = createClient()
 
+      console.log('[loadGameFromSupabase] Loading game:', gameId)
+
       const { data: gameData, error } = await supabase
         .from('games')
         .select('*')
         .eq('id', gameId)
         .single()
 
+      console.log('[loadGameFromSupabase] Result:', { gameData, error })
+
       if (error || !gameData) {
-        console.error('Failed to load game from Supabase:', error)
+        console.error('[loadGameFromSupabase] Failed:', error?.message, error?.details, error?.hint)
         return null
       }
 
@@ -260,21 +264,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // Enable sharing mode - syncs game to Supabase and enables realtime
   const enableSharing = React.useCallback(async (): Promise<boolean> => {
     if (!game) {
-      console.warn('No game to share')
+      console.warn('[enableSharing] No game to share')
       return false
     }
 
     if (isSharingEnabled) {
-      // Already enabled
+      console.log('[enableSharing] Already enabled for game:', game.id)
       return true
     }
 
     try {
+      console.log('[enableSharing] Starting for game:', game.id)
+
       // Sync game to Supabase first (this ensures the game exists in DB)
       const syncSuccess = await syncActiveGameToSupabase(game)
 
       if (!syncSuccess) {
-        console.error('Failed to sync game for sharing')
+        console.error('[enableSharing] Sync failed for game:', game.id)
         return false
       }
 
@@ -283,10 +289,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setRealtimeEnabled(true)
       setIsSharingEnabled(true)
 
-      console.log('Sharing enabled for game:', game.id)
+      console.log('[enableSharing] Success! Game is now shareable:', game.id)
       return true
     } catch (error) {
-      console.error('Failed to enable sharing:', error)
+      console.error('[enableSharing] Error:', error)
       return false
     }
   }, [game, isSharingEnabled])

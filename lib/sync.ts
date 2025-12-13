@@ -243,6 +243,9 @@ export async function syncActiveGameToSupabase(game: Game): Promise<boolean> {
     // Check if user is authenticated
     const { data: { user } } = await supabase.auth.getUser()
 
+    console.log('[syncActiveGame] Starting sync for game:', game.id)
+    console.log('[syncActiveGame] User:', user?.id || 'anonymous')
+
     // Ensure user profile exists before syncing game
     if (user) {
       const { data: existingProfile } = await supabase
@@ -277,22 +280,25 @@ export async function syncActiveGameToSupabase(game: Game): Promise<boolean> {
       created_by: user?.id || null,
     }
 
+    console.log('[syncActiveGame] Upserting game data:', JSON.stringify(gameData, null, 2))
+
     // Insert or update the game
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('games')
       .upsert(gameData, {
         onConflict: 'id',
       })
+      .select()
 
     if (error) {
-      console.error('Failed to sync active game to Supabase:', error)
+      console.error('[syncActiveGame] Failed to sync:', error.message, error.details, error.hint)
       return false
     }
 
-    console.log('Active game successfully synced to Supabase:', game.id)
+    console.log('[syncActiveGame] Success! Synced game:', data)
     return true
   } catch (error) {
-    console.error('Error syncing active game to Supabase:', error)
+    console.error('[syncActiveGame] Error:', error)
     return false
   }
 }
