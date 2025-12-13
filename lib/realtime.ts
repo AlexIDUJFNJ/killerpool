@@ -195,27 +195,29 @@ export async function isRealtimeAvailable(): Promise<boolean> {
 
 /**
  * Sync local game to Supabase for realtime
+ * Works for both authenticated users and guests
  */
 export async function syncGameForRealtime(game: Game): Promise<boolean> {
   try {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user) {
-      console.warn('User not authenticated, cannot sync for realtime')
-      return false
-    }
+    // Note: We now allow guests to sync games for sharing
+    // The game will be accessible to spectators via the share link
+
+    // Validate ruleset_id - only use if it's a valid UUID
+    const isValidUUID = game.rulesetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.rulesetId)
 
     const gameData = {
       id: game.id,
       created_at: game.createdAt,
-      updated_at: game.updatedAt,
+      updated_at: game.updatedAt || new Date().toISOString(),
       status: game.status,
       participants: game.players,
-      winner_id: game.winnerId,
-      ruleset_id: game.rulesetId,
+      winner_id: game.winnerId || null,
+      ruleset_id: isValidUUID ? game.rulesetId : null,
       history: game.history,
-      created_by: user.id,
+      created_by: user?.id || null,
     }
 
     const { error } = await supabase

@@ -231,3 +231,68 @@ export async function autoSyncGame(game: Game): Promise<void> {
   // Always try to sync to Supabase (for sharing game links)
   await syncGameToSupabase(game)
 }
+
+/**
+ * Sync an active game to Supabase for sharing/spectator mode
+ * Unlike syncGameToSupabase, this works for games of any status
+ */
+export async function syncActiveGameToSupabase(game: Game): Promise<boolean> {
+  try {
+    const supabase = createClient()
+
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Ensure user profile exists before syncing game
+    if (user) {
+      const { data: existingProfile } = await supabase
+        .from('player_profiles')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (!existingProfile) {
+        const defaultName = user.email?.split('@')[0] || 'Player'
+        await supabase
+          .from('player_profiles')
+          .insert({
+            user_id: user.id,
+            display_name: defaultName,
+          })
+      }
+    }
+
+    // Prepare game data for Supabase
+    const isValidUUID = game.rulesetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.rulesetId)
+
+    const gameData = {
+      id: game.id,
+      created_at: game.createdAt,
+      updated_at: game.updatedAt || new Date().toISOString(),
+      status: game.status,
+      participants: game.players,
+      winner_id: game.winnerId || null,
+      ruleset_id: isValidUUID ? game.rulesetId : null,
+      history: game.history,
+      created_by: user?.id || null,
+    }
+
+    // Insert or update the game
+    const { error } = await supabase
+      .from('games')
+      .upsert(gameData, {
+        onConflict: 'id',
+      })
+
+    if (error) {
+      console.error('Failed to sync active game to Supabase:', error)
+      return false
+    }
+
+    console.log('Active game successfully synced to Supabase:', game.id)
+    return true
+  } catch (error) {
+    console.error('Error syncing active game to Supabase:', error)
+    return false
+  }
+}

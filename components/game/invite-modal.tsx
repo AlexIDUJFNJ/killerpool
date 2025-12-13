@@ -4,8 +4,9 @@ import * as React from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Copy, Download, Share2, Check, QrCode as QrCodeIcon } from 'lucide-react'
+import { Copy, Download, Share2, Check, QrCode as QrCodeIcon, Loader2, AlertCircle } from 'lucide-react'
 import { generateInviteLink, generateInviteQRCode, downloadQRCode, shareInviteLink, copyInviteLink } from '@/lib/invite'
+import { useGame } from '@/contexts/game-context'
 
 interface InviteModalProps {
   gameId: string
@@ -15,10 +16,35 @@ interface InviteModalProps {
 }
 
 export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModalProps) {
+  const { enableSharing, isSharingEnabled } = useGame()
   const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>('')
   const [copied, setCopied] = React.useState(false)
   const [isSharing, setIsSharing] = React.useState(false)
+  const [isSyncing, setIsSyncing] = React.useState(false)
+  const [syncError, setSyncError] = React.useState<string | null>(null)
   const inviteLink = generateInviteLink(gameId)
+
+  // Enable sharing when modal opens (syncs game to Supabase)
+  React.useEffect(() => {
+    if (open && !isSharingEnabled) {
+      setIsSyncing(true)
+      setSyncError(null)
+
+      enableSharing()
+        .then((success) => {
+          if (!success) {
+            setSyncError('Failed to enable live sharing. Spectators may not see real-time updates.')
+          }
+        })
+        .catch((error) => {
+          console.error('Error enabling sharing:', error)
+          setSyncError('Failed to enable live sharing.')
+        })
+        .finally(() => {
+          setIsSyncing(false)
+        })
+    }
+  }, [open, isSharingEnabled, enableSharing])
 
   React.useEffect(() => {
     if (open) {
@@ -65,11 +91,33 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
             Invite Players
           </DialogTitle>
           <DialogDescription>
-            Share this link or QR code to invite players to join the game
+            Share this link or QR code to invite players to watch the game live
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Sync Status */}
+          {isSyncing && (
+            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Enabling live sharing...</span>
+            </div>
+          )}
+
+          {syncError && (
+            <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-lg">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm">{syncError}</span>
+            </div>
+          )}
+
+          {isSharingEnabled && !isSyncing && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
+              <Check className="h-4 w-4" />
+              <span className="text-sm">Live sharing enabled! Spectators will see real-time updates.</span>
+            </div>
+          )}
+
           {/* QR Code */}
           {qrCodeDataUrl && (
             <div className="flex flex-col items-center gap-3 p-4 bg-muted rounded-lg">

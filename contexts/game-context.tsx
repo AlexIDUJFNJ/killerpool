@@ -10,7 +10,7 @@ import * as React from 'react'
 import { Game, GameAction } from '@/lib/types'
 import { applyAction, undoLastAction, getCurrentPlayer } from '@/lib/game-logic'
 import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
-import { autoSyncGame } from '@/lib/sync'
+import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
 import { useRealtimeGame, useSyncGameForRealtime } from '@/hooks/use-realtime-game'
 import { broadcastGameAction, updateGameStatus, subscribeToGame, unsubscribeFromGame } from '@/lib/realtime'
 import { createClient } from '@/lib/supabase/client'
@@ -21,6 +21,7 @@ interface GameContextValue {
   isLoading: boolean
   isRealtimeConnected: boolean
   isSpectatorMode: boolean
+  isSharingEnabled: boolean
   currentUserId: string | null
   startGame: (game: Game, enableRealtime?: boolean) => void
   performAction: (action: GameAction) => void
@@ -30,6 +31,7 @@ interface GameContextValue {
   loadGameFromSupabase: (gameId: string) => Promise<Game | null>
   setSpectatorGame: (game: Game) => void
   clearSpectatorGame: () => void
+  enableSharing: () => Promise<boolean>
 }
 
 const GameContext = React.createContext<GameContextValue | undefined>(undefined)
@@ -39,6 +41,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = React.useState(true)
   const [realtimeEnabled, setRealtimeEnabled] = React.useState(false)
   const [isSpectatorMode, setIsSpectatorMode] = React.useState(false)
+  const [isSharingEnabled, setIsSharingEnabled] = React.useState(false)
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
   const spectatorChannelRef = React.useRef<RealtimeChannel | null>(null)
 
@@ -254,11 +257,46 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setIsSpectatorMode(false)
   }, [])
 
+  // Enable sharing mode - syncs game to Supabase and enables realtime
+  const enableSharing = React.useCallback(async (): Promise<boolean> => {
+    if (!game) {
+      console.warn('No game to share')
+      return false
+    }
+
+    if (isSharingEnabled) {
+      // Already enabled
+      return true
+    }
+
+    try {
+      // Sync game to Supabase first (this ensures the game exists in DB)
+      const syncSuccess = await syncActiveGameToSupabase(game)
+
+      if (!syncSuccess) {
+        console.error('Failed to sync game for sharing')
+        return false
+      }
+
+      // Enable realtime for broadcasting updates
+      // The useSyncGameForRealtime hook will handle ongoing sync
+      setRealtimeEnabled(true)
+      setIsSharingEnabled(true)
+
+      console.log('Sharing enabled for game:', game.id)
+      return true
+    } catch (error) {
+      console.error('Failed to enable sharing:', error)
+      return false
+    }
+  }, [game, isSharingEnabled])
+
   const value: GameContextValue = {
     game,
     isLoading,
     isRealtimeConnected,
     isSpectatorMode,
+    isSharingEnabled,
     currentUserId,
     startGame,
     performAction,
@@ -268,6 +306,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     loadGameFromSupabase,
     setSpectatorGame,
     clearSpectatorGame,
+    enableSharing,
   }
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>
