@@ -128,26 +128,39 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const updatedGame = applyAction(game, action)
       setGame(updatedGame)
 
-      // Broadcast action via realtime if enabled and synced
-      if (realtimeEnabled && isSynced) {
-        const lastAction = updatedGame.history[updatedGame.history.length - 1]
-        if (lastAction) {
-          broadcastGameAction(game.id, lastAction).catch((error) => {
-            console.error('Failed to broadcast game action:', error)
-          })
-        }
+      // Sync full game state to Supabase if sharing is enabled
+      // This ensures spectators see all updates in realtime
+      if (isSharingEnabled) {
+        console.log('[performAction] Syncing game state to Supabase for spectators')
+        syncActiveGameToSupabase(updatedGame).then((result) => {
+          if (!result.success) {
+            console.error('[performAction] Failed to sync game:', result.error)
+          } else {
+            console.log('[performAction] Game synced successfully')
+          }
+        }).catch((error) => {
+          console.error('[performAction] Failed to sync game:', error)
+        })
       }
     } catch (error) {
       console.error('Failed to perform action:', error)
     }
-  }, [game, realtimeEnabled, isSynced])
+  }, [game, isSharingEnabled])
 
   const undoAction = React.useCallback(() => {
     if (!game || game.history.length === 0) return
 
     const updatedGame = undoLastAction(game)
     setGame(updatedGame)
-  }, [game])
+
+    // Sync to Supabase if sharing is enabled
+    if (isSharingEnabled) {
+      console.log('[undoAction] Syncing game state to Supabase for spectators')
+      syncActiveGameToSupabase(updatedGame).catch((error) => {
+        console.error('[undoAction] Failed to sync game:', error)
+      })
+    }
+  }, [game, isSharingEnabled])
 
   const endGame = React.useCallback(() => {
     if (game) {
@@ -222,6 +235,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   // Set a game for spectator mode (don't save to localStorage)
   const setSpectatorGame = React.useCallback((spectatorGame: Game) => {
+    console.log('[setSpectatorGame] Setting up spectator mode for game:', spectatorGame.id)
+
     // Cleanup previous spectator channel
     if (spectatorChannelRef.current) {
       unsubscribeFromGame(spectatorChannelRef.current)
@@ -232,21 +247,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setRealtimeEnabled(false)
 
     // Subscribe to realtime updates for spectator
+    console.log('[setSpectatorGame] Subscribing to realtime updates...')
     const channel = subscribeToGame(
       spectatorGame.id,
       (gameUpdate) => {
+        console.log('[Spectator] Received game update:', gameUpdate)
         setGame((currentGame) => {
           if (!currentGame) return null
-          return {
+          const updated = {
             ...currentGame,
             ...gameUpdate,
           } as Game
+          console.log('[Spectator] Updated game state, players:', updated.players?.length)
+          return updated
         })
       },
       (action) => {
-        console.log('Spectator received action:', action)
+        console.log('[Spectator] Received action:', action)
       }
     )
+
+    if (channel) {
+      console.log('[setSpectatorGame] Realtime channel created successfully')
+    } else {
+      console.error('[setSpectatorGame] Failed to create realtime channel!')
+    }
 
     spectatorChannelRef.current = channel
   }, [])

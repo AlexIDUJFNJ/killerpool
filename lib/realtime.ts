@@ -17,6 +17,7 @@ export function subscribeToGame(
   onAction: (action: GameHistoryEntry) => void
 ): RealtimeChannel | null {
   try {
+    console.log('[subscribeToGame] Creating subscription for game:', gameId)
     const supabase = createClient()
 
     // Create a channel for this game
@@ -31,7 +32,7 @@ export function subscribeToGame(
           filter: `id=eq.${gameId}`,
         },
         (payload) => {
-          console.log('Game updated:', payload)
+          console.log('[subscribeToGame] Received UPDATE event:', payload)
 
           const newData = payload.new as any
 
@@ -45,6 +46,7 @@ export function subscribeToGame(
             history: newData.history,
           }
 
+          console.log('[subscribeToGame] Calling onUpdate with:', gameUpdate)
           onUpdate(gameUpdate)
 
           // If history changed, notify about new action
@@ -56,13 +58,23 @@ export function subscribeToGame(
           }
         }
       )
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status)
+      .subscribe((status, err) => {
+        console.log('[subscribeToGame] Subscription status:', status)
+        if (err) {
+          console.error('[subscribeToGame] Subscription error:', err)
+        }
+        if (status === 'SUBSCRIBED') {
+          console.log('[subscribeToGame] Successfully subscribed to game:', gameId)
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[subscribeToGame] Channel error for game:', gameId)
+        } else if (status === 'TIMED_OUT') {
+          console.error('[subscribeToGame] Subscription timed out for game:', gameId)
+        }
       })
 
     return channel
   } catch (error) {
-    console.error('Failed to subscribe to game:', error)
+    console.error('[subscribeToGame] Failed to subscribe:', error)
     return null
   }
 }
@@ -182,15 +194,10 @@ export async function updateGameStatus(
 
 /**
  * Check if realtime is available
+ * Realtime is always available - authentication is not required for spectators
  */
 export async function isRealtimeAvailable(): Promise<boolean> {
-  try {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    return !!user
-  } catch {
-    return false
-  }
+  return true
 }
 
 /**
