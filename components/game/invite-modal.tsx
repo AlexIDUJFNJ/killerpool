@@ -27,18 +27,20 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   // Enable sharing when modal opens (syncs game to Supabase)
   React.useEffect(() => {
     if (open && !isSharingEnabled) {
+      console.log('[InviteModal] Opening, attempting to enable sharing...')
       setIsSyncing(true)
       setSyncError(null)
 
       enableSharing()
         .then((success) => {
+          console.log('[InviteModal] enableSharing result:', success)
           if (!success) {
-            setSyncError('Failed to enable live sharing. Spectators may not see real-time updates.')
+            setSyncError('Failed to enable live sharing. Check console for details. You may need to apply the database migration.')
           }
         })
         .catch((error) => {
-          console.error('Error enabling sharing:', error)
-          setSyncError('Failed to enable live sharing.')
+          console.error('[InviteModal] Error enabling sharing:', error)
+          setSyncError(`Failed to enable live sharing: ${error instanceof Error ? error.message : 'Unknown error'}`)
         })
         .finally(() => {
           setIsSyncing(false)

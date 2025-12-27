@@ -275,12 +275,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('[enableSharing] Starting for game:', game.id)
+      console.log('[enableSharing] Game players:', game.players?.length || 0)
 
       // Sync game to Supabase first (this ensures the game exists in DB)
-      const syncSuccess = await syncActiveGameToSupabase(game)
+      const syncResult = await syncActiveGameToSupabase(game)
 
-      if (!syncSuccess) {
-        console.error('[enableSharing] Sync failed for game:', game.id)
+      if (!syncResult.success) {
+        console.error('[enableSharing] Sync failed for game:', game.id, syncResult.error)
         return false
       }
 
@@ -292,7 +293,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       console.log('[enableSharing] Success! Game is now shareable:', game.id)
       return true
     } catch (error) {
-      console.error('[enableSharing] Error:', error)
+      console.error('[enableSharing] Error:', error instanceof Error ? error.message : error)
       return false
     }
   }, [game, isSharingEnabled])

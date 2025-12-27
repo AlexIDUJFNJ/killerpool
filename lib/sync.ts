@@ -236,15 +236,21 @@ export async function autoSyncGame(game: Game): Promise<void> {
  * Sync an active game to Supabase for sharing/spectator mode
  * Unlike syncGameToSupabase, this works for games of any status
  */
-export async function syncActiveGameToSupabase(game: Game): Promise<boolean> {
+export async function syncActiveGameToSupabase(game: Game): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = createClient()
 
     // Check if user is authenticated
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError) {
+      console.warn('[syncActiveGame] Auth check failed (continuing as anonymous):', authError.message)
+    }
 
     console.log('[syncActiveGame] Starting sync for game:', game.id)
     console.log('[syncActiveGame] User:', user?.id || 'anonymous')
+    console.log('[syncActiveGame] Game status:', game.status)
+    console.log('[syncActiveGame] Players count:', game.players?.length || 0)
 
     // Ensure user profile exists before syncing game
     if (user) {
@@ -291,14 +297,17 @@ export async function syncActiveGameToSupabase(game: Game): Promise<boolean> {
       .select()
 
     if (error) {
-      console.error('[syncActiveGame] Failed to sync:', error.message, error.details, error.hint)
-      return false
+      const errorMsg = `${error.message}${error.details ? ` - ${error.details}` : ''}${error.hint ? ` (Hint: ${error.hint})` : ''}`
+      console.error('[syncActiveGame] Failed to sync:', errorMsg)
+      console.error('[syncActiveGame] Error code:', error.code)
+      return { success: false, error: errorMsg }
     }
 
     console.log('[syncActiveGame] Success! Synced game:', data)
-    return true
+    return { success: true }
   } catch (error) {
-    console.error('[syncActiveGame] Error:', error)
-    return false
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[syncActiveGame] Error:', errorMsg)
+    return { success: false, error: errorMsg }
   }
 }
