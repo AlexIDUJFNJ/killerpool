@@ -41,28 +41,40 @@ export default function GamePage() {
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
+  const hasInitializedRef = React.useRef(false)
 
-  // Load game from Supabase if not in context
+  // Load game from Supabase if not in context (only once on mount)
   React.useEffect(() => {
-    const loadGame = async () => {
-      // If we already have a game with correct ID, no need to load
-      if (game && game.id === gameId) {
-        if (game.status === 'completed') {
-          setShowWinner(true)
-          haptics.victory()
-        }
-        return
+    // Skip if already initialized for this gameId
+    if (hasInitializedRef.current) {
+      return
+    }
+
+    // If we already have a game with correct ID (local game), no need to load
+    if (game && game.id === gameId) {
+      hasInitializedRef.current = true
+      if (game.status === 'completed') {
+        setShowWinner(true)
+        haptics.victory()
       }
+      return
+    }
+
+    const loadGame = async () => {
+      // Mark as initialized to prevent duplicate loads
+      hasInitializedRef.current = true
 
       // Try to load from Supabase
       setIsLoadingFromSupabase(true)
       setLoadError(null)
 
       try {
+        console.log('[GamePage] Loading game from Supabase:', gameId)
         const loadedGame = await loadGameFromSupabase(gameId)
 
         if (loadedGame) {
           // Set as spectator game (will subscribe to realtime)
+          console.log('[GamePage] Setting spectator game')
           setSpectatorGame(loadedGame)
 
           if (loadedGame.status === 'completed') {
@@ -87,14 +99,17 @@ export default function GamePage() {
     }
 
     loadGame()
+  }, [gameId, game, loadGameFromSupabase, setSpectatorGame, router])
 
-    // Cleanup on unmount
+  // Cleanup on unmount
+  React.useEffect(() => {
     return () => {
       if (isSpectatorMode) {
+        console.log('[GamePage] Cleanup: clearing spectator game')
         clearSpectatorGame()
       }
     }
-  }, [gameId, game, loadGameFromSupabase, setSpectatorGame, clearSpectatorGame, router, isSpectatorMode])
+  }, [isSpectatorMode, clearSpectatorGame])
 
   // Check authentication status
   React.useEffect(() => {

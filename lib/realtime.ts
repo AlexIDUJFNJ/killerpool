@@ -44,6 +44,7 @@ export function subscribeToGame(
             players: newData.participants,
             winnerId: newData.winner_id,
             history: newData.history,
+            currentPlayerIndex: newData.current_player_index ?? 0,
           }
 
           console.log('[subscribeToGame] Calling onUpdate with:', gameUpdate)

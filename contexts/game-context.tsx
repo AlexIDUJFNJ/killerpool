@@ -199,15 +199,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Convert database format to Game format
+      // Use current_player_index from DB, fallback to calculating from players
+      const currentPlayerIndex = gameData.current_player_index ??
+        (gameData.participants?.findIndex((p: any) => !p.eliminated && p.lives > 0) ?? 0)
+
       const loadedGame: Game = {
         id: gameData.id,
         createdAt: gameData.created_at,
         updatedAt: gameData.updated_at,
         status: gameData.status,
         players: gameData.participants,
-        currentPlayerIndex: gameData.participants?.findIndex((p: any) =>
-          !p.eliminated && p.lives > 0
-        ) ?? 0,
+        currentPlayerIndex,
         winnerId: gameData.winner_id,
         rulesetId: gameData.ruleset_id,
         ruleset: {

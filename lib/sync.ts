@@ -284,6 +284,7 @@ export async function syncActiveGameToSupabase(game: Game): Promise<{ success: b
       ruleset_id: isValidUUID ? game.rulesetId : null,
       history: game.history,
       created_by: user?.id || null,
+      current_player_index: game.currentPlayerIndex,
     }
 
     console.log('[syncActiveGame] Upserting game data:', JSON.stringify(gameData, null, 2))
