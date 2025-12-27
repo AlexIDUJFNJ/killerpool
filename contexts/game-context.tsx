@@ -44,6 +44,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [isSharingEnabled, setIsSharingEnabled] = React.useState(false)
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
   const spectatorChannelRef = React.useRef<RealtimeChannel | null>(null)
+  // Track completed games that have already been synced to prevent infinite loops
+  const syncedCompletedGamesRef = React.useRef<Set<string>>(new Set())
 
   // Sync game for realtime when enabled
   const { isSynced } = useSyncGameForRealtime(realtimeEnabled ? game : null)
@@ -99,8 +101,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (game && !isSpectatorMode) {
       saveCurrentGame(game)
 
-      // If game is completed, save to history and sync to Supabase
+      // If game is completed, save to history and sync to Supabase (only once per game)
       if (game.status === 'completed') {
+        // Check if we've already synced this completed game to prevent infinite loops
+        if (syncedCompletedGamesRef.current.has(game.id)) {
+          console.log('[useEffect] Game already synced, skipping:', game.id)
+          return
+        }
+
+        // Mark this game as synced
+        syncedCompletedGamesRef.current.add(game.id)
+        console.log('[useEffect] Syncing completed game:', game.id)
+
         saveToHistory(game)
         // Auto-sync to Supabase in background
         autoSyncGame(game).catch((error) => {
