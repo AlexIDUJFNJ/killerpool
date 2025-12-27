@@ -32,6 +32,16 @@ export function useRealtimeGame(
   const [isAvailable, setIsAvailable] = useState(false)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
+  // Use refs for callbacks to avoid re-subscribing on every render
+  const onGameUpdateRef = useRef(onGameUpdate)
+  const onNewActionRef = useRef(onNewAction)
+
+  // Keep refs up to date
+  useEffect(() => {
+    onGameUpdateRef.current = onGameUpdate
+    onNewActionRef.current = onNewAction
+  }, [onGameUpdate, onNewAction])
+
   useEffect(() => {
     // Check if realtime is available
     isRealtimeAvailable().then(setIsAvailable)
@@ -42,17 +52,22 @@ export function useRealtimeGame(
       return
     }
 
+    // Don't re-subscribe if we already have a channel for this game
+    if (channelRef.current) {
+      return
+    }
+
     console.log('Setting up realtime subscription for game:', gameId)
 
     const channel = subscribeToGame(
       gameId,
       (gameUpdate) => {
         console.log('Received game update:', gameUpdate)
-        onGameUpdate?.(gameUpdate)
+        onGameUpdateRef.current?.(gameUpdate)
       },
       (action) => {
         console.log('Received new action:', action)
-        onNewAction?.(action)
+        onNewActionRef.current?.(action)
       }
     )
 
@@ -61,7 +76,7 @@ export function useRealtimeGame(
       setIsConnected(true)
     }
 
-    // Cleanup on unmount
+    // Cleanup on unmount or when gameId/enabled changes
     return () => {
       if (channelRef.current) {
         console.log('Cleaning up realtime subscription')
@@ -70,7 +85,7 @@ export function useRealtimeGame(
         setIsConnected(false)
       }
     }
-  }, [gameId, enabled, isAvailable, onGameUpdate, onNewAction])
+  }, [gameId, enabled, isAvailable]) // Removed callback dependencies
 
   return {
     isConnected,
