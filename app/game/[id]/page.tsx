@@ -8,15 +8,16 @@ import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
-import { getCurrentPlayer, getActivePlayers, getNextPlayers } from '@/lib/game-logic'
+import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode, Trophy, LogIn } from 'lucide-react'
+import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { saveRematchPlayers } from '@/lib/storage'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Eye } from 'lucide-react'
 
 export default function GamePage() {
@@ -32,12 +33,15 @@ export default function GamePage() {
     currentUserId,
     loadGameFromSupabase,
     setSpectatorGame,
-    clearSpectatorGame
+    clearSpectatorGame,
+    addPlayer
   } = useGame()
   const [showWinner, setShowWinner] = React.useState(false)
   const [showAllPlayers, setShowAllPlayers] = React.useState(false)
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
+  const [showAddPlayer, setShowAddPlayer] = React.useState(false)
+  const [newPlayerName, setNewPlayerName] = React.useState('')
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -475,19 +479,84 @@ export default function GamePage() {
       {/* Bottom Sheet - All Players */}
       <BottomSheet
         isOpen={showAllPlayers}
-        onClose={() => setShowAllPlayers(false)}
+        onClose={() => {
+          setShowAllPlayers(false)
+          setShowAddPlayer(false)
+          setNewPlayerName('')
+        }}
         title="All Players"
       >
         <div className="p-4 sm:p-6 space-y-2 sm:space-y-3">
-          {game.players.map((player, index) => (
-            <PlayerCard
-              key={player.id}
-              {...player}
-              variant="compact"
-              showPosition={index + 1}
-              isActive={currentPlayer?.id === player.id}
-              maxLives={game.ruleset.params.max_lives}
-            />
+          {/* Add Player Button/Form - only for non-spectators during active game */}
+          {!isSpectatorMode && game.status === 'active' && (
+            <div className="mb-4">
+              {showAddPlayer ? (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Player name"
+                    value={newPlayerName}
+                    onChange={(e) => setNewPlayerName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newPlayerName.trim()) {
+                        const avatars = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
+                        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
+                        addPlayer(newPlayerName.trim(), randomAvatar)
+                        setNewPlayerName('')
+                        setShowAddPlayer(false)
+                        haptics.tap()
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    onClick={() => {
+                      if (newPlayerName.trim()) {
+                        const avatars = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
+                        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
+                        addPlayer(newPlayerName.trim(), randomAvatar)
+                        setNewPlayerName('')
+                        setShowAddPlayer(false)
+                        haptics.tap()
+                      }
+                    }}
+                    disabled={!newPlayerName.trim()}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setShowAddPlayer(false)
+                      setNewPlayerName('')
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setShowAddPlayer(true)}
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Player
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Players list - sorted: active first, eliminated last */}
+          {getSortedPlayers(game).map((player, index) => (
+            <div key={player.id} className={player.eliminated ? 'opacity-50' : ''}>
+              <PlayerCard
+                {...player}
+                variant="compact"
+                showPosition={index + 1}
+                isActive={currentPlayer?.id === player.id}
+                maxLives={game.ruleset.params.max_lives}
+              />
+            </div>
           ))}
         </div>
       </BottomSheet>

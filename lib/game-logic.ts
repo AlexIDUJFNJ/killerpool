@@ -222,6 +222,50 @@ export function undoLastAction(game: Game): Game {
 }
 
 /**
+ * Add a new player to an active game
+ * The new player gets the minimum lives among all active players
+ */
+export function addPlayerToGame(
+  game: Game,
+  playerName: string,
+  playerAvatar: string
+): Game {
+  if (game.status !== 'active') {
+    throw new Error('Cannot add player to a non-active game')
+  }
+
+  const activePlayers = getActivePlayers(game)
+
+  if (activePlayers.length === 0) {
+    throw new Error('No active players in game')
+  }
+
+  // Get minimum lives among active players
+  const minLives = Math.min(...activePlayers.map(p => p.lives))
+
+  // Create new player with minimum lives
+  const newPlayer = createPlayer(playerName, playerAvatar, minLives, null)
+
+  // Add player to the end of the players array
+  const updatedPlayers = [...game.players, newPlayer]
+
+  return {
+    ...game,
+    players: updatedPlayers,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Get players sorted by status (active first, eliminated last)
+ */
+export function getSortedPlayers(game: Game): Player[] {
+  const activePlayers = game.players.filter(p => !p.eliminated)
+  const eliminatedPlayers = game.players.filter(p => p.eliminated)
+  return [...activePlayers, ...eliminatedPlayers]
+}
+
+/**
  * Calculate game statistics
  */
 export function calculateStats(game: Game) {

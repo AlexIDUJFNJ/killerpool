@@ -8,7 +8,7 @@
 
 import * as React from 'react'
 import { Game, GameAction } from '@/lib/types'
-import { applyAction, undoLastAction, getCurrentPlayer } from '@/lib/game-logic'
+import { applyAction, undoLastAction, getCurrentPlayer, addPlayerToGame } from '@/lib/game-logic'
 import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
 import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
 import { useRealtimeGame, useSyncGameForRealtime } from '@/hooks/use-realtime-game'
@@ -32,6 +32,7 @@ interface GameContextValue {
   setSpectatorGame: (game: Game) => void
   clearSpectatorGame: () => void
   enableSharing: () => Promise<boolean>
+  addPlayer: (name: string, avatar: string) => void
 }
 
 const GameContext = React.createContext<GameContextValue | undefined>(undefined)
@@ -171,6 +172,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       syncActiveGameToSupabase(updatedGame).catch((error) => {
         console.error('[undoAction] Failed to sync game:', error)
       })
+    }
+  }, [game, isSharingEnabled])
+
+  const addPlayer = React.useCallback((name: string, avatar: string) => {
+    if (!game || game.status !== 'active') return
+
+    try {
+      const updatedGame = addPlayerToGame(game, name, avatar)
+      setGame(updatedGame)
+
+      // Sync to Supabase if sharing is enabled
+      if (isSharingEnabled) {
+        console.log('[addPlayer] Syncing game state to Supabase for spectators')
+        syncActiveGameToSupabase(updatedGame).catch((error) => {
+          console.error('[addPlayer] Failed to sync game:', error)
+        })
+      }
+    } catch (error) {
+      console.error('Failed to add player:', error)
     }
   }, [game, isSharingEnabled])
 
@@ -353,6 +373,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setSpectatorGame,
     clearSpectatorGame,
     enableSharing,
+    addPlayer,
   }
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>
