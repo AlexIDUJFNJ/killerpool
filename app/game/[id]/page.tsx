@@ -119,6 +119,15 @@ export default function GamePage() {
     })
   }, [])
 
+  // Watch for game completion and show winner screen
+  React.useEffect(() => {
+    if (game && game.status === 'completed' && !showWinner) {
+      console.log('[GamePage] Game completed, showing winner screen')
+      setShowWinner(true)
+      haptics.victory()
+    }
+  }, [game?.status, game?.id, showWinner])
+
   // Show loading state
   if (isLoadingFromSupabase) {
     return (
