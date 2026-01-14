@@ -1,0 +1,45 @@
+{
+  "name": "Killerpool - Modern Killer Pool Game",
+  "short_name": "Killerpool",
+  "description": "PWA приложение для управления игрой в Killer Pool (бильярд)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f0d",
+  "theme_color": "#10b981",
+  "orientation": "portrait",
+  "scope": "/",
+  "categories": ["games", "entertainment", "sports"],
+  "lang": "ru",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
