@@ -336,26 +336,26 @@ export default function GamePage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* QR/Share button - available for both admin and spectators */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowInviteModal(true)}
+              title="Share game"
+            >
+              <QrCode className="h-5 w-5" />
+            </Button>
+            {/* Undo button - only for admin (non-spectator) */}
             {!isSpectatorMode && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowInviteModal(true)}
-                  title="Invite players"
-                >
-                  <QrCode className="h-5 w-5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleUndo}
-                  disabled={game.history.length === 0}
-                  title="Undo last action"
-                >
-                  <RotateCcw className="h-5 w-5" />
-                </Button>
-              </>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleUndo}
+                disabled={game.history.length === 0}
+                title="Undo last action"
+              >
+                <RotateCcw className="h-5 w-5" />
+              </Button>
             )}
             <Button
               variant="ghost"

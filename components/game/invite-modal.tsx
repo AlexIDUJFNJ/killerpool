@@ -16,7 +16,7 @@ interface InviteModalProps {
 }
 
 export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModalProps) {
-  const { enableSharing, isSharingEnabled } = useGame()
+  const { enableSharing, isSharingEnabled, isSpectatorMode } = useGame()
   const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>('')
   const [copied, setCopied] = React.useState(false)
   const [isSharing, setIsSharing] = React.useState(false)
@@ -25,8 +25,9 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   const inviteLink = generateInviteLink(gameId)
 
   // Enable sharing when modal opens (syncs game to Supabase)
+  // Skip for spectators - the game is already in Supabase
   React.useEffect(() => {
-    if (open && !isSharingEnabled) {
+    if (open && !isSharingEnabled && !isSpectatorMode) {
       console.log('[InviteModal] Opening, attempting to enable sharing...')
       setIsSyncing(true)
       setSyncError(null)
@@ -46,7 +47,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
           setIsSyncing(false)
         })
     }
-  }, [open, isSharingEnabled, enableSharing])
+  }, [open, isSharingEnabled, enableSharing, isSpectatorMode])
 
   React.useEffect(() => {
     if (open) {
@@ -113,10 +114,15 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
             </div>
           )}
 
-          {isSharingEnabled && !isSyncing && (
+          {/* For spectators, always show that sharing is active (game is already in Supabase) */}
+          {(isSharingEnabled || isSpectatorMode) && !isSyncing && (
             <div className="flex items-center gap-2 p-3 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
               <Check className="h-4 w-4" />
-              <span className="text-sm">Live sharing enabled! Spectators will see real-time updates.</span>
+              <span className="text-sm">
+                {isSpectatorMode
+                  ? 'Share this link to let others watch the game live!'
+                  : 'Live sharing enabled! Spectators will see real-time updates.'}
+              </span>
             </div>
           )}
 
