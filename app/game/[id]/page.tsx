@@ -136,10 +136,12 @@ export default function GamePage() {
   }, [])
 
   // Watch for pot_black actions (spectator mode — detect from realtime updates)
+  // Only trigger when history grows by exactly 1 (a single new realtime action),
+  // not on initial load where history jumps from 0 to N all at once.
   React.useEffect(() => {
     if (!game) return
     const historyLen = game.history.length
-    if (historyLen > lastHistoryLengthRef.current) {
+    if (historyLen === lastHistoryLengthRef.current + 1) {
       const lastAction = game.history[historyLen - 1]
       if (lastAction?.action === 'pot_black' && isSpectatorMode) {
         setShowBlackCelebration(true)
