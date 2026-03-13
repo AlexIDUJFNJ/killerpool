@@ -26,6 +26,7 @@ export default function GamePage() {
   const gameId = params.id as string
   const {
     game,
+    isLoading,
     performAction,
     undoAction,
     endGame,
@@ -48,9 +49,16 @@ export default function GamePage() {
   const hasInitializedRef = React.useRef(false)
 
   // Load game from Supabase if not in context (only once on mount)
+  // IMPORTANT: Wait for context to finish loading from localStorage before
+  // attempting Supabase load, to prevent the host from entering spectator mode.
   React.useEffect(() => {
     // Skip if already initialized for this gameId
     if (hasInitializedRef.current) {
+      return
+    }
+
+    // Wait for game context to finish loading from localStorage
+    if (isLoading) {
       return
     }
 
@@ -68,12 +76,12 @@ export default function GamePage() {
       // Mark as initialized to prevent duplicate loads
       hasInitializedRef.current = true
 
-      // Try to load from Supabase
+      // Try to load from Supabase (this path is for spectators only)
       setIsLoadingFromSupabase(true)
       setLoadError(null)
 
       try {
-        console.log('[GamePage] Loading game from Supabase:', gameId)
+        console.log('[GamePage] Game not found locally, loading from Supabase:', gameId)
         const loadedGame = await loadGameFromSupabase(gameId)
 
         if (loadedGame) {
@@ -103,7 +111,7 @@ export default function GamePage() {
     }
 
     loadGame()
-  }, [gameId, game, loadGameFromSupabase, setSpectatorGame, router])
+  }, [gameId, game, isLoading, loadGameFromSupabase, setSpectatorGame, router])
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -133,7 +141,7 @@ export default function GamePage() {
   }, [game?.status, game?.id, showWinner])
 
   // Show loading state
-  if (isLoadingFromSupabase) {
+  if (isLoading || isLoadingFromSupabase) {
     return (
       <main className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
