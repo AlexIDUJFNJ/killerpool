@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { ActionButtons } from '../action-buttons';
 
 // Mock framer-motion to avoid animation issues in tests
-jest.mock('framer-motion', () => ({
+jest.mock('motion/react', () => ({
   motion: {
     div: ({ children, whileTap, animate, transition, ...props }: any) => (
       <div {...props}>{children}</div>

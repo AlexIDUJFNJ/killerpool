@@ -26,7 +26,7 @@ describe('Card Components', () => {
       render(<Card data-testid="card">Content</Card>);
 
       const card = screen.getByTestId('card');
-      expect(card).toHaveClass('rounded-xl', 'border', 'bg-card', 'shadow');
+      expect(card).toHaveClass('rounded-xl', 'border', 'bg-card', 'shadow-sm');
     });
 
     it('should accept custom className', () => {

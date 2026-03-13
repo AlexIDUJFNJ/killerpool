@@ -2,12 +2,12 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { type NextRequest } from 'next/server'
 
 /**
- * Next.js Middleware
+ * Next.js Proxy
  *
  * Runs before each request to update the user's session from Supabase.
  * This ensures authentication state is always fresh.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return await updateSession(request)
 }
 

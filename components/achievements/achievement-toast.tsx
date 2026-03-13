@@ -1,6 +1,6 @@
 'use client'
 
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence } from 'motion/react'
 import { AchievementType } from '@/lib/types'
 import { getAchievementDefinition, getRarityColor } from '@/lib/achievements'
 import { cn } from '@/lib/utils'

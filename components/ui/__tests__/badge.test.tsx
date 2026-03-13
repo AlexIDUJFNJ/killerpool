@@ -34,7 +34,7 @@ describe('Badge', () => {
       expect(badge).toHaveClass('bg-destructive', 'text-destructive-foreground');
     });
 
-    it('should render outline variant', () => {
+    it('should render outline-solid variant', () => {
       render(<Badge variant="outline">Outline</Badge>);
 
       const badge = screen.getByText(/outline/i);

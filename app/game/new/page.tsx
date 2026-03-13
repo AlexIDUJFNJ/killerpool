@@ -10,7 +10,7 @@ import { createGame } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { getGuestId, getPlayerNamesSuggestions, loadRematchPlayers } from '@/lib/storage'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { Plus, Trash2, ArrowLeft, Play, Shuffle } from 'lucide-react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
@@ -200,7 +200,7 @@ export default function NewGamePage() {
                           // Delay to allow click on suggestion
                           setTimeout(() => setActiveSuggestionIndex(null), 200)
                         }}
-                        className="w-full bg-background border border-input rounded-md px-3 py-3 text-base sm:text-lg sm:px-4 focus:outline-none focus:ring-2 focus:ring-ring"
+                        className="w-full bg-background border border-input rounded-md px-3 py-3 text-base sm:text-lg sm:px-4 focus:outline-hidden focus:ring-2 focus:ring-ring"
                         maxLength={20}
                       />
 

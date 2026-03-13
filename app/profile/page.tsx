@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { User, LogOut, Save, ArrowLeft, Mail, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -145,7 +145,7 @@ export default function ProfilePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Animated background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
+      <div className="absolute inset-0 bg-linear-to-br from-background via-background to-primary/5" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.1),transparent)]" />
 
       <div className="relative z-10 w-full max-w-2xl">
@@ -163,7 +163,7 @@ export default function ProfilePage() {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Home
           </Link>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-emerald-400 via-green-500 to-emerald-600 bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold bg-linear-to-r from-emerald-400 via-green-500 to-emerald-600 bg-clip-text text-transparent">
             Profile Settings
           </h1>
           <p className="text-muted-foreground mt-2">
@@ -190,7 +190,7 @@ export default function ProfilePage() {
               {/* Avatar */}
               <div className="flex items-center gap-4">
                 <Avatar className="h-20 w-20 border-2 border-primary/20">
-                  <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-green-600 text-white text-2xl font-bold">
+                  <AvatarFallback className="bg-linear-to-br from-emerald-400 to-green-600 text-white text-2xl font-bold">
                     {userInitials}
                   </AvatarFallback>
                 </Avatar>

@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useGame } from '@/contexts/game-context'
-import { motion } from 'framer-motion'
-import { Play, History, Trophy, Users, UserCircle, LogIn, Award } from 'lucide-react'
+import { motion } from 'motion/react'
+import { Play, History, Trophy, Users, CircleUser, LogIn, Award } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 
@@ -47,7 +47,7 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       {/* Animated background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
+      <div className="absolute inset-0 bg-linear-to-br from-background via-background to-primary/5" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.1),transparent)]" />
 
       <div className="relative z-10 w-full max-w-2xl">
@@ -62,7 +62,7 @@ export default function Home() {
             user ? (
               <Link href="/profile">
                 <Button variant="outline" size="lg">
-                  <UserCircle className="mr-2 h-5 w-5" />
+                  <CircleUser className="mr-2 h-5 w-5" />
                   Profile
                 </Button>
               </Link>
@@ -84,7 +84,7 @@ export default function Home() {
           transition={{ duration: 0.5 }}
           className="text-center mb-12"
         >
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold bg-gradient-to-r from-emerald-400 via-green-500 to-emerald-600 bg-clip-text text-transparent mb-4">
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold bg-linear-to-r from-emerald-400 via-green-500 to-emerald-600 bg-clip-text text-transparent mb-4">
             Killerpool
           </h1>
           <p className="text-base sm:text-xl text-muted-foreground">

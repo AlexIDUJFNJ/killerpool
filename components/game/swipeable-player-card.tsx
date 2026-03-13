@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion'
+import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -172,7 +172,7 @@ export function SwipeablePlayerCard({
         <Card className="overflow-hidden border-2 border-primary/20 shadow-2xl">
           <CardContent className="p-0">
             {/* Card Content */}
-            <div className="relative bg-gradient-to-br from-background via-background to-primary/5 p-6 sm:p-8">
+            <div className="relative bg-linear-to-br from-background via-background to-primary/5 p-6 sm:p-8">
               {/* Active Indicator */}
               {swipeDirection && (
                 <motion.div

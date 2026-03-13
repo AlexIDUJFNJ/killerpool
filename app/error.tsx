@@ -21,7 +21,7 @@ export default function Error({
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Animated background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-destructive/5" />
+      <div className="absolute inset-0 bg-linear-to-br from-background via-background to-destructive/5" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(239,68,68,0.1),transparent)]" />
 
       <div className="relative z-10 w-full max-w-md">

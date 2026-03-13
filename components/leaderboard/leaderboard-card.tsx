@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { Trophy, TrendingUp } from 'lucide-react'
 
 export interface LeaderboardEntry {
@@ -61,7 +61,7 @@ export function LeaderboardCard({ entry, className }: LeaderboardCardProps) {
         <CardContent className="p-4">
           <div className="flex items-center gap-4">
             {/* Rank Number / Medal */}
-            <div className="flex-shrink-0 w-12 flex items-center justify-center">
+            <div className="shrink-0 w-12 flex items-center justify-center">
               {isTopThree ? (
                 <Trophy className={cn('h-8 w-8', getMedalColor(rank))} />
               ) : (
@@ -115,7 +115,7 @@ export function LeaderboardCard({ entry, className }: LeaderboardCardProps) {
             </div>
 
             {/* Win Rate Badge */}
-            <div className="flex-shrink-0 text-right">
+            <div className="shrink-0 text-right">
               <Badge
                 variant="secondary"
                 className={cn(
@@ -135,9 +135,9 @@ export function LeaderboardCard({ entry, className }: LeaderboardCardProps) {
             <motion.div
               className={cn(
                 'absolute top-0 left-0 h-full w-1',
-                rank === 1 && 'bg-gradient-to-b from-yellow-500 to-yellow-600',
-                rank === 2 && 'bg-gradient-to-b from-gray-400 to-gray-500',
-                rank === 3 && 'bg-gradient-to-b from-amber-600 to-amber-700'
+                rank === 1 && 'bg-linear-to-b from-yellow-500 to-yellow-600',
+                rank === 2 && 'bg-linear-to-b from-gray-400 to-gray-500',
+                rank === 3 && 'bg-linear-to-b from-amber-600 to-amber-700'
               )}
               layoutId={`rank-indicator-${rank}`}
             />

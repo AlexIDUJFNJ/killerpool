@@ -1,6 +1,6 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { AchievementDefinition } from '@/lib/types'
 import { getRarityColor, getRarityBgColor, formatUnlockDate } from '@/lib/achievements'
 import { cn } from '@/lib/utils'

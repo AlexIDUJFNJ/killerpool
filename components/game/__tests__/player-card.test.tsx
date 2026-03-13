@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react';
 import { PlayerCard } from '../player-card';
 
 // Mock framer-motion to avoid animation issues in tests
-jest.mock('framer-motion', () => ({
+jest.mock('motion/react', () => ({
   motion: {
     div: ({ children, initial, animate, transition, layoutId, whileTap, ...props }: any) => (
       <div {...props}>{children}</div>
@@ -75,7 +75,7 @@ describe('PlayerCard', () => {
       expect(screen.queryByText(/^active$/i)).not.toBeInTheDocument();
     });
 
-    it('should apply ring style when active', () => {
+    it('should apply ring-3 style when active', () => {
       const { container } = render(<PlayerCard {...defaultProps} isActive />);
 
       const card = container.querySelector('.ring-2');

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { ArrowLeft, Trophy, TrendingUp, Activity, Award, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -221,7 +221,7 @@ export default function StatsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <Card className="mb-4 sm:mb-6 bg-gradient-to-br from-primary/20 to-primary/5 border-primary/20">
+          <Card className="mb-4 sm:mb-6 bg-linear-to-br from-primary/20 to-primary/5 border-primary/20">
             <CardContent className="pt-4 sm:pt-6">
               <div className="text-center">
                 <Trophy className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-primary" />

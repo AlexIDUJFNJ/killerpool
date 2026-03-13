@@ -10,8 +10,8 @@ import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
 import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RotateCcw, Home, Play, Users2, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
+import { motion, AnimatePresence } from 'motion/react'
+import { ArrowLeft, RotateCcw, Home, Play, UsersRound, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -230,7 +230,7 @@ export default function GamePage() {
 
     return (
       <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 via-background to-background" />
+        <div className="absolute inset-0 bg-linear-to-br from-emerald-500/20 via-background to-background" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(16,185,129,0.2),transparent)]" />
 
         <motion.div
@@ -245,7 +245,7 @@ export default function GamePage() {
             className="mb-8"
           >
             <div className="text-6xl sm:text-8xl mb-4">{winner?.avatar || '🏆'}</div>
-            <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent mb-2">
+            <h1 className="text-2xl sm:text-4xl font-bold bg-linear-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent mb-2">
               {winner?.name} Wins!
             </h1>
             <p className="text-sm sm:text-base text-muted-foreground">
@@ -261,7 +261,7 @@ export default function GamePage() {
               transition={{ delay: 0.3 }}
               className="mb-6"
             >
-              <Card className="border-amber-500/50 bg-gradient-to-br from-amber-500/10 to-amber-600/5">
+              <Card className="border-amber-500/50 bg-linear-to-br from-amber-500/10 to-amber-600/5">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-start gap-3 sm:gap-4">
                     <div className="shrink-0 mt-0.5">
@@ -292,7 +292,7 @@ export default function GamePage() {
               transition={{ delay: 0.3 }}
               className="mb-6"
             >
-              <Card className="border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5">
+              <Card className="border-emerald-500/50 bg-linear-to-br from-emerald-500/10 to-emerald-600/5">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <Trophy className="h-5 w-5 text-emerald-500" />
@@ -325,9 +325,9 @@ export default function GamePage() {
 
   // Game Screen
   return (
-    <main className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 overflow-x-hidden">
+    <main className="min-h-screen bg-linear-to-br from-background via-background to-primary/5 overflow-x-hidden">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/60 border-b">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <Link href="/">
@@ -371,7 +371,7 @@ export default function GamePage() {
               onClick={() => setShowAllPlayers(true)}
               title="View all players"
             >
-              <Users2 className="h-5 w-5" />
+              <UsersRound className="h-5 w-5" />
             </Button>
           </div>
         </div>

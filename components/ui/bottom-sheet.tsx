@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { motion, AnimatePresence, PanInfo } from 'framer-motion'
+import { motion, AnimatePresence, PanInfo } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 import { Button } from './button'
@@ -43,7 +43,7 @@ export function BottomSheet({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
+            className="fixed inset-0 bg-background/80 backdrop-blur-xs z-40"
           />
 
           {/* Bottom Sheet */}

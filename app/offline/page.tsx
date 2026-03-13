@@ -42,7 +42,7 @@ export default function OfflinePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-b from-gray-950 via-gray-900 to-gray-950 flex items-center justify-center p-4">
       <div className="max-w-md w-full text-center space-y-8">
         {/* Icon */}
         <div className="flex justify-center">
@@ -78,7 +78,7 @@ export default function OfflinePage() {
         {!isOnline && (
           <button
             onClick={handleRetry}
-            className="group relative w-full bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/50 hover:scale-105 active:scale-95"
+            className="group relative w-full bg-linear-to-r from-emerald-600 to-emerald-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/50 hover:scale-105 active:scale-95"
           >
             <span className="flex items-center justify-center gap-3">
               <RefreshCw className="w-5 h-5" />
@@ -88,7 +88,7 @@ export default function OfflinePage() {
         )}
 
         {/* Offline features notice */}
-        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 space-y-3">
+        <div className="bg-gray-800/30 backdrop-blur-xs border border-gray-700/50 rounded-xl p-6 space-y-3">
           <h3 className="text-white font-semibold">Офлайн режим</h3>
           <p className="text-gray-400 text-sm">
             Вы можете продолжить играть в локальном режиме. Игры будут синхронизированы

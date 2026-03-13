@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 
 export interface PlayerCardProps {
   id: string
@@ -94,7 +94,7 @@ export function PlayerCard({
             <div className="flex items-center gap-3">
               {/* Position Number */}
               {showPosition !== undefined && (
-                <div className="flex-shrink-0 w-6 text-center">
+                <div className="shrink-0 w-6 text-center">
                   <span className="text-sm font-bold text-muted-foreground">
                     {showPosition}.
                   </span>

@@ -6,7 +6,7 @@ import { LeaderboardCard, LeaderboardEntry } from './leaderboard-card'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Trophy, TrendingUp, LogIn, Crown, Target, Star } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
 
@@ -139,7 +139,7 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
                 transition={{ delay: 0.2 }}
                 className="space-y-4"
               >
-                <h3 className="text-2xl font-bold bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+                <h3 className="text-2xl font-bold bg-linear-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent">
                   The Leaderboard Awaits!
                 </h3>
 

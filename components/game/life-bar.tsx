@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 
 export interface LifeBarProps {
   lives: number
@@ -62,7 +62,7 @@ export function LifeBar({
       )}
       
       {/* Shine effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent" />
     </div>
   )
 }

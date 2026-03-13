@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { loadGameHistory, deleteGameFromHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check, Search, Filter } from 'lucide-react'
 import { mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
 

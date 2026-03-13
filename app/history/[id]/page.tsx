@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
 import { createClient } from '@/lib/supabase/client'
 import { Game } from '@/lib/types'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import {
   ArrowLeft,
   Trophy,
@@ -284,7 +284,7 @@ export default function GameDetailsPage() {
             animate={{ opacity: 1, y: 0 }}
             className="mb-6"
           >
-            <Card className="border-2 border-green-500/50 bg-gradient-to-br from-green-500/10 to-transparent">
+            <Card className="border-2 border-green-500/50 bg-linear-to-br from-green-500/10 to-transparent">
               <CardHeader>
                 <CardTitle className="flex items-center gap-3">
                   <Trophy className="h-8 w-8 text-yellow-500" />
@@ -441,10 +441,10 @@ export default function GameDetailsPage() {
                     transition={{ delay: Math.min(index * 0.02, 0.5) }}
                     className={`flex items-center gap-3 p-3 rounded-lg border ${getActionColor(entry.action)}`}
                   >
-                    <div className="flex-shrink-0">
+                    <div className="shrink-0">
                       {getActionIcon(entry.action)}
                     </div>
-                    <div className="flex-grow">
+                    <div className="grow">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{entry.playerName}</span>
                         <span className="text-sm text-muted-foreground">•</span>
@@ -456,7 +456,7 @@ export default function GameDetailsPage() {
                         {new Date(entry.timestamp).toLocaleTimeString()}
                       </div>
                     </div>
-                    <div className="flex-shrink-0 text-sm text-muted-foreground">
+                    <div className="shrink-0 text-sm text-muted-foreground">
                       #{game.history.length - index}
                     </div>
                   </motion.div>
