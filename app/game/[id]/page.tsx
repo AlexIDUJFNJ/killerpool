@@ -382,6 +382,13 @@ export default function GamePage() {
             <div className="flex items-center justify-center gap-2 text-sm text-amber-600 dark:text-amber-400">
               <Eye className="h-4 w-4" />
               <span>You are watching this game</span>
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 transition-colors text-xs font-medium"
+              >
+                <QrCode className="h-3.5 w-3.5" />
+                Share
+              </button>
             </div>
           </div>
         )}
