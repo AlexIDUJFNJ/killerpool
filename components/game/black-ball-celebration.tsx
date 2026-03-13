@@ -10,54 +10,94 @@ const PHRASES = [
   '¡BONUS!',
   '¡OLÉ!',
   '¡VAMOS!',
+  '+1 LIFE',
+  '🎱',
+  '🔥',
 ]
 
-interface Particle {
+const COLORS = [
+  '#f43f5e',
+  '#f59e0b',
+  '#10b981',
+  '#3b82f6',
+  '#a855f7',
+  '#ec4899',
+  '#ef4444',
+  '#eab308',
+]
+
+interface FlyingText {
+  id: number
+  text: string
+  x: number
+  y: number
+  rotation: number
+  scale: number
+  color: string
+  delay: number
+  dx: number
+  dy: number
+}
+
+function generateTexts(): FlyingText[] {
+  const shuffled = [...PHRASES].sort(() => Math.random() - 0.5)
+  return shuffled.map((text, i) => ({
+    id: i,
+    text,
+    x: 10 + Math.random() * 80,
+    y: 15 + Math.random() * 70,
+    rotation: -30 + Math.random() * 60,
+    scale: 0.7 + Math.random() * 0.8,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    delay: i * 0.08,
+    dx: (Math.random() - 0.5) * 60,
+    dy: (Math.random() - 0.5) * 40,
+  }))
+}
+
+interface Spark {
   id: number
   x: number
   y: number
-  color: string
   size: number
+  color: string
   angle: number
   speed: number
   delay: number
 }
 
-const COLORS = [
-  '#f43f5e', // rose
-  '#f59e0b', // amber
-  '#10b981', // emerald
-  '#3b82f6', // blue
-  '#a855f7', // purple
-  '#ec4899', // pink
-  '#ef4444', // red
-  '#eab308', // yellow
-]
-
-function createParticles(count: number): Particle[] {
+function generateSparks(count: number): Spark[] {
   return Array.from({ length: count }, (_, i) => ({
     id: i,
-    x: 50 + (Math.random() - 0.5) * 20,
-    y: 50 + (Math.random() - 0.5) * 10,
+    x: 30 + Math.random() * 40,
+    y: 30 + Math.random() * 40,
+    size: 3 + Math.random() * 6,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
-    size: 4 + Math.random() * 8,
     angle: Math.random() * 360,
-    speed: 150 + Math.random() * 250,
-    delay: Math.random() * 0.3,
+    speed: 80 + Math.random() * 200,
+    delay: Math.random() * 0.2,
   }))
 }
 
-export function BlackBallCelebration({ show, onComplete }: { show: boolean; onComplete: () => void }) {
-  const [particles] = React.useState(() => createParticles(40))
-  const phrase = React.useMemo(
-    () => PHRASES[Math.floor(Math.random() * PHRASES.length)],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [show]
-  )
+const DURATION = 2000
+
+export function BlackBallCelebration({
+  show,
+  onComplete,
+}: {
+  show: boolean
+  onComplete: () => void
+}) {
+  const [key, setKey] = React.useState(0)
+  const [texts, setTexts] = React.useState<FlyingText[]>([])
+  const [sparks, setSparks] = React.useState<Spark[]>([])
 
   React.useEffect(() => {
     if (show) {
-      const timer = setTimeout(onComplete, 2500)
+      setKey((k) => k + 1)
+      setTexts(generateTexts())
+      setSparks(generateSparks(25))
+      const timer = setTimeout(onComplete, DURATION)
       return () => clearTimeout(timer)
     }
   }, [show, onComplete])
@@ -66,112 +106,90 @@ export function BlackBallCelebration({ show, onComplete }: { show: boolean; onCo
     <AnimatePresence>
       {show && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          key={key}
+          initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-50 pointer-events-none overflow-hidden"
+          className="fixed inset-0 z-50 pointer-events-none select-none overflow-hidden"
+          aria-hidden
         >
-          {/* Dark flash overlay */}
+          {/* Quick dark flash */}
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 0.6, 0] }}
-            transition={{ duration: 0.6, times: [0, 0.15, 1] }}
-            className="absolute inset-0 bg-black"
+            animate={{ opacity: [0, 0.5, 0] }}
+            transition={{ duration: 0.4, times: [0, 0.15, 1] }}
+            className="absolute inset-0 bg-black pointer-events-none"
           />
 
-          {/* Firework particles */}
-          {particles.map((p) => {
-            const rad = (p.angle * Math.PI) / 180
-            const dx = Math.cos(rad) * p.speed
-            const dy = Math.sin(rad) * p.speed
+          {/* Spark particles */}
+          {sparks.map((s) => {
+            const rad = (s.angle * Math.PI) / 180
             return (
               <motion.div
-                key={p.id}
+                key={`s-${s.id}`}
                 initial={{
-                  left: `${p.x}%`,
-                  top: `${p.y}%`,
+                  left: `${s.x}%`,
+                  top: `${s.y}%`,
                   scale: 0,
                   opacity: 1,
                 }}
                 animate={{
-                  left: `calc(${p.x}% + ${dx}px)`,
-                  top: `calc(${p.y}% + ${dy}px)`,
+                  left: `calc(${s.x}% + ${Math.cos(rad) * s.speed}px)`,
+                  top: `calc(${s.y}% + ${Math.sin(rad) * s.speed}px)`,
                   scale: [0, 1.5, 0],
                   opacity: [1, 1, 0],
                 }}
                 transition={{
-                  duration: 1.2 + Math.random() * 0.6,
-                  delay: p.delay,
+                  duration: 0.8 + Math.random() * 0.4,
+                  delay: s.delay,
                   ease: 'easeOut',
                 }}
-                className="absolute rounded-full"
+                className="absolute rounded-full pointer-events-none"
                 style={{
-                  width: p.size,
-                  height: p.size,
-                  backgroundColor: p.color,
-                  boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
+                  width: s.size,
+                  height: s.size,
+                  backgroundColor: s.color,
+                  boxShadow: `0 0 ${s.size * 2}px ${s.color}`,
                 }}
               />
             )
           })}
 
-          {/* Main text */}
-          <motion.div
-            initial={{ scale: 0, rotate: -20, opacity: 0 }}
-            animate={{
-              scale: [0, 1.3, 1],
-              rotate: [-20, 5, 0],
-              opacity: [0, 1, 1],
-            }}
-            exit={{ scale: 0, opacity: 0 }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="absolute inset-0 flex items-center justify-center"
-          >
-            <div className="text-center">
-              <motion.p
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 0.8, repeat: 2, repeatType: 'reverse' }}
-                className="text-5xl sm:text-7xl font-black tracking-tight"
+          {/* Flying text phrases — all at once, scattered across screen */}
+          {texts.map((t) => (
+            <motion.div
+              key={`t-${t.id}`}
+              initial={{
+                left: `${t.x}%`,
+                top: `${t.y}%`,
+                scale: 0,
+                rotate: t.rotation - 20,
+                opacity: 0,
+              }}
+              animate={{
+                left: `calc(${t.x}% + ${t.dx}px)`,
+                top: `calc(${t.y}% + ${t.dy}px)`,
+                scale: [0, t.scale * 1.3, t.scale, 0],
+                rotate: [t.rotation - 20, t.rotation + 5, t.rotation],
+                opacity: [0, 1, 1, 0],
+              }}
+              transition={{
+                duration: 1.6,
+                delay: t.delay,
+                ease: 'easeOut',
+              }}
+              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap pointer-events-none"
+            >
+              <span
+                className="text-3xl sm:text-5xl font-black"
                 style={{
-                  textShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(239,68,68,0.5)',
-                  color: '#fbbf24',
-                  WebkitTextStroke: '2px #b45309',
+                  color: t.color,
+                  textShadow: `0 0 20px ${t.color}, 0 2px 8px rgba(0,0,0,0.8)`,
+                  WebkitTextStroke: '1px rgba(0,0,0,0.3)',
                 }}
               >
-                {phrase}
-              </motion.p>
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="text-2xl sm:text-3xl font-bold text-white mt-2"
-                style={{ textShadow: '0 0 20px rgba(0,0,0,0.9)' }}
-              >
-                🎱 +1 Life 🎱
-              </motion.p>
-            </div>
-          </motion.div>
-
-          {/* Side sparkle bursts */}
-          {[
-            { x: '15%', y: '30%', delay: 0.2 },
-            { x: '85%', y: '25%', delay: 0.4 },
-            { x: '20%', y: '70%', delay: 0.6 },
-            { x: '80%', y: '65%', delay: 0.3 },
-          ].map((spark, i) => (
-            <motion.div
-              key={`spark-${i}`}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{
-                scale: [0, 1.5, 0],
-                opacity: [0, 1, 0],
-              }}
-              transition={{ duration: 0.8, delay: spark.delay }}
-              className="absolute text-3xl sm:text-4xl"
-              style={{ left: spark.x, top: spark.y }}
-            >
-              ✨
+                {t.text}
+              </span>
             </motion.div>
           ))}
         </motion.div>

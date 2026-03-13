@@ -48,6 +48,7 @@ export default function GamePage() {
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [showBlackCelebration, setShowBlackCelebration] = React.useState(false)
+  const dismissCelebration = React.useCallback(() => setShowBlackCelebration(false), [])
   const hasInitializedRef = React.useRef(false)
   const lastHistoryLengthRef = React.useRef(0)
 
@@ -620,7 +621,7 @@ export default function GamePage() {
       {/* Black Ball Celebration */}
       <BlackBallCelebration
         show={showBlackCelebration}
-        onComplete={() => setShowBlackCelebration(false)}
+        onComplete={dismissCelebration}
       />
     </main>
   )
