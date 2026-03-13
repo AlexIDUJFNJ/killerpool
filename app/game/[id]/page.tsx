@@ -309,7 +309,11 @@ export default function GamePage() {
             transition={{ delay: 0.4 }}
             className="space-y-3"
           >
-            <Button size="xl" className="w-full" onClick={handleNewGame}>
+            <Button size="xl" className="w-full" onClick={() => setShowInviteModal(true)}>
+              <QrCode className="mr-2 h-5 w-5" />
+              Share Game
+            </Button>
+            <Button size="lg" className="w-full" onClick={handleNewGame}>
               <Play className="mr-2 h-5 w-5" />
               New Game
             </Button>
@@ -319,6 +323,14 @@ export default function GamePage() {
             </Button>
           </motion.div>
         </motion.div>
+
+        {/* Invite Modal for sharing from winner screen */}
+        <InviteModal
+          gameId={game.id}
+          gameName={`${game.players.length} Player Game`}
+          open={showInviteModal}
+          onOpenChange={setShowInviteModal}
+        />
       </main>
     )
   }
