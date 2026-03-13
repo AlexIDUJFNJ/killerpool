@@ -5,9 +5,9 @@ import { motion, AnimatePresence } from 'motion/react'
 
 const PHRASES = [
   'CHYORNY!',
+  'CHYORNY!',
+  'CHYORNY!',
   '¡BONUS!',
-  '¡URA!',
-  'CHYORNY SHAR!',
   '¡OLÉ!',
   '¡VAMOS!',
 ]
