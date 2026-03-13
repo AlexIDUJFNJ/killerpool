@@ -1,420 +1,146 @@
 # 🎱 Killerpool
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.0-black?logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0-blue?logo=react)](https://react.dev/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.1-black?logo=next.js)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.2-blue?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.2-38bdf8?logo=tailwindcss)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-Backend-green?logo=supabase)](https://supabase.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-Современное PWA-приложение для управления игрой в "Killer Pool" (бильярд).
+Современное PWA-приложение для управления игрой в "Killer Pool" (бильярд). Мобильный трекер жизней с realtime-трансляцией для зрителей.
 
-[🚀 Демо](https://killerpool.app) · [📖 Документация](ARCHITECTURE.md) · [🐛 Сообщить о проблеме](https://github.com/yourusername/killerpool/issues) · [✨ Предложить фичу](https://github.com/yourusername/killerpool/issues/new)
-
----
-
-## 📋 Содержание
-
-- [Технологический стек](#-технологический-стек)
-- [Текущее состояние проекта](#-текущее-состояние-проекта)
-- [Установка](#-установка)
-- [Настройка Vercel](#-настройка-vercel)
-- [Основные правила MVP](#-основные-правила-mvp)
-- [PWA](#-pwa)
-- [Структура проекта](#-структура-проекта)
-- [Документация](#-документация)
-- [Доступные команды](#-доступные-команды)
+[🚀 Демо](https://killerpool.app) · [🐛 Сообщить о проблеме](https://github.com/AlexIDUJFNJ/killerpool/issues)
 
 ---
+
+## 🎮 Правила игры
+
+- **2+ игрока**, **3 жизни** в начале (макс. 6)
+- **MISS** (промах) = -1 жизнь
+- **POT** (забил шар) = без изменений
+- **POT BLACK** (забил чёрный) = +1 жизнь
+- **Победитель**: последний выживший
 
 ## 🚀 Технологический стек
 
-- **Next.js 15** (App Router)
-- **React 19**
-- **TypeScript**
-- **TailwindCSS 3.4** + shadcn/ui
-- **Framer Motion** (анимации)
-- **Supabase** (БД, авторизация)
-- **Vercel** (деплой)
+| Категория | Технология |
+|-----------|-----------|
+| Framework | Next.js 16.1 (App Router) |
+| UI | React 19.2, Tailwind CSS 4.2, shadcn/ui |
+| Анимации | Motion 12 |
+| Backend | Supabase (Postgres, Auth, Realtime, RLS) |
+| Деплой | Vercel (fra1 регион) |
+| Линтинг | ESLint 9 (flat config), Prettier |
+| Runtime | Node.js 22 |
 
-## 📊 Текущее состояние проекта
+## ✨ Возможности
 
-### ✅ Реализовано (Week 1 + Week 2 Days 8-11)
+### Игровой процесс
+- Свайп-управление (влево = промах, вправо = забил, вверх = чёрный)
+- Haptic feedback на мобильных
+- Добавление игрока прямо во время игры
+- Undo действий
+- Экран победителя с анимациями
+- Празднование при забитии чёрного шара ("CHYORNY!" fiesta)
 
-#### Основа и инфраструктура
-- [x] Next.js 15 с App Router и TypeScript
-- [x] Tailwind CSS 3.4 + shadcn/ui компоненты
-- [x] Framer Motion для плавных анимаций
-- [x] SEO оптимизация (metadata, Open Graph, robots, sitemap)
-- [x] Error handling (error.tsx, loading.tsx, not-found.tsx)
-- [x] PWA manifest
+### Live Sharing (Spectator Mode)
+- QR-код и ссылка для зрителей прямо из игры
+- Realtime-трансляция всех действий через WebSocket
+- Зрители могут пере-шарить ссылку другим (цепочка спектаторов)
+- Работает без авторизации
+- Цвета жизней (красный/жёлтый/зелёный) одинаковы у хоста и зрителей
 
-#### UI Компоненты
-- [x] Player Card с аватарами и жизнями
-- [x] Анимированный Life Bar
-- [x] Action Buttons (MISS, POT, POT BLACK)
-- [x] Адаптивный дизайн (mobile-first)
+### PWA
+- Установка на iOS/Android
+- Service Worker для офлайн-режима
+- Background Sync
+- localStorage для оффлайн-игр
 
-#### Игровая логика
-- [x] Создание игры с 2+ игроками
-- [x] Отслеживание жизней (MISS -1, POT 0, BLACK +1)
-- [x] Определение победителя
-- [x] История действий
-- [x] localStorage для оффлайн режима
-- [x] React Context для состояния игры
+### Аккаунт и статистика
+- Google OAuth / Magic Link
+- Глобальный лидерборд (топ-15)
+- Детальная статистика игроков
+- Система достижений (7 типов бейджей)
+- Экспорт данных (CSV, JSON, Screenshot)
+- Синхронизация localStorage → Supabase
 
-#### Аутентификация и База данных
-- [x] Supabase настроен и развернут
-- [x] Таблицы: games, player_profiles, rulesets
-- [x] Row Level Security (RLS)
-- [x] Google OAuth
-- [x] Magic Link вход
-- [x] Защита роутов (middleware)
-- [x] Профиль пользователя
+### UI/UX
+- Mobile-first адаптивный дизайн
+- Dark / Light / System тема
+- Bottom sheet, анимированные карточки, life bar
+- Скроллируемые модальные окна на маленьких экранах
 
-#### Экраны
-- [x] Главная страница с анимациями
-- [x] Создание новой игры
-- [x] Игровой экран
-- [x] Экран победителя
-- [x] Аутентификация
-- [x] Профиль
-- [x] История игр (базовая)
-- [x] Leaderboard (топ игроков)
-
-### ✅ Дополнительный функционал
-
-- [x] Полная интеграция истории с Supabase
-- [x] Детальная статистика игроков (Stats страница)
-- [x] Export функционал (CSV, JSON, Screenshot)
-- [x] Web Share API для шаринга
-- [x] QR code invites для игр
-- [x] Realtime мультиплеер (Supabase Realtime)
-- [x] **Live Sharing через QR-код** - зрители могут следить за игрой в реальном времени
-- [x] Light Theme поддержка (light/dark/system)
-- [x] Theme Switcher компонент
-- [x] Swipeable player cards
-- [x] Haptic feedback
-- [x] Bottom sheet UI
-- [x] Invite modal с QR кодами
-- [x] Leaderboard (топ-15 игроков, только для авторизованных)
-- [x] Authentication-aware UI messaging (маркетинг для незарегистрированных игроков)
-- [x] Spectator mode для QR code гостей
-- [x] **Добавление игрока во время игры** с минимальным количеством жизней
-- [x] **Отсортированный список игроков** (активные вверху, выбывшие внизу)
-- [x] Страница синхронизации localStorage → Supabase
-- [x] Публичный доступ к истории игр по shared links
-- [x] Улучшенное отображение жизней (лимит 6, красный цвет для последней)
-- [x] Улучшения мобильного responsive дизайна
-- [x] Система достижений и badges
-
-### ✅ Week 3 - PWA Setup (Days 15-16 завершены)
-
-- [x] Service Worker для офлайн режима
-- [x] PWA manifest и иконки
-- [x] Background Sync для синхронизации данных
-- [x] Офлайн fallback страница
-- [x] Кеширование статики и API
-- [x] Установка на iOS/Android
-
-### ✅ Тестирование
-
-- [x] Jest + React Testing Library настроено
-- [x] Unit тесты для game logic (97% покрытие, 33 теста)
-- [x] Unit тесты для storage utilities (100% покрытие, 22 теста)
-- [x] Unit тесты для utils (100% покрытие, 8 тестов)
-- [x] Component тесты для UI компонентов (100% покрытие, 45 тестов):
-  - Button, Badge, Card, Avatar
-- [x] Component тесты для игровых компонентов (100% покрытие, 39 тестов):
-  - ActionButtons, PlayerCard
-- [x] **147 тестов** успешно проходят
-
-### 🔜 Запланировано
-
-- [ ] Performance optimization
-- [ ] Apple Sign In
-- [ ] Больше component тестов (Dialog, Input, Label, etc.)
-- [ ] Integration тесты
-- [ ] E2E тестирование (Playwright/Cypress)
-- [ ] Advanced analytics и метрики
-
-## 📦 Установка
-
-### 1. Установите зависимости
+## 📦 Быстрый старт
 
 ```bash
+# Установка
 npm install
-```
 
-### 2. Настройте Supabase
-
-**Создайте проект в Supabase:**
-
-1. Зайдите на [supabase.com](https://supabase.com) и создайте новый проект
-2. Получите API ключи из Settings → API
-3. Запустите SQL миграцию из `supabase/migrations/00001_initial_schema.sql`
-
-**Подробная инструкция:** [supabase/README.md](./supabase/README.md)
-
-### 3. Настройте environment variables
-
-```bash
-# Скопируйте пример файла
+# Настройка переменных (скопировать и заполнить Supabase ключи)
 cp .env.local.example .env.local
 
-# Откройте .env.local и добавьте ваши Supabase ключи
-```
-
-Вам нужны:
-- `NEXT_PUBLIC_SUPABASE_URL` - URL вашего Supabase проекта
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Public anon key
-- `SUPABASE_SERVICE_ROLE_KEY` - Service role key (⚠️ держите в секрете!)
-
-### 4. Запустите dev server
-
-```bash
+# Dev server
 npm run dev
 ```
 
-Откройте [http://localhost:3000](http://localhost:3000) в браузере.
+Нужны переменные:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-## 🔧 Настройка Vercel
-
-### Шаг 1: Подключите GitHub репозиторий
-
-1. Зайдите на [vercel.com](https://vercel.com)
-2. Нажмите "Add New Project"
-3. Выберите этот GitHub репозиторий
-4. Vercel автоматически определит Next.js проект
-
-### Шаг 2: Настройте переменные окружения
-
-В настройках проекта Vercel добавьте:
-- `NEXT_PUBLIC_SUPABASE_URL` - URL вашего Supabase проекта
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Public anon key
-- `SUPABASE_SERVICE_ROLE_KEY` - Service role key
-- `NEXT_PUBLIC_APP_URL=https://killerpool.app` - Production URL
-
-### Шаг 3: Деплой
-
-Нажмите "Deploy" - Vercel автоматически задеплоит проект!
-
-## 🎮 Основные правила MVP
-
-- **2+ игрока**
-- **6 жизней** в начале игры (по умолчанию, максимум 6)
-- **MISS** (промах) = минус 1 жизнь
-- **POT** (забил не черный) = изменений нет
-- **POT BLACK** (забил черный шар) = плюс 1 жизнь
-- **Game Over**: когда остался один игрок
-
-## 🏆 Leaderboard и Статистика
-
-### Требования для попадания в лидерборд
-
-**Важно:** Только игры авторизованных пользователей учитываются в глобальном лидерборде!
-
-#### Почему требуется авторизация?
-
-✅ **Защита от накруток** - предотвращение фейковых результатов
-✅ **Честная конкуренция** - один игрок = один аккаунт
-✅ **Отслеживание прогресса** - вся ваша статистика в одном месте
-✅ **Модерация** - возможность заблокировать нечестных игроков
-
-#### Для незарегистрированных пользователей
-
-Игры без авторизации:
-- ✅ Сохраняются локально в браузере
-- ✅ Доступны в истории игр
-- ❌ **НЕ попадают** в глобальный лидерборд
-- 💡 Показывается призыв к регистрации после победы
-
-#### Для зарегистрированных пользователей
-
-Авторизованные игроки получают:
-- ✅ Автоматическое сохранение всех игр в облако
-- ✅ Попадание в глобальный топ-15
-- ✅ Подробная статистика (винрейт, количество игр, pot blacks)
-- ✅ Синхронизация между устройствами
-
-### Метрики лидерборда
-
-Ранжирование игроков по:
-1. **Win Rate** (процент побед) - основной показатель
-2. **Total Wins** (количество побед) - вторичный показатель
-3. **Total Games** (общее количество игр) - для равных результатов
-
-## 📺 Live Sharing (Spectator Mode)
-
-Делитесь игрой с друзьями в реальном времени!
-
-### Как это работает
-
-1. **Начните игру** на своём устройстве
-2. **Нажмите на кнопку QR** в правом верхнем углу экрана игры
-3. **Покажите QR-код** друзьям или поделитесь ссылкой
-4. **Зрители откроют ссылку** и увидят игру в реальном времени
-
-### Технические детали
-
-- При открытии модального окна QR игра автоматически синхронизируется в Supabase
-- Включается Realtime режим для трансляции всех действий
-- Зрители получают обновления через WebSocket (Supabase Realtime)
-- Работает для всех пользователей — авторизация не требуется
-
-### Индикаторы статуса
-
-В модальном окне QR отображается:
-- 🔄 "Enabling live sharing..." — синхронизация в процессе
-- ✅ "Live sharing enabled!" — зрители видят игру в реальном времени
-- ⚠️ Ошибка — если синхронизация не удалась
-
-## 📱 PWA
-
-Приложение поддерживает установку на домашний экран:
-- iOS: Safari → Share → Add to Home Screen
-- Android: Chrome → Menu → Install App
+Подробная настройка Supabase: [supabase/README.md](./supabase/README.md)
 
 ## 🏗️ Структура проекта
 
 ```
 killerpool/
-├── app/                    # Next.js App Router
-│   ├── layout.tsx          # Корневой layout
-│   ├── page.tsx            # Главная страница
-│   └── globals.css         # Глобальные стили
-├── components/             # React компоненты
-├── lib/                    # Утилиты и хелперы
+├── app/                    # Next.js App Router (pages)
+│   ├── game/[id]/          # Игровой экран (хост + спектатор)
+│   ├── game/new/           # Создание игры
+│   ├── history/            # История игр
+│   ├── leaderboard/        # Лидерборд
+│   ├── stats/              # Статистика
+│   ├── auth/               # Авторизация
+│   ├── profile/            # Профиль
+│   └── globals.css         # Tailwind v4 (@theme)
+├── components/
+│   ├── game/               # Игровые компоненты
+│   │   ├── swipeable-player-card.tsx
+│   │   ├── player-card.tsx
+│   │   ├── invite-modal.tsx
+│   │   └── black-ball-celebration.tsx
+│   └── ui/                 # shadcn/ui компоненты
+├── contexts/
+│   └── game-context.tsx    # Глобальный стейт + realtime sync
+├── lib/
 │   ├── supabase/           # Supabase клиенты
-│   │   ├── client.ts       # Browser client
-│   │   ├── server.ts       # Server client
-│   │   └── middleware.ts   # Middleware helper
-│   └── types/              # TypeScript типы
-│       └── database.types.ts  # Database types
-├── supabase/               # Supabase конфигурация
-│   ├── migrations/         # SQL миграции
-│   │   └── 00001_initial_schema.sql
-│   └── README.md           # Supabase setup guide
-├── public/                 # Статические файлы
-│   └── manifest.json       # PWA manifest
-├── middleware.ts           # Next.js middleware (auth)
-├── DEVELOPMENT_PLAN.md     # План разработки
-└── killerpool-app-technical-doc.pdf  # Техническая документация
+│   ├── game-logic.ts       # Игровая логика
+│   ├── realtime.ts         # Realtime подписки
+│   ├── sync.ts             # Синхронизация с Supabase
+│   ├── invite.ts           # QR-код и ссылки
+│   └── types.ts            # TypeScript типы
+├── supabase/migrations/    # SQL миграции (10 шт.)
+├── proxy.ts                # Next.js proxy (auth)
+├── eslint.config.mjs       # ESLint 9 flat config
+└── postcss.config.js       # @tailwindcss/postcss
 ```
 
-## 📄 Документация
-
-### Для разработчиков
-
-- 🏗️ **[Архитектура](ARCHITECTURE.md)** - Системная архитектура и технические решения
-- 📡 **[API Documentation](API.md)** - Документация API и Supabase функций
-- 🚀 **[Deployment Guide](DEPLOYMENT.md)** - Полное руководство по деплою
-- 🔧 **[Troubleshooting](TROUBLESHOOTING.md)** - Решение частых проблем
-- 🔐 **[Security](SECURITY.md)** - Best practices по безопасности
-- 🤝 **[Contributing](CONTRIBUTING.md)** - Как внести свой вклад
-
-### Настройка и планирование
-
-- 📋 **[План разработки](DEVELOPMENT_PLAN.md)** - Roadmap и текущий статус
-- 🗄️ **[Supabase Setup](supabase/README.md)** - Настройка базы данных
-- 📄 **[Техническая спецификация](killerpool-app-technical-doc.pdf)** - Подробная документация проекта
-
-## 🛠 Доступные команды
+## 🛠 Команды
 
 ```bash
-# Development
-npm run dev          # Запустить dev server
+npm run dev          # Dev server
 npm run build        # Production build
-npm run start        # Запустить production server
-npm run lint         # Проверить код с ESLint
-npm run lint:fix     # Исправить проблемы ESLint автоматически
-
-# Testing
-npm test             # Запустить все тесты
-npm run test:watch   # Запустить тесты в watch режиме
-npm run test:coverage # Запустить тесты с отчетом о покрытии
-
-# Formatting
-npm run format       # Отформатировать код с Prettier
-npm run format:check # Проверить форматирование
+npm run start        # Production server
+npm run lint         # ESLint проверка
+npm run lint:fix     # ESLint auto-fix
+npm test             # Запустить тесты
+npm run test:coverage # Тесты с покрытием
+npm run format       # Prettier
 ```
-
-## 🤝 Contributing
-
-Мы приветствуем вклад в проект! Пожалуйста, ознакомьтесь с [CONTRIBUTING.md](CONTRIBUTING.md) для подробной информации.
-
-### Quick Start для контрибьюторов
-
-1. Fork репозиторий
-2. Создайте feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit изменения (`git commit -m 'feat: add amazing feature'`)
-4. Push в branch (`git push origin feature/amazing-feature`)
-5. Откройте Pull Request
-
-## 📊 Статус проекта
-
-- **Week 1 (Days 1-7):** ✅ Завершено - MVP с полной игровой функциональностью
-- **Week 2 (Days 8-11):** ✅ Завершено - Supabase интеграция и аутентификация
-- **Week 2 (Days 12-14):** ✅ Завершено - История игр, статистика, export
-- **Week 3 (Days 15-16):** ✅ Завершено - PWA Setup (Service Worker, офлайн режим, иконки)
-- **Week 3 (Days 17-21):** ✅ 99% Завершено - Realtime, Light Theme, Stats, Performance Optimization, Achievements
-
-**Последнее обновление (27 декабря 2025):**
-- ✅ **Добавление игрока во время игры** - новый игрок получает минимум жизней среди активных
-  - Кнопка "Add Player" в списке всех игроков
-  - Автоматическая синхронизация с Supabase для зрителей
-- ✅ **Улучшенный список игроков** - активные вверху, выбывшие внизу с прозрачностью
-- ✅ **Исправлен Live Sharing для Spectator Mode** - полноценная realtime трансляция игры
-  - Зрители видят смену игроков в реальном времени (синхронизация `currentPlayerIndex`)
-  - Экран победителя корректно отображается при завершении игры
-  - Исправлена стабильность realtime подписки (без бесконечных переподключений)
-  - Добавлена миграция `00010_add_current_player_index.sql` для синхронизации хода игры
-
-**Предыдущее обновление (13 декабря 2025):**
-- ✅ **Live Sharing для Spectator Mode** - теперь зрители могут следить за игрой в реальном времени через QR-код
-  - При нажатии на кнопку QR игра автоматически синхронизируется в облако
-  - Зрители видят все действия в реальном времени через Supabase Realtime
-  - Работает для всех пользователей (авторизованных и гостей)
-
-**Предыдущее обновление (23 ноября 2025):**
-- ✅ **Система достижений (Achievements)** - 7 типов бейджей:
-  - First Win, 10/25/50 Wins, Survivor, Pot Black Master, Social Player
-- ✅ Добавлен Spectator mode для QR code гостей
-- ✅ Изменен лимит жизней по умолчанию с 10 на 6
-- ✅ Улучшено отображение жизней (лимит 6 max, красный цвет для последней жизни)
-- ✅ Добавлена страница синхронизации localStorage → Supabase
-- ✅ Публичный доступ к истории игр через shared links
-- ✅ Улучшен мобильный responsive дизайн
-- ✅ Исправлена идентификация игроков в лидерборде
-- ✅ Улучшен flow создания новой игры
-
-**Предыдущие обновления (19 ноября 2025):**
-- ✅ Исправлены все критические ESLint ошибки и warnings
-- ✅ Performance optimization: удалены неиспользуемые переменные, оптимизированы изображения
-- ✅ Bundle size: First Load JS ~104-239KB (отлично для PWA)
-- ✅ Production build проходит без ошибок
-
-Подробнее см. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 
 ## 📝 License
 
-Этот проект лицензирован под MIT License - см. [LICENSE](LICENSE) для деталей.
-
-## 💬 Поддержка
-
-Нужна помощь?
-
-- 📖 Прочитайте [документацию](ARCHITECTURE.md)
-- 🔧 Проверьте [Troubleshooting Guide](TROUBLESHOOTING.md)
-- 🐛 [Создайте issue](https://github.com/yourusername/killerpool/issues)
-- 💬 Задайте вопрос в [Discussions](https://github.com/yourusername/killerpool/discussions)
-
-## 🙏 Благодарности
-
-- [Next.js](https://nextjs.org/) - Отличный React framework
-- [Supabase](https://supabase.com/) - Backend-as-a-Service
-- [shadcn/ui](https://ui.shadcn.com/) - Красивые UI компоненты
-- [Vercel](https://vercel.com/) - Hosting и deployment
+MIT
 
 ---
 
