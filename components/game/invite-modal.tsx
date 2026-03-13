@@ -140,7 +140,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
                 <img
                   src={qrCodeDataUrl}
                   alt="Game Invite QR Code"
-                  className="w-64 h-64 rounded-lg"
+                  className="w-48 h-48 sm:w-64 sm:h-64 rounded-lg"
                 />
               </a>
               <Button
