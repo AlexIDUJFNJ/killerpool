@@ -19,6 +19,7 @@ import { saveRematchPlayers } from '@/lib/storage'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Eye } from 'lucide-react'
+import { BlackBallCelebration } from '@/components/game/black-ball-celebration'
 
 export default function GamePage() {
   const router = useRouter()
@@ -46,7 +47,9 @@ export default function GamePage() {
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [showBlackCelebration, setShowBlackCelebration] = React.useState(false)
   const hasInitializedRef = React.useRef(false)
+  const lastHistoryLengthRef = React.useRef(0)
 
   // Load game from Supabase if not in context (only once on mount)
   // IMPORTANT: Wait for context to finish loading from localStorage before
@@ -131,6 +134,19 @@ export default function GamePage() {
     })
   }, [])
 
+  // Watch for pot_black actions (spectator mode — detect from realtime updates)
+  React.useEffect(() => {
+    if (!game) return
+    const historyLen = game.history.length
+    if (historyLen > lastHistoryLengthRef.current) {
+      const lastAction = game.history[historyLen - 1]
+      if (lastAction?.action === 'pot_black' && isSpectatorMode) {
+        setShowBlackCelebration(true)
+      }
+    }
+    lastHistoryLengthRef.current = historyLen
+  }, [game?.history.length, game, isSpectatorMode])
+
   // Watch for game completion and show winner screen
   React.useEffect(() => {
     if (game && game.status === 'completed' && !showWinner) {
@@ -182,6 +198,11 @@ export default function GamePage() {
     }
 
     const gameAction = actionMap[action]
+
+    // Trigger celebration for black ball
+    if (action === 'pot_black') {
+      setShowBlackCelebration(true)
+    }
 
     // Increment key to trigger card animation
     setCurrentPlayerKey((prev) => prev + 1)
@@ -594,6 +615,12 @@ export default function GamePage() {
         gameName={`${game.players.length} Player Game`}
         open={showInviteModal}
         onOpenChange={setShowInviteModal}
+      />
+
+      {/* Black Ball Celebration */}
+      <BlackBallCelebration
+        show={showBlackCelebration}
+        onComplete={() => setShowBlackCelebration(false)}
       />
     </main>
   )
