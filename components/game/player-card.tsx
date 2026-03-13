@@ -20,6 +20,14 @@ export interface PlayerCardProps {
   showPosition?: number
 }
 
+// Color based on lives remaining - consistent across all variants
+const getLifeColor = (lives: number) => {
+  if (lives <= 0) return { bg: 'bg-destructive', border: 'border-destructive', shadow: 'shadow-destructive/50' }
+  if (lives === 1) return { bg: 'bg-red-500', border: 'border-red-400', shadow: 'shadow-red-500/50' }
+  if (lives === 2) return { bg: 'bg-yellow-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/50' }
+  return { bg: 'bg-emerald-500', border: 'border-emerald-400', shadow: 'shadow-emerald-500/50' }
+}
+
 export function PlayerCard({
   name,
   avatar = '🎱',
@@ -31,6 +39,7 @@ export function PlayerCard({
   variant = 'default',
   showPosition,
 }: PlayerCardProps) {
+  const lifeColor = getLifeColor(lives)
   // Inline variant - ultra compact for sticky header
   if (variant === 'inline') {
     return (
@@ -39,7 +48,7 @@ export function PlayerCard({
         <span className="font-bold text-lg">{name}&apos;s Turn</span>
         <div className="flex gap-0.5 ml-auto">
           {Array.from({ length: Math.min(lives, 5) }).map((_, i) => (
-            <div key={i} className="h-2 w-2 rounded-full bg-emerald-500" />
+            <div key={i} className={cn('h-2 w-2 rounded-full', lifeColor.bg)} />
           ))}
           {lives > 5 && <span className="text-xs ml-1">+{lives - 5}</span>}
         </div>
@@ -63,7 +72,7 @@ export function PlayerCard({
         <span className="font-medium flex-1">{name}</span>
         <div className="flex gap-0.5">
           {Array.from({ length: Math.min(lives, 5) }).map((_, i) => (
-            <div key={i} className="h-2 w-2 rounded-full bg-emerald-500" />
+            <div key={i} className={cn('h-2 w-2 rounded-full', lifeColor.bg)} />
           ))}
           {lives > 5 && <span className="text-xs ml-1">+{lives - 5}</span>}
         </div>
@@ -130,7 +139,7 @@ export function PlayerCard({
                 {Array.from({ length: Math.min(lives, 5) }).map((_, i) => (
                   <div
                     key={i}
-                    className="h-2.5 w-2.5 rounded-full bg-emerald-500 border border-emerald-400"
+                    className={cn('h-2.5 w-2.5 rounded-full border', lifeColor.bg, lifeColor.border)}
                   />
                 ))}
                 {lives > 5 && (
@@ -210,7 +219,7 @@ export function PlayerCard({
                       className={cn(
                         'h-6 w-6 rounded-full border-2',
                         i < lives
-                          ? 'bg-emerald-500 border-emerald-400 shadow-lg shadow-emerald-500/50'
+                          ? `${lifeColor.bg} ${lifeColor.border} shadow-lg ${lifeColor.shadow}`
                           : 'bg-background border-muted'
                       )}
                     />
