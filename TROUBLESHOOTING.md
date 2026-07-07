@@ -2,6 +2,8 @@
 
 Руководство по устранению частых проблем при разработке и использовании Killerpool.
 
+> Стек проекта: Next.js 16.1 (App Router), React 19.2, TypeScript 5, Tailwind CSS 4.2, Supabase, PWA через `@ducanh2912/next-pwa`. Node.js 22 (см. `engines` в `package.json`).
+
 ## 📋 Содержание
 
 - [Проблемы при установке](#проблемы-при-установке)
@@ -39,16 +41,16 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-3. Убедитесь что используете Node.js 20.x:
+3. Убедитесь что используете Node.js 22.x (задано в `engines` в `package.json`):
 ```bash
-node --version  # Должно быть v20.x.x
+node --version  # Должно быть v22.x.x
 ```
 
 4. Установите правильную версию Node.js:
 ```bash
 # С помощью nvm
-nvm install 20
-nvm use 20
+nvm install 22
+nvm use 22
 ```
 
 ---
@@ -62,16 +64,16 @@ Type error: Cannot find module '@/lib/utils' or its corresponding type declarati
 
 **Решение:**
 
-1. Убедитесь что TypeScript установлен:
+1. Убедитесь что зависимости установлены (TypeScript входит в devDependencies):
 ```bash
-npm install --save-dev typescript
+npm install
 ```
 
 2. Перезапустите TypeScript server в VS Code:
    - `Cmd/Ctrl + Shift + P`
    - "TypeScript: Restart TS Server"
 
-3. Проверьте `tsconfig.json`:
+3. Проверьте `tsconfig.json` — алиас `@/*` должен указывать на корень проекта:
 ```json
 {
   "compilerOptions": {
@@ -100,14 +102,9 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-2. Проверьте что Next.js установлен:
+2. Проверьте что Next.js установлен (проект использует Next.js 16.1, `next: ^16.1.6` в `package.json`):
 ```bash
 npm list next
-```
-
-3. Установите Next.js вручную:
-```bash
-npm install next@latest react@latest react-dom@latest
 ```
 
 ---
@@ -148,6 +145,8 @@ npm run dev
 4. Проверьте что проект Supabase активен:
    - Откройте [Supabase Dashboard](https://supabase.com/dashboard)
    - Убедитесь что проект запущен (не в паузе)
+
+> Если переменные не заданы, `updateSession()` в `lib/supabase/middleware.ts` не упадёт, а просто пропустит auth-проверку и выведет ошибку в консоль сервера — ищите там `Missing Supabase environment variables`.
 
 ---
 
@@ -190,19 +189,24 @@ Error: new row violates row-level security policy for table "games"
 SELECT * FROM pg_policies WHERE tablename = 'games';
 ```
 
-2. Запустите миграцию заново:
-   - Откройте `supabase/migrations/00001_initial_schema.sql`
-   - Скопируйте весь код
-   - Выполните в SQL Editor
+2. Финальные политики для `games` задаются миграцией `00009_fix_live_sharing_policies.sql` (она заменяет политики из 00006/00008). После её применения должны существовать:
+   - `games_select_all` — публичное чтение (нужно зрителям live-игр)
+   - `games_insert_authenticated` / `games_insert_anon`
+   - `games_update_authenticated` / `games_update_anon`
+   - `games_delete_authenticated`
 
-3. Проверьте что пользователь аутентифицирован:
+   Если политики отличаются — примените миграции заново **по порядку** (см. следующий раздел).
+
+3. Анонимные (guest) игры создаются с `created_by IS NULL` — политики `games_insert_anon` / `games_update_anon` разрешают запись только для таких строк. Если вы пытаетесь записать чужой `created_by` без авторизации, получите RLS violation.
+
+4. Проверьте состояние пользователя:
 ```typescript
 // В коде
-const { data: { session } } = await supabase.auth.getSession()
-console.log('Session:', session)  // Должен быть не null
+const { data: { user } } = await supabase.auth.getUser()
+console.log('User:', user)  // null = anon/guest
 ```
 
-4. Временно отключите RLS для тестирования (НЕ на production!):
+5. Временно отключите RLS для тестирования (НЕ на production!):
 ```sql
 ALTER TABLE games DISABLE ROW LEVEL SECURITY;
 ```
@@ -218,19 +222,34 @@ Error: column "created_by" does not exist
 
 **Решение:**
 
-1. Проверьте порядок выполнения SQL команд в миграции
+1. В `supabase/migrations/` **11 миграций** — их нужно применять строго по порядку:
+```
+00001_initial_schema.sql
+00002_leaderboard_function.sql
+00003_fix_leaderboard_and_profile.sql
+00004_fix_uuid_min_issue.sql
+00005_fix_leaderboard_grouping.sql
+00006_public_game_access.sql
+00007_achievements.sql
+00008_live_sharing_policies.sql
+00009_fix_live_sharing_policies.sql
+00010_add_current_player_index.sql
+00011_fix_achievements_and_defaults.sql
+```
+   Ошибки вида «column does not exist» почти всегда означают, что пропущена одна из предыдущих миграций.
 
-2. Удалите все таблицы и запустите миграцию заново:
+2. В крайнем случае удалите все таблицы и примените миграции заново:
 ```sql
 -- ⚠️ ВНИМАНИЕ: Удалит все данные!
+DROP TABLE IF EXISTS user_achievements CASCADE;
 DROP TABLE IF EXISTS games CASCADE;
 DROP TABLE IF EXISTS player_profiles CASCADE;
 DROP TABLE IF EXISTS rulesets CASCADE;
 
--- Затем запустите миграцию
+-- Затем запустите миграции 00001 → 00011 по порядку
 ```
 
-3. Убедитесь что используете актуальную версию миграции из репозитория
+3. Убедитесь что используете актуальные версии миграций из репозитория. В частности, `00011` переписывает функцию `check_achievements`, меняет `max_lives` дефолтного ruleset с 10 на 6 и чинит политики на `user_achievements` — без неё ачивки и лидерборд работают некорректно.
 
 ---
 
@@ -264,32 +283,34 @@ https://killerpool.app
 
 4. Подождите 5-10 минут для применения изменений
 
+> В приложении вход через Google вызывается в `app/auth/page.tsx` через `supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/auth/callback` } })`. Callback (`app/auth/callback/route.ts`) выполняет `exchangeCodeForSession(code)` и всегда редиректит на `/`.
+
 ---
 
-### ❌ "User already registered"
+### ❌ Magic Link не приходит / не логинит
 
-**Проблема:**
-```
-Error: User already registered
-```
+**Проблема:** Письмо со ссылкой не приходит, или после клика по ссылке пользователь не залогинен.
 
 **Решение:**
 
-1. Используйте другой email или social provider
-
-2. Или войдите вместо регистрации:
+1. В приложении magic link отправляется из `app/auth/page.tsx`:
 ```typescript
-// Используйте signIn вместо signUp
-await supabase.auth.signInWithPassword({
+const { error } = await supabase.auth.signInWithOtp({
   email,
-  password
+  options: {
+    emailRedirectTo: `${window.location.origin}/auth/callback`,
+  },
 })
 ```
+   Ссылка из письма обязана вести на `/auth/callback` вашего домена.
 
-3. Сбросьте пароль если забыли:
-```typescript
-await supabase.auth.resetPasswordForEmail(email)
-```
+2. Проверьте Redirect URLs в Supabase:
+   - Authentication → URL Configuration
+   - `http://localhost:3000/auth/callback` и production-URL должны быть в allow list
+
+3. Проверьте спам и лимиты отправки писем в Supabase (на бесплатном тарифе лимит невысокий).
+
+4. Помните: пароли в приложении не используются — только Google OAuth, Magic Link и гостевой режим (стабильный UUID в `localStorage` под ключом `killerpool_guest_id`, без записи в auth).
 
 ---
 
@@ -305,17 +326,23 @@ await supabase.auth.resetPasswordForEmail(email)
 ```typescript
 // ✅ Правильно: Client Component
 'use client'
-import { createBrowserClient } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'  // браузерный клиент
 
-// ❌ Неправильно: Server Component с browser client
-import { createBrowserClient } from '@/lib/supabase/client'
+// ✅ Правильно: Server Component / Route Handler
+import { createClient } from '@/lib/supabase/server'
+
+// ❌ Неправильно: браузерный клиент в Server Component
 ```
+   `lib/supabase/client.ts` кидает ошибку `createClient can only be used in browser environment`, если вызвать его вне браузера.
 
-3. Проверьте middleware:
+3. Сессия обновляется на каждый запрос в `proxy.ts` (конвенция Next.js 16, замена `middleware.ts`):
 ```typescript
-// middleware.ts должен обновлять session
-await supabase.auth.getSession()
+// proxy.ts
+export async function proxy(request: NextRequest) {
+  return await updateSession(request)
+}
 ```
+   `updateSession()` живёт в `lib/supabase/middleware.ts` и вызывает `supabase.auth.getUser()` для рефреша сессии. Если вы меняли `proxy.ts` — верните `supabaseResponse` как есть, иначе cookies рассинхронизируются и сессия «слетит».
 
 4. Проверьте Site URL в Supabase:
    - Authentication → URL Configuration
@@ -323,35 +350,36 @@ await supabase.auth.getSession()
 
 ---
 
-### ❌ Middleware редиректит в бесконечном цикле
+### ❌ Proxy редиректит в бесконечном цикле
 
 **Проблема:** Страница постоянно перезагружается
 
 **Решение:**
 
-1. Проверьте условия в `middleware.ts`:
+1. Route protection находится в `lib/supabase/middleware.ts` (вызывается из `proxy.ts`). Защищён **только** `/profile`; авторизованных со страницы `/auth` редиректит на `/`:
 ```typescript
-// ❌ Плохо: может создать infinite loop
-if (!session) {
-  return NextResponse.redirect(new URL('/auth', request.url))
+// lib/supabase/middleware.ts (реальный код)
+const protectedRoutes = ['/profile']
+const isProtectedRoute = protectedRoutes.some(route =>
+  request.nextUrl.pathname.startsWith(route)
+)
+
+if (!user && isProtectedRoute) {
+  const url = request.nextUrl.clone()
+  url.pathname = '/auth'
+  return NextResponse.redirect(url)
 }
 
-// ✅ Хорошо: exclude auth page
-if (!session && !request.nextUrl.pathname.startsWith('/auth')) {
-  return NextResponse.redirect(new URL('/auth', request.url))
+// Redirect authenticated users away from auth page
+if (user && request.nextUrl.pathname === '/auth') {
+  const url = request.nextUrl.clone()
+  url.pathname = '/'
+  return NextResponse.redirect(url)
 }
 ```
+   Если вы добавляете новые защищённые маршруты, не включайте в список `/auth` — иначе получите цикл `/auth → /auth`.
 
-2. Исключите публичные страницы:
-```typescript
-export const config = {
-  matcher: [
-    '/profile/:path*',
-    '/game/:path*',
-    '/history/:path*'
-  ]
-}
-```
+2. Проверьте `matcher` в `proxy.ts` — он исключает `_next/static`, `_next/image`, `favicon.ico` и статические картинки. Если сузить matcher так, что `/auth` перестанет обрабатываться, редиректы сломаются.
 
 ---
 
@@ -369,22 +397,19 @@ Error: Build failed
 1. Проверьте логи билда в Vercel Dashboard:
    - Deployments → Latest → View Function Logs
 
-2. Убедитесь что environment variables заданы:
-   - Settings → Environment Variables
-   - Проверьте что все 3 переменные добавлены
+2. Убедитесь что environment variables заданы (Settings → Environment Variables). Используются 4 переменные (см. `.env.local.example`):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only, обходит RLS — не светить на клиенте)
+   - `NEXT_PUBLIC_APP_URL`
 
 3. Попробуйте локальный build:
 ```bash
 npm run build
 ```
+   Обратите внимание: перед build автоматически выполняется `prebuild` → `npm run generate-icons` (генерация иконок скриптом `scripts/generate-icons.js`).
 
-4. Проверьте размер бандла:
-```bash
-# Должен быть < 50MB
-du -sh .next
-```
-
-5. Очистите кеш Vercel:
+4. Очистите кеш Vercel:
    - Deployments → Latest → ... → Redeploy
 
 ---
@@ -395,7 +420,7 @@ du -sh .next
 
 **Решение:**
 
-1. Убедитесь что переменные названы с `NEXT_PUBLIC_` префиксом:
+1. Убедитесь что клиентские переменные названы с `NEXT_PUBLIC_` префиксом:
 ```env
 # ✅ Правильно (доступны на клиенте)
 NEXT_PUBLIC_SUPABASE_URL=...
@@ -451,31 +476,34 @@ git status  # Не должно быть untracked файлов
 
 1. Убедитесь что используете **Safari** (Chrome на iOS не поддерживает PWA)
 
-2. Проверьте `manifest.json`:
+2. Проверьте `public/manifest.json` (реальные значения проекта):
 ```json
 {
-  "name": "Killerpool",
+  "name": "Killerpool - Modern Killer Pool Game",
   "short_name": "Killerpool",
   "display": "standalone",
   "start_url": "/"
 }
 ```
 
-3. Добавьте Apple-specific meta tags в `layout.tsx`:
+3. Apple-specific метаданные уже заданы в `app/layout.tsx`:
 ```typescript
-export const metadata = {
+export const metadata: Metadata = {
+  // ...
+  manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'Killerpool'
-  }
+    statusBarStyle: 'default',
+    title: 'Killerpool',
+  },
 }
 ```
 
-4. Добавьте Apple Touch Icon:
+4. Apple Touch Icon подключается там же, в `<head>`:
 ```html
-<link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 ```
+   Иконки лежат в `public/` (`icon-192.png`, `icon-512.png`, `apple-touch-icon.png`) и генерируются скриптом `npm run generate-icons`.
 
 ---
 
@@ -488,19 +516,45 @@ Service Worker registration failed
 
 **Решение:**
 
-1. Убедитесь что сайт доступен по HTTPS (или localhost)
-
-2. Проверьте что Service Worker файл существует:
-```bash
-ls public/sw.js
+1. **В development service worker отключён намеренно** — в `next.config.js`:
+```javascript
+const withPWA = require('@ducanh2912/next-pwa').default({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+  // ...
+})
 ```
+   Проверять SW нужно на production-билде (`npm run build && npm start`) или на деплое.
 
-3. Проверьте в Chrome DevTools:
+2. `public/sw.js` не хранится в репозитории — он генерируется `@ducanh2912/next-pwa` во время `npm run build`. Если файла нет после билда, смотрите ошибки билда.
+
+3. Убедитесь что сайт доступен по HTTPS (или localhost)
+
+4. Проверьте в Chrome DevTools:
    - Application → Service Workers
    - Смотрите errors
 
-4. Очистите кеш:
+5. Очистите кеш:
    - Application → Storage → Clear site data
+
+---
+
+### ❌ Игра завершена офлайн и не попала в Supabase / лидерборд
+
+**Проблема:** Игра закончена без сети; в истории она есть, а на лидерборде/по ссылке — нет.
+
+**Решение:**
+
+1. Это штатный сценарий: `autoSyncGame()` (`lib/sync.ts`) при неудачном синке помечает игру как pending в `localStorage` (ключ `killerpool_pending_sync`).
+
+2. Повторный синк выполняет `retryPendingSyncs()` (`lib/sync.ts`) — он вызывается из `components/pwa-init.tsx`:
+   - при монтировании приложения
+   - на событии `online`
+   - на `visibilitychange` (возврат на вкладку)
+
+   Достаточно открыть приложение с сетью — pending-игры досинхронизируются автоматически.
+
+3. Если игра так и не синкается, проверьте в DevTools → Application → Local Storage ключ `killerpool_pending_sync` и ошибки Supabase в Console. Игры, удалённые из истории (`killerpool_game_history`), из pending-очереди просто выбрасываются.
 
 ---
 
@@ -540,6 +594,7 @@ const HeavyComponent = dynamic(() => import('./heavy'), {
 ```bash
 npm run build
 # Смотрите на размеры chunks
+# Также есть npm run analyze (scripts/analyze-bundle.js)
 ```
 
 4. Используйте Server Components где возможно:
@@ -631,14 +686,15 @@ export default function Page() { ... }
 
 **Решение:**
 
-1. Проверьте viewport meta tag в `layout.tsx`:
+1. Проверьте viewport в `app/layout.tsx` — в Next.js 16 это отдельный экспорт `viewport`, а не поле `metadata`:
 ```typescript
-export const metadata = {
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1
-  }
+import type { Viewport } from 'next'
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#10b981',
 }
 ```
 
@@ -670,10 +726,11 @@ padding: 16px;
 />
 ```
 
-2. Используйте `viewport-fit=cover`:
+2. Используйте `viewport-fit=cover` (через экспорт `viewport` в `layout.tsx`):
 ```typescript
-viewport: {
-  viewportFit: 'cover'
+export const viewport: Viewport = {
+  // ...
+  viewportFit: 'cover',
 }
 ```
 
@@ -712,6 +769,8 @@ const [data, setData] = useState(() =>
 ```
 
 3. Убедитесь что HTML структура идентична на сервере и клиенте
+
+> Состояние игры в проекте живёт целиком на клиенте (`contexts/game-context.tsx` + `localStorage`: ключи `killerpool_current_game`, `killerpool_game_history`), поэтому компоненты, читающие его, — Client Components.
 
 ---
 
@@ -787,7 +846,7 @@ if (condition) {
 
 ```bash
 # Network tab
-- Проверьте failed requests
+- Проверьте failed requests к *.supabase.co
 - Смотрите на response codes (401, 403, 500)
 
 # Console tab
@@ -795,8 +854,8 @@ if (condition) {
 - console.log для отладки
 
 # Application tab
-- Проверьте localStorage
-- Проверьте cookies
+- Проверьте localStorage (ключи killerpool_*)
+- Проверьте cookies (Supabase auth)
 - Проверьте Service Workers
 ```
 
@@ -805,17 +864,16 @@ if (condition) {
 ```typescript
 // В компоненте
 console.log('Rendering component:', props)
-
-// В API route
-console.log('Request:', request.method, request.url)
 ```
+
+> В проекте **нет** `app/api/*` и REST-эндпоинтов — все данные ходят через Supabase JS-клиент напрямую с клиента (плюс единственный route handler `app/auth/callback/route.ts` для OAuth/magic link).
 
 ### 3. Supabase debugging
 
 ```typescript
-// Проверьте session
-const { data: { session } } = await supabase.auth.getSession()
-console.log('Session:', session)
+// Проверьте пользователя
+const { data: { user } } = await supabase.auth.getUser()
+console.log('User:', user)
 
 // Проверьте queries
 const { data, error } = await supabase.from('games').select('*')
@@ -832,6 +890,14 @@ curl https://your-project.supabase.co
 curl https://killerpool.app
 ```
 
+### 5. Тесты
+
+```bash
+npm test           # Jest + React Testing Library
+npm run test:watch
+npm run test:coverage
+```
+
 ---
 
 ## Получение помощи
@@ -842,6 +908,7 @@ curl https://killerpool.app
    - [README.md](./README.md)
    - [CONTRIBUTING.md](./CONTRIBUTING.md)
    - [DEPLOYMENT.md](./DEPLOYMENT.md)
+   - [LEADERBOARD_TROUBLESHOOTING.md](./LEADERBOARD_TROUBLESHOOTING.md) — отдельный гайд по проблемам лидерборда
 
 2. **Поищите в Issues:**
    - [GitHub Issues](https://github.com/yourusername/killerpool/issues)
@@ -858,4 +925,4 @@ curl https://killerpool.app
 
 ---
 
-**Документ обновлен:** 16 ноября 2025
+**Документ обновлен:** 2026-07-07

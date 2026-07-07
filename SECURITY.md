@@ -1,16 +1,19 @@
 # 🔐 Security - Killerpool
 
-Руководство по безопасности и best practices для Killerpool.
+Руководство по безопасности Killerpool. Документ описывает **реальное** состояние кода и базы данных, включая осознанные компромиссы. Планируемые, но не реализованные меры вынесены в отдельный раздел [Planned / Not Implemented](#planned--not-implemented).
 
 ## 📋 Содержание
 
 - [Обзор безопасности](#обзор-безопасности)
+- [Модель безопасности](#модель-безопасности)
 - [Authentication & Authorization](#authentication--authorization)
-- [Data Protection](#data-protection)
-- [API Security](#api-security)
-- [Frontend Security](#frontend-security)
+- [Route Protection](#route-protection)
+- [Row Level Security (RLS)](#row-level-security-rls)
+- [Realtime & Spectator Mode](#realtime--spectator-mode)
+- [Security Headers](#security-headers)
 - [Environment Variables](#environment-variables)
-- [OWASP Top 10](#owasp-top-10)
+- [Frontend Security](#frontend-security)
+- [Planned / Not Implemented](#planned--not-implemented)
 - [Security Checklist](#security-checklist)
 - [Incident Response](#incident-response)
 - [Reporting Vulnerabilities](#reporting-vulnerabilities)
@@ -19,14 +22,31 @@
 
 ## Обзор безопасности
 
-Killerpool следует принципу **security by default**:
+Что реально включено:
 
-- ✅ HTTPS only (enforced)
-- ✅ Row Level Security (RLS) в PostgreSQL
-- ✅ Environment variables для секретов
-- ✅ Content Security Policy (CSP)
-- ✅ XSS/CSRF защита через Next.js
-- ✅ Input validation & sanitization
+- ✅ HTTPS enforced (Vercel)
+- ✅ Row Level Security (RLS) на всех таблицах Supabase
+- ✅ Auth через Supabase (Google OAuth PKCE + Magic Link), сессии в cookies через `@supabase/ssr`
+- ✅ Секреты только в environment variables, `.env*` в `.gitignore`
+- ✅ Базовые security headers в `vercel.json` (3 штуки, см. [Security Headers](#security-headers))
+- ✅ Запись ачивок только через `SECURITY DEFINER` RPC — клиент не может выдать себе ачивку напрямую
+
+Чего **нет** (см. [Planned / Not Implemented](#planned--not-implemented)):
+
+- ❌ Content Security Policy (CSP)
+- ❌ Собственный rate limiting (только встроенные лимиты Supabase Auth)
+- ❌ Audit logging
+- ❌ Схемная валидация входных данных (zod и т.п.)
+
+---
+
+## Модель безопасности
+
+Killerpool — client-heavy приложение:
+
+- **Серверного API нет.** Директория `app/api` не существует. Единственный route handler — `app/auth/callback/route.ts` (OAuth callback). Все операции с данными идут через Supabase JS-клиент с публичным anon key, а авторизация обеспечивается RLS-политиками PostgreSQL.
+- **Состояние игры живёт на клиенте** — в localStorage (`killerpool_current_game`, `killerpool_game_history`, `killerpool_pending_sync`, `killerpool_guest_id` и др., см. `lib/storage.ts`). В Supabase попадают только завершённые игры (`autoSyncGame` в `lib/sync.ts`) и игры с включённым live sharing (`syncActiveGameToSupabase`).
+- **Следствие:** периметр безопасности — это RLS-политики Supabase плюс auth. Клиентский код по определению недоверенный; любые данные, которые он может записать, ограничиваются только политиками из раздела [RLS](#row-level-security-rls).
 
 ---
 
@@ -34,478 +54,294 @@ Killerpool следует принципу **security by default**:
 
 ### 🔐 Supabase Auth
 
-Killerpool использует Supabase для аутентификации:
+Поддерживаемые методы (`app/auth/page.tsx`):
 
-**Supported methods:**
-- ✅ Google OAuth 2.0
-- ✅ Magic Links (passwordless)
-- ✅ Email/Password (опционально)
+- ✅ **Google OAuth** — `supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: ${window.location.origin}/auth/callback } })`; PKCE flow обеспечивается `@supabase/ssr`
+- ✅ **Magic Link** — `supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: ... } })`
+- ✅ **Guest mode** — кнопка «Continue as Guest» просто уводит на `/`. Auth-записи нет: гость работает под ролью `anon`, а его стабильный UUID хранится в localStorage под ключом `killerpool_guest_id` (`lib/storage.ts`)
 
-**Security features:**
-- JWT tokens с expiration
-- Refresh tokens stored in httpOnly cookies
-- PKCE flow для OAuth
-- Rate limiting на auth endpoints
+Email/password auth **не реализован**.
 
----
+**OAuth callback** (`app/auth/callback/route.ts`):
 
-### 🔒 Row Level Security (RLS)
+```typescript
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  const origin = requestUrl.origin
 
-Все таблицы защищены RLS политиками:
+  if (code) {
+    const supabase = await createClient()
+    await supabase.auth.exchangeCodeForSession(code)
+  }
 
-#### Games Table
-
-```sql
--- Users can only view their own games
-CREATE POLICY "Users can view own games"
-ON games FOR SELECT
-USING (auth.uid() = created_by);
-
--- Users can only insert games they create
-CREATE POLICY "Users can insert own games"
-ON games FOR INSERT
-WITH CHECK (auth.uid() = created_by);
-
--- Users can only update their own games
-CREATE POLICY "Users can update own games"
-ON games FOR UPDATE
-USING (auth.uid() = created_by);
-
--- Users can only delete their own games
-CREATE POLICY "Users can delete own games"
-ON games FOR DELETE
-USING (auth.uid() = created_by);
+  // URL to redirect to after sign in process completes
+  return NextResponse.redirect(`${origin}/`)
+}
 ```
 
-#### Player Profiles
-
-```sql
--- Everyone can view profiles (public)
-CREATE POLICY "Public profiles are viewable"
-ON player_profiles FOR SELECT
-TO authenticated
-USING (true);
-
--- Users can only update their own profile
-CREATE POLICY "Users can update own profile"
-ON player_profiles FOR UPDATE
-USING (auth.uid() = user_id);
-```
-
----
+Redirect всегда на `/` — параметр `next`/`redirect_to` из query не читается, поэтому open redirect через callback невозможен.
 
 ### 🛡️ Session Management
 
-**Best practices:**
+Сессии управляются `@supabase/ssr`:
 
-1. **Session storage:**
-```typescript
-// ✅ Хорошо: httpOnly cookies (не доступны для JavaScript)
-const supabase = createBrowserClient()  // Автоматически использует cookies
+- `lib/supabase/client.ts` — `createBrowserClient()` для Client Components
+- `lib/supabase/server.ts` — `createServerClient()` с cookie-адаптером поверх `next/headers` для Server Components и Route Handlers
+- `lib/supabase/middleware.ts` — `updateSession(request)` обновляет (refresh) сессию на каждый запрос через proxy
 
-// ❌ Плохо: localStorage для токенов
-localStorage.setItem('token', accessToken)  // Уязвимо к XSS
-```
-
-2. **Session expiration:**
-```typescript
-// Токены истекают через 1 час
-// Refresh token автоматически обновляет access token
-const { data: { session } } = await supabase.auth.getSession()
-
-if (!session) {
-  // Redirect to login
-}
-```
-
-3. **Logout везде:**
-```typescript
-async function signOut() {
-  const supabase = createBrowserClient()
-
-  // Удаляет все сессии на всех устройствах
-  await supabase.auth.signOut({ scope: 'global' })
-}
-```
+Токены хранятся в cookies и автоматически обновляются. JWT имеет ограниченный срок жизни, refresh происходит прозрачно.
 
 ---
 
-### 🚫 Authorization Middleware
+## Route Protection
 
-**Файл:** `middleware.ts`
+В Next.js 16 вместо `middleware.ts` используется **`proxy.ts`** (конвенция Next 16). Его единственная задача — вызвать `updateSession()`:
 
 ```typescript
-import { createMiddlewareClient } from '@/lib/supabase/middleware'
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
-
-export async function middleware(request: NextRequest) {
-  const { supabase, response } = createMiddlewareClient(request)
-
-  // Проверяем сессию
-  const { data: { session } } = await supabase.auth.getSession()
-
-  // Защищенные роуты
-  const protectedPaths = ['/profile', '/game', '/history']
-  const isProtected = protectedPaths.some(path =>
-    request.nextUrl.pathname.startsWith(path)
-  )
-
-  if (isProtected && !session) {
-    // Redirect to login
-    return NextResponse.redirect(new URL('/auth', request.url))
-  }
-
-  return response
-}
-
-export const config = {
-  matcher: [
-    '/profile/:path*',
-    '/game/:path*',
-    '/history/:path*'
-  ]
+export async function proxy(request: NextRequest) {
+  return await updateSession(request)
 }
 ```
 
----
-
-## Data Protection
-
-### 🔐 Encryption
-
-**At rest:**
-- PostgreSQL data encrypted at rest (Supabase default)
-- Backups encrypted
-
-**In transit:**
-- HTTPS only (TLS 1.3)
-- Certificates auto-renewed (Let's Encrypt)
-
----
-
-### 🗑️ Data Deletion
-
-**GDPR compliance:**
+Внутри `updateSession` (`lib/supabase/middleware.ts`) защита роутов выглядит так — **защищён только `/profile`**:
 
 ```typescript
-// Полное удаление пользователя и его данных
-async function deleteUserData(userId: string) {
-  const supabase = createBrowserClient()
+// Protected routes - require authentication
+const protectedRoutes = ['/profile']
+const isProtectedRoute = protectedRoutes.some(route =>
+  request.nextUrl.pathname.startsWith(route)
+)
 
-  // 1. Удалить все игры
-  await supabase
-    .from('games')
-    .delete()
-    .eq('created_by', userId)
+if (!user && isProtectedRoute) {
+  const url = request.nextUrl.clone()
+  url.pathname = '/auth'
+  return NextResponse.redirect(url)
+}
 
-  // 2. Удалить профиль
-  await supabase
-    .from('player_profiles')
-    .delete()
-    .eq('user_id', userId)
-
-  // 3. Удалить auth аккаунт
-  await supabase.auth.admin.deleteUser(userId)
+// Redirect authenticated users away from auth page
+if (user && request.nextUrl.pathname === '/auth') {
+  const url = request.nextUrl.clone()
+  url.pathname = '/'
+  return NextResponse.redirect(url)
 }
 ```
 
+**Честное следствие:** `/game`, `/history` и остальные страницы доступны без авторизации — это осознанно, потому что игра работает в guest mode и состояние живёт в localStorage. Защищать там нечего: доступ к данным в Supabase ограничивается RLS, а не роутингом. Ещё нюанс: если env-переменные Supabase не заданы, `updateSession` пропускает запрос без auth-проверки (fail-open) — при этом клиент Supabase всё равно не создастся, так что деградация только для redirect-логики.
+
 ---
 
-### 📝 Audit Logging
+## Row Level Security (RLS)
 
-Все критичные действия логируются:
+RLS включён на всех таблицах (`00001_initial_schema.sql`). Ниже — **финальное** состояние политик после всех миграций (00001–00011). История правок: 00006 открыл публичное чтение игр, 00008 добавил политики live sharing, 00009 снёс все политики `games` и пересоздал начисто, 00011 ужесточил `user_achievements`.
+
+### Games (финал — миграция `00009_fix_live_sharing_policies.sql`)
 
 ```sql
-CREATE TABLE audit_log (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id),
-  action TEXT NOT NULL,
-  resource TEXT NOT NULL,
-  timestamp TIMESTAMPTZ DEFAULT NOW(),
-  ip_address TEXT,
-  user_agent TEXT
-);
+-- SELECT: Anyone can view any game (required for spectator mode)
+CREATE POLICY "games_select_all"
+    ON games FOR SELECT
+    TO anon, authenticated
+    USING (true);
 
--- Example
-INSERT INTO audit_log (user_id, action, resource)
-VALUES (auth.uid(), 'DELETE', 'game:123');
+-- INSERT: Authenticated users can create games
+CREATE POLICY "games_insert_authenticated"
+    ON games FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- INSERT: Anonymous users can create games (must have created_by = NULL)
+CREATE POLICY "games_insert_anon"
+    ON games FOR INSERT
+    TO anon
+    WITH CHECK (created_by IS NULL);
+
+-- UPDATE: Authenticated users can update their own games or games without owner
+CREATE POLICY "games_update_authenticated"
+    ON games FOR UPDATE
+    TO authenticated
+    USING (created_by = auth.uid() OR created_by IS NULL)
+    WITH CHECK (true);
+
+-- UPDATE: Anonymous users can update games without owner
+CREATE POLICY "games_update_anon"
+    ON games FOR UPDATE
+    TO anon
+    USING (created_by IS NULL)
+    WITH CHECK (created_by IS NULL);
+
+-- DELETE: Authenticated users can delete their own games
+CREATE POLICY "games_delete_authenticated"
+    ON games FOR DELETE
+    TO authenticated
+    USING (created_by = auth.uid());
 ```
+
+**Честные следствия этой модели:**
+
+- **Любая игра читается кем угодно** (включая роль `anon`) — это фича spectator mode: зритель по ссылке с UUID игры видит её состояние. Обратная сторона: UUID игры — единственный «секрет». Перебор UUID v4 практически невозможен, но кто получил ссылку — видит всё содержимое игры (имена игроков, историю ходов). **Не кладите чувствительные данные в имена игроков.**
+- **Гостевые игры (`created_by IS NULL`) может изменять кто угодно** — и `anon`, и любой авторизованный пользователь. Знаешь ID гостевой игры — можешь её переписать. Это цена guest mode без auth.
+- **`games_insert_authenticated` / `games_update_authenticated` имеют `WITH CHECK (true)`** — авторизованный пользователь технически может записать строку с чужим `created_by` или «присвоить» бесхозную игру при update. Клиентский код (`lib/sync.ts`) всегда пишет `created_by: user?.id || null`, но на уровне БД это не форсируется.
+- **Удалять игры может только владелец** (`created_by = auth.uid()`). Гостевые игры через клиент не удаляются вообще (DELETE-политики для `anon` нет).
+
+### Player Profiles & Rulesets (миграция `00001_initial_schema.sql`)
+
+```sql
+-- Профили читаются всеми
+CREATE POLICY "Public profiles are viewable by everyone"
+    ON player_profiles FOR SELECT
+    USING (true);
+
+-- Вставка своего профиля (или анонимного)
+CREATE POLICY "Users can insert their own profile"
+    ON player_profiles FOR INSERT
+    WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+
+-- Update/Delete — только своего профиля
+CREATE POLICY "Users can update their own profile"
+    ON player_profiles FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own profile"
+    ON player_profiles FOR DELETE
+    USING (auth.uid() = user_id);
+```
+
+Rulesets: `SELECT` для всех (`USING (true)`), `INSERT` — только `authenticated` (`WITH CHECK (true)`). UPDATE/DELETE-политик нет — переписать сид-рулсет через клиент нельзя.
+
+### User Achievements (00007 + ужесточение в `00011_fix_achievements_and_defaults.sql`)
+
+Финальное состояние:
+
+- **SELECT** — единственная политика `"Users can view all achievements"` (`USING (true)`): ачивки публичны (нужны для профилей и лидерборда).
+- **INSERT-политик нет.** Миграция 00011 удалила политику `"Service role can insert achievements"`, которая на самом деле позволяла любому авторизованному пользователю вставлять себе произвольные ачивки (`WITH CHECK auth.uid() = user_id`) — это был чит-вектор. Теперь запись возможна **только** через RPC `check_achievements(p_user_id UUID, p_game_id UUID)` — функция `SECURITY DEFINER` (обходит RLS). 00011 также отзывает дефолтный `EXECUTE` у `PUBLIC`/`anon` (в Postgres он выдаётся автоматически при создании функции — 00007 этого не делала) и оставляет его только `authenticated`/`service_role`. Внутри функция требует `p_user_id = auth.uid()` — начислить ачивки чужому пользователю нельзя, — затем проверяет, что победивший участник игры принадлежит вызывающему, и начисляет только заслуженные типы.
+- Клиент вызывает её через `checkAchievements(userId, gameId)` (`lib/achievements.ts`) после завершения игры.
+
+**Остаточный риск:** `check_achievements` доверяет полю `participants[].userId` в JSONB, которое пишет клиент. Пользователь, вручную записавший выигранную игру с собственным `userId` у победителя, получит ачивку. Это принято как допустимый риск для игры без ставок.
+
+### Leaderboard
+
+`get_leaderboard(limit_count)` — тоже `SECURITY DEFINER` RPC, `GRANT EXECUTE ... TO authenticated, anon` (миграция `00005`). Считает только `completed`-игры. Лидерборд публичный по дизайну.
 
 ---
 
-## API Security
+## Realtime & Spectator Mode
 
-### 🔑 API Keys
-
-**НИКОГДА не экспонируйте секретные ключи:**
-
-```typescript
-// ✅ Хорошо: Используйте только на сервере
-// lib/supabase/server.ts
-const supabase = createServerClient()
-await supabase.auth.admin.createUser(...)  // Service role key
-
-// ❌ Плохо: В Client Components
-'use client'
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY  // ⚠️ Утечет в браузер!
-```
-
-**Environment variables:**
-
-```env
-# ✅ Публичные (NEXT_PUBLIC_ префикс)
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
-
-# ✅ Приватные (только на сервере)
-SUPABASE_SERVICE_ROLE_KEY=eyJhbG...  # НЕ используйте NEXT_PUBLIC_!
-```
+- Таблица `games` добавлена в публикацию `supabase_realtime` (миграция 00009).
+- Зрители подписываются на `postgres_changes` (event `UPDATE`, `filter: id=eq.{gameId}`) в канале `game:{gameId}` — см. `subscribeToGame` в `lib/realtime.ts`.
+- Хост при каждом действии upsert'ит полную строку игры (`syncActiveGameToSupabase` в `lib/sync.ts`). Broadcast-каналов и presence нет — единственный источник правды для зрителя это строка в таблице `games`.
+- Поскольку `games_select_all` разрешает чтение роли `anon`, realtime-подписка работает и для неавторизованных зрителей. Это намеренно.
 
 ---
 
-### 🛡️ Rate Limiting
+## Security Headers
 
-**Supabase built-in:**
-- Auth endpoints: 30 requests/hour per IP
-- Database: Fair use policy
+Заголовки задаются **только в `vercel.json`** — `next.config.js` функции `headers()` **не содержит**. Реальный конфиг целиком:
 
-**Custom rate limiting (будущее):**
-
-```typescript
-// middleware.ts
-import rateLimit from '@/lib/rate-limit'
-
-const limiter = rateLimit({
-  interval: 60 * 1000,  // 1 minute
-  uniqueTokenPerInterval: 500
-})
-
-export async function middleware(request: NextRequest) {
-  try {
-    await limiter.check(request, 10)  // 10 requests per minute
-  } catch {
-    return new NextResponse('Too Many Requests', { status: 429 })
-  }
-
-  // Continue...
-}
-```
-
----
-
-### 🚫 Input Validation
-
-**Всегда валидируйте пользовательский ввод:**
-
-```typescript
-import { z } from 'zod'
-
-// Схема валидации
-const gameSchema = z.object({
-  players: z.array(z.object({
-    name: z.string().min(1).max(50),
-    avatar: z.string().emoji().or(z.string().url())
-  })).min(2).max(8)
-})
-
-// Валидация
-function createGame(input: unknown) {
-  // Throws error если invalid
-  const validated = gameSchema.parse(input)
-
-  // Безопасно использовать
-  return validated
-}
-```
-
----
-
-### 🧹 SQL Injection Prevention
-
-**Supabase автоматически защищает от SQL injection:**
-
-```typescript
-// ✅ Безопасно: Parameterized query
-await supabase
-  .from('games')
-  .select('*')
-  .eq('id', userInput)  // Автоматически экранируется
-
-// ❌ НЕ используйте raw SQL с пользовательским вводом
-await supabase.rpc('raw_query', {
-  query: `SELECT * FROM games WHERE id = '${userInput}'`  // ⚠️ SQL injection!
-})
-```
-
----
-
-## Frontend Security
-
-### 🛡️ XSS Protection
-
-**React автоматически экранирует контент:**
-
-```typescript
-// ✅ Безопасно: React escapes HTML
-<div>{userInput}</div>
-
-// ❌ Опасно: dangerouslySetInnerHTML
-<div dangerouslySetInnerHTML={{ __html: userInput }} />  // ⚠️ XSS risk!
-```
-
-**Используйте DOMPurify для HTML:**
-
-```typescript
-import DOMPurify from 'dompurify'
-
-const sanitized = DOMPurify.sanitize(userInput)
-<div dangerouslySetInnerHTML={{ __html: sanitized }} />  // ✅ Safe
-```
-
----
-
-### 🔒 Content Security Policy (CSP)
-
-**Файл:** `next.config.js`
-
-```javascript
-const securityHeaders = [
+```json
+"headers": [
   {
-    key: 'Content-Security-Policy',
-    value: `
-      default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline';
-      style-src 'self' 'unsafe-inline';
-      img-src 'self' data: https:;
-      font-src 'self';
-      connect-src 'self' https://*.supabase.co;
-      frame-ancestors 'none';
-    `.replace(/\s{2,}/g, ' ').trim()
-  },
-  {
-    key: 'X-Frame-Options',
-    value: 'DENY'
-  },
-  {
-    key: 'X-Content-Type-Options',
-    value: 'nosniff'
-  },
-  {
-    key: 'Referrer-Policy',
-    value: 'strict-origin-when-cross-origin'
-  },
-  {
-    key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=()'
-  }
-]
-
-module.exports = {
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: securityHeaders
-      }
+    "source": "/(.*)",
+    "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "X-Frame-Options", "value": "DENY" },
+      { "key": "X-XSS-Protection", "value": "1; mode=block" }
     ]
   }
-}
+]
 ```
 
----
-
-### 🚫 CSRF Protection
-
-**Next.js автоматически защищает Server Actions:**
-
-```typescript
-// Server Action (защищен CSRF token)
-'use server'
-
-export async function deleteGame(gameId: string) {
-  // Next.js проверяет CSRF token автоматически
-  const supabase = createServerClient()
-  await supabase.from('games').delete().eq('id', gameId)
-}
-```
-
----
-
-### 🔐 Secure Cookies
-
-```typescript
-// Supabase SSR автоматически использует secure cookies
-const supabase = createServerClient(cookieStore, {
-  cookies: {
-    set(name, value, options) {
-      cookieStore.set({
-        name,
-        value,
-        ...options,
-        httpOnly: true,    // ✅ Не доступны для JavaScript
-        secure: true,      // ✅ Только HTTPS
-        sameSite: 'lax'    // ✅ CSRF защита
-      })
-    }
-  }
-})
-```
+Это всё: три заголовка. **Content-Security-Policy не настроен** — см. [Planned / Not Implemented](#planned--not-implemented). `Referrer-Policy` и `Permissions-Policy` также не заданы. HTTPS форсируется платформой Vercel.
 
 ---
 
 ## Environment Variables
 
-### ⚠️ НИКОГДА не коммитьте секреты!
-
-```bash
-# .gitignore
-.env
-.env.local
-.env.*.local
-```
-
-### ✅ Используйте правильные префиксы
+Реальный список (`.env.local.example`):
 
 ```env
-# ✅ Публичные (доступны в браузере)
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_APP_URL=...
+# Публичные (доступны в браузере)
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# ✅ Приватные (только на сервере)
-SUPABASE_SERVICE_ROLE_KEY=...  # БЕЗ NEXT_PUBLIC_!
-DATABASE_URL=...
-API_SECRET=...
+# Приватные (только на сервере)
+# ⚠️ WARNING: This key bypasses Row Level Security - use with caution
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-### 🔄 Ротация ключей
+- `anon key` публичен по дизайну — вся защита данных лежит на RLS.
+- `SUPABASE_SERVICE_ROLE_KEY` объявлен в примере, но **в коде приложения нигде не используется** (серверных операций с ним нет). Держите его без префикса `NEXT_PUBLIC_` — иначе он утечёт в браузерный бандл и обнулит RLS.
+- `.env`, `.env.local`, `.env.*.local` — в `.gitignore`. Никогда не коммитьте секреты.
 
-**Меняйте ключи регулярно:**
-
-1. Создайте новый ключ в Supabase
-2. Обновите environment variables
-3. Redeploy приложение
-4. Удалите старый ключ через 24 часа
+**Ротация ключей:** создайте новый ключ в Supabase → обновите env в Vercel → redeploy → отзовите старый ключ.
 
 ---
 
-## OWASP Top 10
+## Frontend Security
 
-### ✅ Защита от OWASP Top 10 (2021)
+### XSS
 
-| # | Vulnerability | Защита |
-|---|---------------|--------|
-| 1 | **Broken Access Control** | ✅ RLS policies, middleware auth |
-| 2 | **Cryptographic Failures** | ✅ HTTPS, encrypted DB |
-| 3 | **Injection** | ✅ Parameterized queries |
-| 4 | **Insecure Design** | ✅ Security by default |
-| 5 | **Security Misconfiguration** | ✅ CSP headers, secure defaults |
-| 6 | **Vulnerable Components** | ✅ npm audit, dependabot |
-| 7 | **Authentication Failures** | ✅ Supabase Auth, JWT |
-| 8 | **Data Integrity Failures** | ✅ Input validation |
-| 9 | **Logging Failures** | ✅ Audit logs |
-| 10 | **SSRF** | ✅ Input validation, allowlists |
+- React экранирует контент по умолчанию; `dangerouslySetInnerHTML` в кодовой базе **не используется**.
+- Пользовательский ввод (имена игроков, email) рендерится только через JSX-интерполяцию.
+
+### CSRF
+
+- Server Actions и собственных мутирующих API-эндпоинтов нет — CSRF-поверхность классического вида отсутствует. Мутации идут в Supabase c JWT из cookie-сессии, управляемой `@supabase/ssr`.
+
+### SQL Injection
+
+- Все запросы — через query builder Supabase (`.from('games').select().eq(...)`) с параметризацией. Raw SQL с пользовательским вводом в клиентском коде нет. В RPC-функциях клиентский JSONB защищён от каст-исключений по-разному: `check_achievements` (00011) сравнивает id как `text = text` и гейтит все `::INTEGER`-касты числовым regex; `get_leaderboard` (00005) кастует `userId` в `uuid` только после UUID-regex, но `participant->>'id'` кастует без защиты — не-UUID id участника уронит вызов (известное ограничение v3).
+
+### PWA / Service Worker
+
+- `next.config.js` настраивает `@ducanh2912/next-pwa`: ответы Supabase API кэшируются стратегией `NetworkFirst` до 24 часов (`cacheName: 'supabase-api'`). На общих устройствах данные игр могут оставаться в Cache Storage браузера после выхода из аккаунта — учитывайте при работе на чужих устройствах.
+
+---
+
+## Planned / Not Implemented
+
+> Всё в этом разделе — **рекомендации и планы**. В коде этого нет.
+
+### Content Security Policy (CSP)
+
+CSP сейчас отсутствует. Рекомендуемая стартовая конфигурация — добавить в `vercel.json` (или в `headers()` в `next.config.js`):
+
+```
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'unsafe-eval' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: https:;
+  font-src 'self' https://fonts.gstatic.com;
+  connect-src 'self' https://*.supabase.co wss://*.supabase.co;
+  frame-ancestors 'none';
+```
+
+Примечания: `connect-src` должен включать `wss://*.supabase.co` для realtime-подписок; `font-src` — Google Fonts (кэшируются service worker'ом). Вводить лучше через `Content-Security-Policy-Report-Only`.
+
+### Дополнительные headers
+
+`Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+
+### Rate limiting
+
+Сейчас — только встроенные лимиты Supabase Auth. Кастомный rate limiting (например, на upsert игр в `proxy.ts` или через Vercel WAF) не реализован.
+
+### Audit logging
+
+Таблицы `audit_log` нет. При росте проекта стоит логировать удаление игр и начисление ачивок.
+
+### Input validation
+
+Схемной валидации (zod) нет — ограничения задаются только CHECK-констрейнтами БД (`display_name_length`, `valid_participants`, `valid_history`, `valid_params` в 00001). Валидация формы игры на клиенте — рекомендация.
+
+### Прочее
+
+- **2FA (TOTP)** через `supabase.auth.mfa` — не включено.
+- **Удаление аккаунта / экспорт данных (GDPR-тулинг)** — UI-флоу не реализован; удаление возможно только вручную через Supabase.
+- **Ужесточение RLS**: заменить `WITH CHECK (true)` в `games_insert_authenticated` / `games_update_authenticated` на `WITH CHECK (created_by = auth.uid() OR created_by IS NULL)`, чтобы БД форсировала корректный `created_by`.
 
 ---
 
@@ -513,76 +349,27 @@ API_SECRET=...
 
 ### 📋 Development
 
-- [ ] Используйте `.env.local` для локальной разработки
-- [ ] НЕ коммитьте `.env` файлы
-- [ ] Запускайте `npm audit` регулярно
-- [ ] Обновляйте зависимости (dependabot)
-- [ ] Валидируйте все пользовательские inputs
-- [ ] Используйте TypeScript strict mode
-- [ ] Code review для security-критичного кода
+- [x] `.env.local` для локальной разработки, `.env*` в `.gitignore`
+- [x] TypeScript strict mode
+- [ ] `npm audit` регулярно
+- [ ] Обновление зависимостей (dependabot)
 
 ### 📋 Pre-deployment
 
-- [ ] Все environment variables заданы в Vercel
-- [ ] Service role key не используется на клиенте
-- [ ] RLS политики настроены и протестированы
-- [ ] Security headers настроены (CSP, X-Frame-Options)
-- [ ] HTTPS enforced
+- [x] Environment variables заданы в Vercel
+- [x] Service role key не используется на клиенте (не используется вообще)
+- [x] RLS-политики настроены (миграции 00001–00011)
+- [x] Базовые security headers (`vercel.json`)
+- [x] HTTPS enforced (Vercel)
+- [ ] CSP настроен
 - [ ] Rate limiting настроен
-- [ ] Audit logging включен
 
 ### 📋 Production
 
 - [ ] Мониторинг ошибок (Sentry)
-- [ ] Логирование security events
-- [ ] Регулярные backups БД
-- [ ] Incident response plan документирован
+- [ ] Регулярные backups БД (Supabase-managed)
 - [ ] Ротация ключей каждые 90 дней
-- [ ] Security audits ежеквартально
-
----
-
-## Security Best Practices
-
-### 🔐 Passwords
-
-Если используете email/password auth:
-
-```typescript
-// Требования к паролю
-const passwordSchema = z.string()
-  .min(8, 'Минимум 8 символов')
-  .regex(/[A-Z]/, 'Минимум 1 заглавная буква')
-  .regex(/[a-z]/, 'Минимум 1 строчная буква')
-  .regex(/[0-9]/, 'Минимум 1 цифра')
-  .regex(/[^A-Za-z0-9]/, 'Минимум 1 спецсимвол')
-```
-
-### 🔒 2FA (Future)
-
-Для повышенной безопасности:
-
-```typescript
-// Enable TOTP
-await supabase.auth.mfa.enroll({
-  factorType: 'totp'
-})
-```
-
-### 🛡️ Dependency Security
-
-```bash
-# Проверка уязвимостей
-npm audit
-
-# Автоматический fix
-npm audit fix
-
-# Обновление зависимостей
-npm update
-
-# Используйте dependabot (GitHub)
-```
+- [ ] Периодические security audits
 
 ---
 
@@ -592,17 +379,17 @@ npm update
 
 **Если обнаружена уязвимость:**
 
-1. **Не паникуйте** - оцените серьезность
-2. **Изолируйте** - отключите затронутый функционал
-3. **Исправьте** - deploy hotfix
-4. **Уведомите** - пользователей если необходимо
-5. **Документируйте** - post-mortem
+1. **Не паникуйте** — оцените серьезность
+2. **Изолируйте** — отключите затронутый функционал
+3. **Исправьте** — deploy hotfix
+4. **Уведомите** — пользователей если необходимо
+5. **Документируйте** — post-mortem
 
 ### 📊 Severity Levels
 
 | Level | Описание | Response Time |
 |-------|----------|---------------|
-| **Critical** | RCE, data breach | < 1 hour |
+| **Critical** | RCE, data breach, обход RLS | < 1 hour |
 | **High** | Auth bypass, SQL injection | < 4 hours |
 | **Medium** | XSS, CSRF | < 24 hours |
 | **Low** | Info disclosure | < 1 week |
@@ -636,42 +423,19 @@ npm update
 
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [Supabase Security](https://supabase.com/docs/guides/platform/security)
-- [Next.js Security](https://nextjs.org/docs/advanced-features/security-headers)
+- [Supabase Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security)
+- [Next.js Security Headers](https://nextjs.org/docs/app/api-reference/config/next-config-js/headers)
 - [Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
-- [NIST Cybersecurity Framework](https://www.nist.gov/cyberframework)
 
 ### 🛠️ Security Tools
 
-- **npm audit** - Dependency vulnerabilities
-- **Snyk** - Real-time monitoring
-- **OWASP ZAP** - Penetration testing
-- **Burp Suite** - Web security testing
-- **SSL Labs** - SSL/TLS testing
+- **npm audit** — Dependency vulnerabilities
+- **Snyk** — Real-time monitoring
+- **OWASP ZAP** — Penetration testing
+- **SSL Labs** — SSL/TLS testing
 
 ---
 
-## Compliance
+**Документ обновлен:** 2026-07-07
 
-### 🌍 GDPR
-
-Killerpool соответствует GDPR:
-
-- ✅ Data minimization
-- ✅ Right to access (export data)
-- ✅ Right to deletion (delete account)
-- ✅ Data encryption
-- ✅ Privacy by design
-
-### 🇺🇸 CCPA
-
-California Consumer Privacy Act:
-
-- ✅ Data disclosure
-- ✅ Opt-out of data sale (мы не продаем данные)
-- ✅ Right to delete
-
----
-
-**Документ обновлен:** 16 ноября 2025
-
-**Последний security audit:** Не проводился (запланирован на Q1 2026)
+**Последний security audit:** Не проводился
