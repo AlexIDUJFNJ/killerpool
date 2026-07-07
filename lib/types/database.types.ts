@@ -51,11 +51,12 @@ export interface Database {
           created_at: string
           updated_at: string
           status: 'active' | 'completed' | 'abandoned'
-          participants: Json // Array of {id, name, avatar, lives, eliminated}
+          participants: Json // Array of {id, name, avatar, lives, eliminated, userId}
           winner_id: string | null
           ruleset_id: string | null
-          history: Json | null // Array of {action, player_id, timestamp, lives_before, lives_after}
+          history: Json | null // Array of {id, action, playerId, playerName, timestamp, livesBefore, livesAfter}
           created_by: string | null
+          current_player_index: number | null
         }
         Insert: {
           id?: string
@@ -67,6 +68,7 @@ export interface Database {
           ruleset_id?: string | null
           history?: Json | null
           created_by?: string | null
+          current_player_index?: number | null
         }
         Update: {
           id?: string
@@ -78,6 +80,30 @@ export interface Database {
           ruleset_id?: string | null
           history?: Json | null
           created_by?: string | null
+          current_player_index?: number | null
+        }
+      }
+      user_achievements: {
+        Row: {
+          id: string
+          user_id: string
+          achievement_type: string
+          unlocked_at: string
+          game_id: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          achievement_type: string
+          unlocked_at?: string
+          game_id?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          achievement_type?: string
+          unlocked_at?: string
+          game_id?: string | null
         }
       }
       rulesets: {
@@ -111,7 +137,28 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_leaderboard: {
+        Args: { limit_count?: number }
+        Returns: {
+          player_id: string
+          display_name: string
+          avatar_url: string | null
+          total_games: number
+          games_won: number
+          games_lost: number
+          win_rate: number
+          total_actions: number
+          total_black_pots: number
+          rank: number
+        }[]
+      }
+      check_achievements: {
+        Args: { p_user_id: string; p_game_id: string }
+        Returns: {
+          achievement_type: string
+          is_new: boolean
+        }[]
+      }
     }
     Enums: {
       game_status: 'active' | 'completed' | 'abandoned'
