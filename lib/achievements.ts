@@ -80,6 +80,29 @@ export async function checkAchievements(userId: string, gameId: string): Promise
 }
 
 /**
+ * Grant achievements for a completed game if the current user is its winner.
+ * Call only after the game row is synced to Supabase — the RPC reads it there.
+ * Returns newly unlocked achievements (empty for guests / non-winners).
+ */
+export async function checkAchievementsForGame(game: Game): Promise<AchievementType[]> {
+  try {
+    if (game.status !== 'completed' || !game.winnerId) return []
+
+    const winner = game.players.find(p => p.id === game.winnerId)
+    if (!winner?.userId) return []
+
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user || winner.userId !== user.id) return []
+
+    return await checkAchievements(user.id, game.id)
+  } catch (error) {
+    console.error('Error checking achievements for game:', error)
+    return []
+  }
+}
+
+/**
  * Check achievements locally (without database)
  * Useful for showing potential achievements before sync
  */
@@ -97,9 +120,13 @@ export function checkLocalAchievements(game: Game, userId: string): AchievementT
     newAchievements.push('survivor')
   }
 
-  // Check perfect game (no lives lost)
-  const startingLives = game.ruleset.params.starting_lives
-  if (winner.lives >= startingLives) {
+  // Check perfect game (no lives lost — no history entry where the winner's
+  // lives went down; lives >= starting_lives would wrongly count a player who
+  // lost lives and regained them with pot blacks)
+  const lostLife = game.history.some(
+    h => h.playerId === winner.id && h.livesAfter < h.livesBefore
+  )
+  if (!lostLife) {
     newAchievements.push('perfect_game')
   }
 

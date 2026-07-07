@@ -83,7 +83,7 @@ export default function HelpPage() {
                 <h3 className="font-semibold">Quick Start</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                Tap &quot;Start New Game&quot; on the home screen, add 2+ players with names and avatars, then tap &quot;Start Game&quot;. Swipe cards to record actions - left for MISS, right for BLACK, up for POT.
+                Tap &quot;Start New Game&quot; on the home screen, add 2+ players with names and avatars, then tap &quot;Start Game&quot;. Swipe cards to record actions - left for MISS, right for POT, up for POT BLACK.
               </p>
             </div>
 

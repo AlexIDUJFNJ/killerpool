@@ -8,6 +8,11 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
   swcMinify: true,
+  // Offline document fallback: without this, app/offline/page.tsx is never
+  // served (auto-detection only picks up app/~offline/page.*)
+  fallbacks: {
+    document: '/offline',
+  },
   workboxOptions: {
     disableDevLogs: true,
     runtimeCaching: [
@@ -114,7 +119,10 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },
-  // Turbopack configuration (Next.js 16+ default)
+  // Dev runs on Turbopack; production build MUST use webpack
+  // ("next build --webpack" in package.json) — @ducanh2912/next-pwa injects
+  // the service worker through the webpack hook, which Turbopack skips,
+  // so a Turbopack build ships without sw.js and the PWA silently dies
   turbopack: {},
 }
 

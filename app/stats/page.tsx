@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
-import { loadGameHistory } from '@/lib/storage'
+import { loadGameHistory, getGuestId } from '@/lib/storage'
 
 interface PlayerStats {
   totalGames: number
@@ -51,9 +51,13 @@ export default function StatsPage() {
         return
       }
 
+      // Games are created with players[0].userId set to the creator's auth id,
+      // or to the stable guest id for anonymous users (see app/game/new)
+      const myId = user?.id ?? getGuestId()
+
       // Calculate stats
       const playerGames = allGames.filter(game =>
-        game.players.some(p => p.userId === user?.id || p.name.includes(user?.email?.split('@')[0] || ''))
+        game.players.some(p => p.userId === myId)
       )
 
       if (playerGames.length === 0) {
@@ -63,7 +67,7 @@ export default function StatsPage() {
       }
 
       const gamesWon = playerGames.filter(game => game.winnerId &&
-        game.players.find(p => p.id === game.winnerId)?.userId === user?.id
+        game.players.find(p => p.id === game.winnerId)?.userId === myId
       ).length
 
       const gamesLost = playerGames.length - gamesWon
@@ -79,7 +83,7 @@ export default function StatsPage() {
 
       sortedGames.forEach((game, index) => {
         const isWin = game.winnerId &&
-          game.players.find(p => p.id === game.winnerId)?.userId === user?.id
+          game.players.find(p => p.id === game.winnerId)?.userId === myId
 
         if (isWin) {
           tempStreak++
@@ -102,9 +106,7 @@ export default function StatsPage() {
       let bestGame: PlayerStats['bestGame'] = null
 
       playerGames.forEach(game => {
-        const player = game.players.find(p =>
-          p.userId === user?.id || p.name.includes(user?.email?.split('@')[0] || '')
-        )
+        const player = game.players.find(p => p.userId === myId)
 
         if (!player) return
 

@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { PWAInit } from '@/components/pwa-init'
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://killerpool.app'),
   title: {
     default: 'Killerpool - Modern Killer Pool Game',
     template: '%s | Killerpool',
@@ -20,6 +21,8 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Killerpool',
   },
+  // og:image / twitter:image come from app/opengraph-image.tsx and
+  // app/twitter-image.tsx — do not list a static image here
   openGraph: {
     type: 'website',
     locale: 'en_US',
@@ -27,20 +30,11 @@ export const metadata: Metadata = {
     title: 'Killerpool - Modern Killer Pool Game',
     description: 'Modern PWA for tracking Killer Pool games. Play with friends, track lives, and compete with style.',
     siteName: 'Killerpool',
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: 'Killerpool - Modern Killer Pool Game',
-      },
-    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Killerpool - Modern Killer Pool Game',
     description: 'Modern PWA for tracking Killer Pool games. Play with friends, track lives, and compete with style.',
-    images: ['/og-image.png'],
     creator: '@killerpool',
   },
   robots: {

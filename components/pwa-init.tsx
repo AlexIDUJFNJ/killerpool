@@ -1,47 +1,34 @@
 'use client'
 
 import { useEffect } from 'react'
-import { setupSyncListeners, syncNow } from '@/lib/sync-manager'
+import { retryPendingSyncs } from '@/lib/sync'
 
 /**
  * PWA Initialization Component
- * Handles service worker registration and background sync setup
+ * Handles service worker registration and retrying failed game syncs
  */
 export function PWAInit() {
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    if (typeof window === 'undefined') {
       return
     }
 
-    // Setup sync listeners
-    setupSyncListeners()
+    // Retry syncing games that were completed offline.
+    // Independent of service worker support — needs only localStorage + fetch.
+    retryPendingSyncs().catch(console.error)
 
-    // Register service worker
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((registration) => {
-        console.log('Service Worker registered:', registration)
+    const handleOnline = () => {
+      retryPendingSyncs().catch(console.error)
+    }
 
-        // Try to sync pending items on registration
-        syncNow().catch(console.error)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        retryPendingSyncs().catch(console.error)
+      }
+    }
 
-        // Listen for updates
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New service worker available, notify user
-                console.log('New service worker available')
-                // You can show a toast/notification here
-              }
-            })
-          }
-        })
-      })
-      .catch((error) => {
-        console.error('Service Worker registration failed:', error)
-      })
+    window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     // Handle app install prompt
     let _deferredPrompt: any = null
@@ -53,16 +40,45 @@ export function PWAInit() {
       console.log('PWA install prompt ready')
     }
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
-
-    // Handle successful install
-    window.addEventListener('appinstalled', () => {
+    const handleAppInstalled = () => {
       console.log('PWA installed successfully')
       _deferredPrompt = null
-    })
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleAppInstalled)
+
+    // Register service worker (only where supported)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          console.log('Service Worker registered:', registration)
+
+          // Listen for updates
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New service worker available, notify user
+                  console.log('New service worker available')
+                  // You can show a toast/notification here
+                }
+              })
+            }
+          })
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error)
+        })
+    }
 
     return () => {
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleAppInstalled)
     }
   }, [])
 

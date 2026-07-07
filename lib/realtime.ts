@@ -7,6 +7,9 @@
 import { createClient } from '@/lib/supabase/client'
 import { Game, GameHistoryEntry } from './types'
 import { RealtimeChannel } from '@supabase/supabase-js'
+// NOTE: writes during a shared game go through syncActiveGameToSupabase
+// (lib/sync.ts), which upserts the full game state owned by the host —
+// there is no per-action write path here.
 
 /**
  * Subscribe to realtime updates for a game
@@ -92,66 +95,6 @@ export async function unsubscribeFromGame(channel: RealtimeChannel | null): Prom
     console.log('Unsubscribed from game')
   } catch (error) {
     console.error('Failed to unsubscribe from game:', error)
-  }
-}
-
-/**
- * Broadcast a game action to all connected clients
- */
-export async function broadcastGameAction(
-  gameId: string,
-  action: GameHistoryEntry
-): Promise<boolean> {
-  try {
-    const supabase = createClient()
-
-    // Get current game data
-    const { data: game, error } = await supabase
-      .from('games')
-      .select('history, participants')
-      .eq('id', gameId)
-      .single()
-
-    if (error) {
-      console.error('Failed to fetch game:', error)
-      return false
-    }
-
-    // Add new action to history
-    const updatedHistory = [...(game.history || []), action]
-
-    // Update participants if lives changed
-    const updatedParticipants = (game.participants as any[]).map((p: any) => {
-      if (p.id === action.playerId) {
-        return {
-          ...p,
-          lives: action.livesAfter,
-          eliminated: action.livesAfter <= 0,
-        }
-      }
-      return p
-    })
-
-    // Update game in database
-    const { error: updateError } = await supabase
-      .from('games')
-      .update({
-        history: updatedHistory,
-        participants: updatedParticipants,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', gameId)
-
-    if (updateError) {
-      console.error('Failed to update game:', updateError)
-      return false
-    }
-
-    console.log('Game action broadcasted successfully')
-    return true
-  } catch (error) {
-    console.error('Failed to broadcast game action:', error)
-    return false
   }
 }
 

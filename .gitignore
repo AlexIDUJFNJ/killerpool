@@ -46,3 +46,6 @@ next-env.d.ts
 !.vscode/launch.json
 !.vscode/extensions.json
 .idea
+
+# PWA offline fallback bundle (generated at build)
+**/public/fallback-*.js

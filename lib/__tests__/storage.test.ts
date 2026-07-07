@@ -12,6 +12,9 @@ import {
   getGameFromHistory,
   deleteGameFromHistory,
   hasCurrentGame,
+  getPendingSyncIds,
+  markPendingSync,
+  unmarkPendingSync,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
@@ -355,6 +358,49 @@ describe('Storage', () => {
       );
 
       global.localStorage.setItem = originalSetItem;
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('pending sync queue', () => {
+    it('should return empty array when nothing is pending', () => {
+      expect(getPendingSyncIds()).toEqual([]);
+    });
+
+    it('should mark and unmark games as pending sync', () => {
+      markPendingSync('game-1');
+      markPendingSync('game-2');
+
+      expect(getPendingSyncIds()).toEqual(['game-1', 'game-2']);
+
+      unmarkPendingSync('game-1');
+
+      expect(getPendingSyncIds()).toEqual(['game-2']);
+    });
+
+    it('should not duplicate a game id marked twice', () => {
+      markPendingSync('game-1');
+      markPendingSync('game-1');
+
+      expect(getPendingSyncIds()).toEqual(['game-1']);
+    });
+
+    it('should ignore unmarking a game that is not pending', () => {
+      markPendingSync('game-1');
+      unmarkPendingSync('game-2');
+
+      expect(getPendingSyncIds()).toEqual(['game-1']);
+    });
+
+    it('should return empty array for corrupted data', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      global.localStorage.setItem('killerpool_pending_sync', 'not-json');
+      expect(getPendingSyncIds()).toEqual([]);
+
+      global.localStorage.setItem('killerpool_pending_sync', '{"not":"array"}');
+      expect(getPendingSyncIds()).toEqual([]);
+
       consoleErrorSpy.mockRestore();
     });
   });

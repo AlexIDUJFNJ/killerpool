@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
 import { createClient } from '@/lib/supabase/client'
 import { Game } from '@/lib/types'
+import { mapDbGameToGame } from '@/lib/game-mapper'
 import { motion } from 'motion/react'
 import {
   ArrowLeft,
@@ -64,32 +65,7 @@ export default function GameDetailsPage() {
         }
 
         // Convert Supabase game to our Game type
-        const convertedGame: Game = {
-          id: gameData.id,
-          createdAt: gameData.created_at,
-          updatedAt: gameData.updated_at,
-          status: gameData.status,
-          players: gameData.participants,
-          currentPlayerIndex: 0,
-          winnerId: gameData.winner_id,
-          rulesetId: gameData.ruleset_id,
-          ruleset: {
-            id: 'classic',
-            name: 'Classic Killer Pool',
-            params: {
-              starting_lives: 3,
-              miss: -1,
-              pot: 0,
-              pot_black: 1,
-              max_lives: 6,
-            },
-            is_default: true,
-          },
-          history: gameData.history,
-          createdBy: gameData.created_by,
-        }
-
-        setGame(convertedGame)
+        setGame(mapDbGameToGame(gameData))
       } catch (error) {
         console.error('Failed to load game from Supabase:', error)
         setNotFound(true)

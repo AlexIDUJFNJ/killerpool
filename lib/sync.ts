@@ -6,7 +6,14 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { Game } from './types'
-import { loadGameHistory } from './storage'
+import { mapDbGameToGame } from './game-mapper'
+import {
+  loadGameHistory,
+  getGameFromHistory,
+  getPendingSyncIds,
+  markPendingSync,
+  unmarkPendingSync,
+} from './storage'
 
 /**
  * Sync a completed game to Supabase
@@ -136,32 +143,7 @@ export async function loadGamesFromSupabase(): Promise<Game[]> {
     }
 
     // Convert Supabase games to our Game type
-    const convertedGames: Game[] = (games || []).map((game: any) => ({
-      id: game.id,
-      createdAt: game.created_at,
-      updatedAt: game.updated_at,
-      status: game.status,
-      players: game.participants,
-      currentPlayerIndex: 0, // This is only relevant for active games
-      winnerId: game.winner_id,
-      rulesetId: game.ruleset_id,
-      ruleset: {
-        id: 'classic',
-        name: 'Classic Killer Pool',
-        params: {
-          starting_lives: 3,
-          miss: -1,
-          pot: 0,
-          pot_black: 1,
-          max_lives: 6,
-        },
-        is_default: true,
-      },
-      history: game.history,
-      createdBy: game.created_by,
-    }))
-
-    return convertedGames
+    return (games || []).map(mapDbGameToGame)
   } catch (error) {
     console.error('Error loading games from Supabase:', error)
     return []
@@ -222,14 +204,57 @@ export async function isSupabaseAvailable(): Promise<boolean> {
 
 /**
  * Auto-sync completed game to Supabase (for both authenticated and guest users)
+ * Games that fail to sync (e.g. offline) are marked pending and retried later
+ * by retryPendingSyncs(). Returns whether the sync succeeded.
  */
-export async function autoSyncGame(game: Game): Promise<void> {
+export async function autoSyncGame(game: Game): Promise<boolean> {
   if (game.status !== 'completed') {
-    return
+    return false
   }
 
   // Always try to sync to Supabase (for sharing game links)
-  await syncGameToSupabase(game)
+  const success = await syncGameToSupabase(game)
+  if (success) {
+    unmarkPendingSync(game.id)
+  } else {
+    markPendingSync(game.id)
+  }
+  return success
+}
+
+let retryInFlight = false
+
+/**
+ * Retry syncing completed games that previously failed (e.g. finished offline).
+ * Called on 'online' / 'visibilitychange' events, see components/pwa-init.tsx.
+ * Achievements for late-synced games are granted here too (without toasts) —
+ * the RPC can only see the game once its row exists in Supabase.
+ */
+export async function retryPendingSyncs(): Promise<void> {
+  if (typeof window === 'undefined') return
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return
+  if (retryInFlight) return
+
+  retryInFlight = true
+  try {
+    const ids = getPendingSyncIds()
+    for (const id of ids) {
+      const game = getGameFromHistory(id)
+      if (!game) {
+        // Game was deleted from history — nothing left to sync
+        unmarkPendingSync(id)
+        continue
+      }
+      const success = await syncGameToSupabase(game)
+      if (success) {
+        unmarkPendingSync(id)
+        const { checkAchievementsForGame } = await import('./achievements')
+        await checkAchievementsForGame(game)
+      }
+    }
+  } finally {
+    retryInFlight = false
+  }
 }
 
 /**

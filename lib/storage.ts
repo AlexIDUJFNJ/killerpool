@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   SETTINGS: 'killerpool_settings',
   GUEST_ID: 'killerpool_guest_id',
   REMATCH_PLAYERS: 'killerpool_rematch_players',
+  PENDING_SYNC: 'killerpool_pending_sync',
 } as const
 
 /**
@@ -170,6 +171,50 @@ export function getPlayerNamesSuggestions(): string[] {
   } catch (error) {
     console.error('Failed to get player names:', error)
     return []
+  }
+}
+
+/**
+ * Get IDs of completed games that failed to sync to Supabase
+ */
+export function getPendingSyncIds(): string[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.PENDING_SYNC)
+    const ids = data ? JSON.parse(data) : []
+    return Array.isArray(ids) ? ids : []
+  } catch (error) {
+    console.error('Failed to load pending sync ids:', error)
+    return []
+  }
+}
+
+/**
+ * Mark a game as pending sync (will be retried when back online)
+ */
+export function markPendingSync(gameId: string): void {
+  try {
+    const ids = getPendingSyncIds()
+    if (!ids.includes(gameId)) {
+      ids.push(gameId)
+      localStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(ids))
+    }
+  } catch (error) {
+    console.error('Failed to mark game as pending sync:', error)
+  }
+}
+
+/**
+ * Remove a game from the pending sync list
+ */
+export function unmarkPendingSync(gameId: string): void {
+  try {
+    const ids = getPendingSyncIds()
+    const filtered = ids.filter(id => id !== gameId)
+    if (filtered.length !== ids.length) {
+      localStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(filtered))
+    }
+  } catch (error) {
+    console.error('Failed to unmark pending sync:', error)
   }
 }
 

@@ -7,12 +7,15 @@
 'use client'
 
 import * as React from 'react'
-import { Game, GameAction } from '@/lib/types'
+import { Game, GameAction, AchievementType } from '@/lib/types'
 import { applyAction, undoLastAction, getCurrentPlayer, addPlayerToGame } from '@/lib/game-logic'
 import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
 import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
+import { checkAchievementsForGame } from '@/lib/achievements'
+import { AchievementToasts } from '@/components/achievements/achievement-toast'
+import { mapDbGameToGame } from '@/lib/game-mapper'
 import { useRealtimeGame, useSyncGameForRealtime } from '@/hooks/use-realtime-game'
-import { broadcastGameAction, updateGameStatus, subscribeToGame, unsubscribeFromGame } from '@/lib/realtime'
+import { updateGameStatus, subscribeToGame, unsubscribeFromGame } from '@/lib/realtime'
 import { createClient } from '@/lib/supabase/client'
 import { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -23,6 +26,8 @@ interface GameContextValue {
   isSpectatorMode: boolean
   isSharingEnabled: boolean
   currentUserId: string | null
+  newAchievements: AchievementType[]
+  dismissAchievement: () => void
   startGame: (game: Game, enableRealtime?: boolean) => void
   performAction: (action: GameAction) => void
   undoAction: () => void
@@ -44,6 +49,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [isSpectatorMode, setIsSpectatorMode] = React.useState(false)
   const [isSharingEnabled, setIsSharingEnabled] = React.useState(false)
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
+  const [newAchievements, setNewAchievements] = React.useState<AchievementType[]>([])
   const spectatorChannelRef = React.useRef<RealtimeChannel | null>(null)
   // Track completed games that have already been synced to prevent infinite loops
   const syncedCompletedGamesRef = React.useRef<Set<string>>(new Set())
@@ -115,10 +121,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         console.log('[useEffect] Syncing completed game:', game.id)
 
         saveToHistory(game)
-        // Auto-sync to Supabase in background
-        autoSyncGame(game).catch((error) => {
-          console.error('Failed to auto-sync game:', error)
-        })
+        // Auto-sync to Supabase in background, then grant achievements
+        // (the RPC reads the game row, so it must run after a successful sync;
+        // a failed sync is retried by retryPendingSyncs, which also grants)
+        autoSyncGame(game)
+          .then(async (synced) => {
+            if (!synced) return
+            const unlocked = await checkAchievementsForGame(game)
+            if (unlocked.length > 0) {
+              setNewAchievements((prev) => [...prev, ...unlocked])
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to auto-sync game:', error)
+          })
         // Update status in realtime if enabled
         if (realtimeEnabled) {
           updateGameStatus(game.id, 'completed', game.winnerId).catch((error) => {
@@ -130,8 +146,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [game, realtimeEnabled, isSpectatorMode])
 
   const startGame = React.useCallback((newGame: Game, enableRealtime = false) => {
+    // Reset per-game modes so a new game doesn't inherit sharing/spectator
+    // state from the previous one
+    if (spectatorChannelRef.current) {
+      unsubscribeFromGame(spectatorChannelRef.current)
+      spectatorChannelRef.current = null
+    }
     setGame(newGame)
     setRealtimeEnabled(enableRealtime)
+    setIsSpectatorMode(false)
+    setIsSharingEnabled(false)
   }, [])
 
   const performAction = React.useCallback((action: GameAction) => {
@@ -230,37 +254,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return null
       }
 
-      // Convert database format to Game format
-      // Use current_player_index from DB, fallback to calculating from players
-      const currentPlayerIndex = gameData.current_player_index ??
-        (gameData.participants?.findIndex((p: any) => !p.eliminated && p.lives > 0) ?? 0)
-
-      const loadedGame: Game = {
-        id: gameData.id,
-        createdAt: gameData.created_at,
-        updatedAt: gameData.updated_at,
-        status: gameData.status,
-        players: gameData.participants,
-        currentPlayerIndex,
-        winnerId: gameData.winner_id,
-        rulesetId: gameData.ruleset_id,
-        ruleset: {
-          id: 'classic',
-          name: 'Classic Killer Pool',
-          params: {
-            starting_lives: 3,
-            miss: -1,
-            pot: 0,
-            pot_black: 1,
-            max_lives: 6,
-          },
-          is_default: true,
-        },
-        history: gameData.history || [],
-        createdBy: gameData.created_by,
-      }
-
-      return loadedGame
+      return mapDbGameToGame(gameData)
     } catch (error) {
       console.error('Error loading game from Supabase:', error)
       return null
@@ -357,6 +351,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, [game, isSharingEnabled])
 
+  const dismissAchievement = React.useCallback(() => {
+    setNewAchievements((prev) => prev.slice(1))
+  }, [])
+
   const value: GameContextValue = {
     game,
     isLoading,
@@ -364,6 +362,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     isSpectatorMode,
     isSharingEnabled,
     currentUserId,
+    newAchievements,
+    dismissAchievement,
     startGame,
     performAction,
     undoAction,
@@ -376,7 +376,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     addPlayer,
   }
 
-  return <GameContext.Provider value={value}>{children}</GameContext.Provider>
+  return (
+    <GameContext.Provider value={value}>
+      {children}
+      {/* Rendered at app level so a toast that arrives after leaving the
+          winner screen is still shown (and auto-drained) wherever the user is */}
+      <AchievementToasts achievements={newAchievements} onDismiss={dismissAchievement} />
+    </GameContext.Provider>
+  )
 }
 
 export function useGame() {
