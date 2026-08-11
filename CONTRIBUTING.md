@@ -123,6 +123,39 @@ We use ESLint for linting. Run the linter before committing:
 npm run lint
 ```
 
+## Agent session capture (Entire)
+
+The repository is set up for [Entire](https://docs.entire.io), which records the
+context behind AI-assisted changes — prompts, tool calls and diffs — as
+checkpoints tied to commits. That is why `.entire/settings.json` and the hooks
+in `.claude/settings.json` are committed, and why cloning installs git hooks.
+
+Transcripts do **not** go into this repository. `checkpoint_remote` points at a
+separate private repo, because this one is public and Entire states that its
+secret redaction is best-effort rather than a guarantee. The `git-refs` backend
+stores one ref per checkpoint, so the working history stays clean.
+
+To take part, install the CLI and enable it in your clone:
+
+```bash
+curl -fsSL https://entire.io/install.sh | bash
+entire login
+entire enable --agent claude-code
+```
+
+Two things to know, both learned the hard way:
+
+- Run `entire enable` **inside the repository**. In a directory that is not a
+  git repo it offers to create one, which is how a stray repository ends up in
+  a home directory.
+- Enabling it part-way through an agent session captures nothing for that
+  session: checkpoints attach to a session that is registered when the session
+  starts. Commits made before that point have no checkpoint.
+  `entire import claude-code` backfills past transcripts, but as read-only
+  history — not linked to commits and without generated summaries.
+
+Contributing without Entire is fine. The hooks no-op when the CLI is absent.
+
 ## Commit Guidelines
 
 We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
