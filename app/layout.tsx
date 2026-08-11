@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { GameProvider } from '@/contexts/game-context'
-import { ThemeProvider } from '@/components/theme-provider'
 import { PWAInit } from '@/components/pwa-init'
 import { getBaseUrl } from '@/lib/site'
 
@@ -58,6 +57,21 @@ export const viewport: Viewport = {
   themeColor: '#10b981',
 }
 
+/**
+ * Applies the theme before the first paint.
+ *
+ * This used to be a React provider, but a provider cannot help here: it runs
+ * after hydration, so it either flashes the wrong theme or — as it did —
+ * returns null until mounted and blanks the entire server-rendered page. Only
+ * `.dark` matters; `:root` already carries the light palette (app/globals.css).
+ */
+const THEME_SCRIPT = `(function(){try{
+var stored=localStorage.getItem('killerpool-theme');
+var theme=stored||'dark';
+if(theme==='dark'||(theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)){
+document.documentElement.classList.add('dark');
+}}catch(e){document.documentElement.classList.add('dark');}})()`
+
 export default function RootLayout({
   children,
 }: {
@@ -66,6 +80,7 @@ export default function RootLayout({
   return (
     <html lang="ru" suppressHydrationWarning className="overflow-x-hidden">
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
         <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
@@ -76,10 +91,8 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body className="font-sans antialiased overflow-x-hidden">
-        <ThemeProvider defaultTheme="dark" storageKey="killerpool-theme">
-          <PWAInit />
-          <GameProvider>{children}</GameProvider>
-        </ThemeProvider>
+        <PWAInit />
+        <GameProvider>{children}</GameProvider>
       </body>
     </html>
   )
