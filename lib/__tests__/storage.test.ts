@@ -18,6 +18,11 @@ import {
   getDeletedGameIds,
   markGameDeleted,
   clearGameDeleted,
+  loadRoster,
+  findRosterPlayer,
+  resolveRosterPlayerId,
+  rememberRosterPlayers,
+  getPlayerNamesSuggestions,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
@@ -420,6 +425,67 @@ describe('Storage', () => {
       localStorage.setItem('killerpool_deleted_games', 'not json');
 
       expect(getDeletedGameIds().size).toBe(0);
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('player roster', () => {
+    const uuid = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
+
+    it('should mint an id for somebody new', () => {
+      const id = resolveRosterPlayerId('Misha');
+
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    });
+
+    it('should reuse the id of a known player', () => {
+      rememberRosterPlayers([{ id: uuid(1), name: 'Misha', avatar: '🎱' }]);
+
+      expect(resolveRosterPlayerId('Misha')).toBe(uuid(1));
+    });
+
+    it('should match names regardless of case and padding', () => {
+      rememberRosterPlayers([{ id: uuid(1), name: 'Misha', avatar: '🎱' }]);
+
+      expect(resolveRosterPlayerId('  mIsHa ')).toBe(uuid(1));
+      expect(findRosterPlayer('MISHA')?.id).toBe(uuid(1));
+    });
+
+    it('should keep the original id when a player is seen again', () => {
+      // The id is what the leaderboard groups by — a second sighting must not
+      // split the same person into two entries
+      rememberRosterPlayers([{ id: uuid(1), name: 'Misha', avatar: '🎱' }]);
+      rememberRosterPlayers([{ id: uuid(2), name: 'Misha', avatar: '🎯' }]);
+
+      const roster = loadRoster();
+      expect(roster).toHaveLength(1);
+      expect(roster[0].id).toBe(uuid(1));
+      expect(roster[0].avatar).toBe('🎯');
+    });
+
+    it('should ignore blank names', () => {
+      rememberRosterPlayers([{ id: uuid(1), name: '   ', avatar: '🎱' }]);
+
+      expect(loadRoster()).toHaveLength(0);
+      expect(findRosterPlayer('   ')).toBeNull();
+    });
+
+    it('should offer known players for autocomplete', () => {
+      rememberRosterPlayers([
+        { id: uuid(1), name: 'Misha', avatar: '🎱' },
+        { id: uuid(2), name: 'Anton', avatar: '🎯' },
+      ]);
+
+      expect(getPlayerNamesSuggestions()).toEqual(['Anton', 'Misha']);
+    });
+
+    it('should survive corrupted data', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      localStorage.setItem('killerpool_roster', 'not json');
+
+      expect(loadRoster()).toEqual([]);
+      expect(resolveRosterPlayerId('Misha')).toBeTruthy();
 
       consoleErrorSpy.mockRestore();
     });

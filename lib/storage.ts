@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
   REMATCH_PLAYERS: 'killerpool_rematch_players',
   PENDING_SYNC: 'killerpool_pending_sync',
   DELETED_GAMES: 'killerpool_deleted_games',
+  ROSTER: 'killerpool_roster',
 } as const
 
 /**
@@ -171,19 +172,109 @@ export function getGuestId(): string {
 }
 
 /**
- * Get unique player names from game history for autocomplete
+ * A person who plays on this device.
+ *
+ * Their id is reused for every game they appear in, which is what makes the
+ * leaderboard able to aggregate them: get_leaderboard groups by
+ * COALESCE(participants[].userId, participants[].id), and only the game's
+ * creator has a userId. Without a stable id every opponent shows up as a
+ * separate one-game player.
+ */
+export interface RosterPlayer {
+  id: string
+  name: string
+  avatar: string
+  lastPlayedAt: number
+}
+
+const MAX_ROSTER = 100
+
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+export function loadRoster(): RosterPlayer[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.ROSTER)
+    const parsed = data ? JSON.parse(data) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (p): p is RosterPlayer => typeof p?.id === 'string' && typeof p?.name === 'string'
+    )
+  } catch (error) {
+    console.error('Failed to load roster:', error)
+    return []
+  }
+}
+
+function saveRoster(players: RosterPlayer[]): void {
+  try {
+    const trimmed = [...players]
+      .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt)
+      .slice(0, MAX_ROSTER)
+    localStorage.setItem(STORAGE_KEYS.ROSTER, JSON.stringify(trimmed))
+  } catch (error) {
+    console.error('Failed to save roster:', error)
+  }
+}
+
+/**
+ * Find a known player by name (case-insensitive)
+ */
+export function findRosterPlayer(name: string): RosterPlayer | null {
+  const key = normalizeName(name)
+  if (!key) return null
+  return loadRoster().find(p => normalizeName(p.name) === key) ?? null
+}
+
+/**
+ * Reuse the id of a known player, or mint one for somebody new.
+ * Lowercase UUID: get_leaderboard drops ids that fail its UUID regex.
+ */
+export function resolveRosterPlayerId(name: string): string {
+  return findRosterPlayer(name)?.id ?? crypto.randomUUID()
+}
+
+/**
+ * Record the players of a game that just started, so their ids are reused next
+ * time and their names show up in autocomplete.
+ */
+export function rememberRosterPlayers(
+  players: Array<{ id: string; name: string; avatar: string }>
+): void {
+  const roster = loadRoster()
+  const now = Date.now()
+
+  for (const player of players) {
+    if (!player.name.trim()) continue
+    const existing = roster.findIndex(p => normalizeName(p.name) === normalizeName(player.name))
+    const entry = { id: player.id, name: player.name.trim(), avatar: player.avatar, lastPlayedAt: now }
+    if (existing >= 0) {
+      // Keep the id already in use — renaming a person must not split their stats
+      roster[existing] = { ...entry, id: roster[existing].id }
+    } else {
+      roster.push(entry)
+    }
+  }
+
+  saveRoster(roster)
+}
+
+/**
+ * Get unique player names for autocomplete: known players first, then anyone
+ * who only appears in older games (from before the roster existed)
  */
 export function getPlayerNamesSuggestions(): string[] {
   try {
-    const history = loadGameHistory()
     const namesSet = new Set<string>()
 
-    // Extract all player names from history
-    history.forEach(game => {
+    loadRoster().forEach(player => {
+      if (player.name.trim()) namesSet.add(player.name)
+    })
+
+    loadGameHistory().forEach(game => {
       game.players.forEach(player => {
-        if (player.name.trim()) {
-          namesSet.add(player.name)
-        }
+        if (player.name.trim()) namesSet.add(player.name)
       })
     })
 

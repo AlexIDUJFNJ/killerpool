@@ -21,10 +21,13 @@ export function createPlayer(
   name: string,
   avatar: string,
   startingLives: number,
-  userId?: string | null
+  userId?: string | null,
+  id?: string
 ): Player {
   return {
-    id: crypto.randomUUID(),
+    // A known player keeps the same id across games — that is what lets the
+    // leaderboard aggregate them (see the roster in lib/storage.ts)
+    id: id ?? crypto.randomUUID(),
     name,
     avatar,
     lives: startingLives,
@@ -48,7 +51,13 @@ export function createGame(
   const markedIndex = players.findIndex(p => p.isOwner === true)
   const ownerIndex = markedIndex >= 0 ? markedIndex : 0
   const gamePlayers = players.map((p, index) =>
-    createPlayer(p.name, p.avatar, ruleset.params.starting_lives, index === ownerIndex ? userId : null)
+    createPlayer(
+      p.name,
+      p.avatar,
+      ruleset.params.starting_lives,
+      index === ownerIndex ? userId : null,
+      p.id
+    )
   )
 
   return {
@@ -248,7 +257,8 @@ export function undoLastAction(game: Game): Game {
 export function addPlayerToGame(
   game: Game,
   playerName: string,
-  playerAvatar: string
+  playerAvatar: string,
+  playerId?: string
 ): Game {
   if (game.status !== 'active') {
     throw new Error('Cannot add player to a non-active game')
@@ -260,11 +270,15 @@ export function addPlayerToGame(
     throw new Error('No active players in game')
   }
 
+  if (playerId && game.players.some(p => p.id === playerId)) {
+    throw new Error('Player is already in this game')
+  }
+
   // Get minimum lives among active players
   const minLives = Math.min(...activePlayers.map(p => p.lives))
 
-  // Create new player with minimum lives
-  const newPlayer = createPlayer(playerName, playerAvatar, minLives, null)
+  // Create new player with minimum lives, reusing their roster id when known
+  const newPlayer = createPlayer(playerName, playerAvatar, minLives, null, playerId)
 
   // Add player to the end of the players array
   const updatedPlayers = [...game.players, newPlayer]

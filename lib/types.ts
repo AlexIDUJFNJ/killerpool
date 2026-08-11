@@ -77,6 +77,12 @@ export interface NewGamePlayerInput {
   name: string
   avatar: string
   isOwner?: boolean
+  /**
+   * Reuses a known player's id from the device roster. The leaderboard groups
+   * by it, so a person keeps their stats across games. Omitted for one-off
+   * players, who then get a fresh id.
+   */
+  id?: string
 }
 
 /**

@@ -135,6 +135,21 @@ describe('Game Logic', () => {
       expect(game.players[1].userId).toBeNull();
     });
 
+    it('should reuse a supplied player id instead of minting one', () => {
+      // Known players keep one id across games — that is what lets the
+      // leaderboard aggregate them
+      const knownId = '11111111-1111-4111-8111-111111111111';
+      const players = [
+        { name: 'Misha', avatar: '🎱', id: knownId },
+        { name: 'Anton', avatar: '🎯' },
+      ];
+
+      const game = createGame(players);
+
+      expect(game.players[0].id).toBe(knownId);
+      expect(game.players[1].id).not.toBe(knownId);
+    });
+
     it('should keep the owner attached after the players are shuffled', () => {
       // Reproduces the bug where Shuffle handed the creator's identity — and
       // with it their achievements and leaderboard entry — to a random player

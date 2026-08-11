@@ -9,7 +9,13 @@ import { useGame } from '@/contexts/game-context'
 import { createGame } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
-import { getGuestId, getPlayerNamesSuggestions, loadRematchPlayers } from '@/lib/storage'
+import {
+  getGuestId,
+  getPlayerNamesSuggestions,
+  loadRematchPlayers,
+  rememberRosterPlayers,
+  resolveRosterPlayerId,
+} from '@/lib/storage'
 import { cn, shuffle } from '@/lib/utils'
 import { motion } from 'motion/react'
 import { Plus, Trash2, ArrowLeft, Play, Shuffle } from 'lucide-react'
@@ -157,13 +163,26 @@ export default function NewGamePage() {
       return
     }
 
+    // Names identify people now (a name maps to a roster id that carries their
+    // stats), and two participants in one game must not share an id
+    const names = validPlayers.map(p => p.name.trim().toLowerCase())
+    const duplicate = names.find((name, i) => names.indexOf(name) !== i)
+    if (duplicate) {
+      alert(`Two players are called "${duplicate}". Give them different names.`)
+      return
+    }
+
     // Use userId if authenticated, otherwise use stable guest_id
     const userId = user?.id || getGuestId()
-    const game = createGame(
-      validPlayers.map(p => ({ name: p.name, avatar: p.avatar, isOwner: p.rowId === meRowId })),
-      DEFAULT_RULESET,
-      meRowId === null ? null : userId
-    )
+    const entries = validPlayers.map(p => ({
+      name: p.name.trim(),
+      avatar: p.avatar,
+      isOwner: p.rowId === meRowId,
+      id: resolveRosterPlayerId(p.name),
+    }))
+
+    const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId)
+    rememberRosterPlayers(entries.map(e => ({ id: e.id, name: e.name, avatar: e.avatar })))
     startGame(game)
 
     // Navigate to game

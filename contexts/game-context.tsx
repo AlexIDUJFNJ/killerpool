@@ -9,7 +9,14 @@
 import * as React from 'react'
 import { Game, GameAction, AchievementType } from '@/lib/types'
 import { applyAction, undoLastAction, addPlayerToGame } from '@/lib/game-logic'
-import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
+import {
+  saveCurrentGame,
+  loadCurrentGame,
+  clearCurrentGame,
+  saveToHistory,
+  resolveRosterPlayerId,
+  rememberRosterPlayers,
+} from '@/lib/storage'
 import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
 import { checkAchievementsForGame } from '@/lib/achievements'
 import { AchievementToasts } from '@/components/achievements/achievement-toast'
@@ -199,7 +206,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (!game || game.status !== 'active' || isSpectatorMode) return
 
     try {
-      const updatedGame = addPlayerToGame(game, name, avatar)
+      // Someone joining mid-game is still the same person as last time
+      const playerId = resolveRosterPlayerId(name)
+      const updatedGame = addPlayerToGame(game, name, avatar, playerId)
+      rememberRosterPlayers([{ id: playerId, name: name.trim(), avatar }])
       setGame(updatedGame)
 
       // Sync to Supabase if sharing is enabled

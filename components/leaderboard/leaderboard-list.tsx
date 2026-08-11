@@ -206,7 +206,7 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
                 ) : (
                   <>
                     <p className="text-base text-muted-foreground max-w-md mx-auto leading-relaxed">
-                      The leaderboard is empty. Be the first champion! Complete a game and claim your legendary status.
+                      Nobody has qualified yet. Play at least 3 games to appear here — the ranking is by win rate, so a single lucky win does not count.
                     </p>
                     <motion.div
                       initial={{ y: 20, opacity: 0 }}
