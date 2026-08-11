@@ -7,7 +7,49 @@
  * classic rules — restored games fall back to DEFAULT_RULESET.
  */
 
-import { Game, Player, DEFAULT_RULESET } from './types'
+import { Game, GameHistoryEntry, Player, DEFAULT_RULESET } from './types'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * A row ready for upsert into `games`.
+ *
+ * Every column is always present. PostgREST builds the ON CONFLICT DO UPDATE
+ * set from the keys of the payload, so a payload whose shape varies between
+ * call sites makes the upsert itself behave differently — which is how three
+ * copies of this object ended up writing three different column sets.
+ */
+export interface DbGameUpsertRow {
+  id: string
+  created_at: string
+  updated_at: string
+  status: 'active' | 'completed' | 'abandoned'
+  participants: Player[]
+  winner_id: string | null
+  ruleset_id: string | null
+  history: GameHistoryEntry[]
+  created_by: string | null
+  current_player_index: number
+}
+
+export function mapGameToDbRow(game: Game, createdBy: string | null): DbGameUpsertRow {
+  return {
+    id: game.id,
+    created_at: game.createdAt,
+    updated_at: game.updatedAt || new Date().toISOString(),
+    // The client type allows 'setup', the game_status enum does not
+    status: game.status === 'setup' ? 'active' : game.status,
+    participants: game.players ?? [],
+    winner_id: game.winnerId ?? null,
+    // ruleset_id is a UUID column, but the default ruleset's id is 'classic'
+    ruleset_id: game.rulesetId && UUID_RE.test(game.rulesetId) ? game.rulesetId : null,
+    history: game.history ?? [],
+    created_by: createdBy,
+    current_player_index: Number.isInteger(game.currentPlayerIndex)
+      ? game.currentPlayerIndex
+      : 0,
+  }
+}
 
 interface DbGameRow {
   id: string

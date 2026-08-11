@@ -6,13 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { syncAllGamesToSupabase } from '@/lib/sync'
 import { loadGameHistory } from '@/lib/storage'
-import { ArrowLeft, CloudUpload, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, CloudUpload, CheckCircle, XCircle, MinusCircle, Loader2 } from 'lucide-react'
 
 export default function SyncPage() {
   const [localGamesCount, setLocalGamesCount] = React.useState(0)
+  // Only completed games can go to the cloud; the rest are nothing to upload
+  const [syncableCount, setSyncableCount] = React.useState(0)
   const [isSyncing, setIsSyncing] = React.useState(false)
   const [result, setResult] = React.useState<{
     success: number
+    skipped: number
     failed: number
     total: number
   } | null>(null)
@@ -20,6 +23,7 @@ export default function SyncPage() {
   React.useEffect(() => {
     const games = loadGameHistory()
     setLocalGamesCount(games.length)
+    setSyncableCount(games.filter(game => game.status === 'completed').length)
   }, [])
 
   const handleSync = async () => {
@@ -31,7 +35,12 @@ export default function SyncPage() {
       setResult(syncResult)
     } catch (error) {
       console.error('Sync failed:', error)
-      setResult({ success: 0, failed: localGamesCount, total: localGamesCount })
+      setResult({
+        success: 0,
+        skipped: localGamesCount - syncableCount,
+        failed: syncableCount,
+        total: localGamesCount,
+      })
     } finally {
       setIsSyncing(false)
     }
@@ -63,13 +72,15 @@ export default function SyncPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-3xl font-bold">{localGamesCount}</div>
-              <div className="text-sm text-muted-foreground">games in localStorage</div>
+              <div className="text-3xl font-bold">{syncableCount}</div>
+              <div className="text-sm text-muted-foreground">
+                of {localGamesCount} games can be shared (completed only)
+              </div>
             </div>
 
             <Button
               onClick={handleSync}
-              disabled={isSyncing || localGamesCount === 0}
+              disabled={isSyncing || syncableCount === 0}
               className="w-full"
               size="lg"
             >
@@ -109,6 +120,16 @@ export default function SyncPage() {
                   </div>
                   <span className="font-bold text-green-500">{result.success}</span>
                 </div>
+
+                {result.skipped > 0 && (
+                  <div className="flex items-center justify-between p-3 bg-amber-500/10 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <MinusCircle className="h-5 w-5 text-amber-500" />
+                      <span>Nothing to upload</span>
+                    </div>
+                    <span className="font-bold text-amber-500">{result.skipped}</span>
+                  </div>
+                )}
 
                 {result.failed > 0 && (
                   <div className="flex items-center justify-between p-3 bg-red-500/10 rounded-lg">

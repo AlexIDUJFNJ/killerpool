@@ -18,7 +18,7 @@ import {
   rememberRosterPlayers,
 } from '@/lib/storage'
 import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
-import { checkAchievementsForGame } from '@/lib/achievements'
+import { checkAchievementsForGame, onUnlockedAchievements } from '@/lib/achievements'
 import { AchievementToasts } from '@/components/achievements/achievement-toast'
 import { mapDbGameToGame } from '@/lib/game-mapper'
 import { useRealtimeGame, useSyncGameForRealtime } from '@/hooks/use-realtime-game'
@@ -99,6 +99,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setCurrentUserId(user?.id || null)
     })
   }, [])
+
+  // Achievements for games that synced late (retryPendingSyncs runs from
+  // PWAInit, which sits outside this provider) still deserve their toast
+  React.useEffect(
+    () =>
+      onUnlockedAchievements(types => {
+        setNewAchievements(prev => [...prev, ...types.filter(t => !prev.includes(t))])
+      }),
+    []
+  )
 
   // Cleanup spectator channel on unmount
   React.useEffect(() => {

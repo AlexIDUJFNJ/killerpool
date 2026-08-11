@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
   PENDING_SYNC: 'killerpool_pending_sync',
   DELETED_GAMES: 'killerpool_deleted_games',
   ROSTER: 'killerpool_roster',
+  PENDING_SYNC_META: 'killerpool_pending_sync_meta',
 } as const
 
 /**
@@ -327,6 +328,7 @@ export function unmarkPendingSync(gameId: string): void {
     if (filtered.length !== ids.length) {
       localStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(filtered))
     }
+    clearSyncMeta(gameId)
   } catch (error) {
     console.error('Failed to unmark pending sync:', error)
   }
@@ -398,6 +400,98 @@ export function clearGameDeleted(gameId: string): void {
   const filtered = list.filter(t => t.id !== gameId)
   if (filtered.length !== list.length) {
     writeTombstones(filtered)
+  }
+}
+
+/**
+ * Retry bookkeeping for the pending-sync queue.
+ *
+ * Kept in its own key so `killerpool_pending_sync` stays a plain array of ids:
+ * this is a PWA, and a client running an older bundle from the service worker
+ * cache would stop draining a queue whose shape changed under it.
+ */
+export const MAX_SYNC_ATTEMPTS = 5
+const MAX_SYNC_AGE_MS = 14 * 24 * 60 * 60 * 1000
+const BACKOFF_BASE_MS = 60_000
+const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
+
+export interface PendingSyncMeta {
+  attempts: number
+  firstFailedAt: number
+  lastAttemptAt: number
+  permanent?: boolean
+}
+
+function readSyncMeta(): Record<string, PendingSyncMeta> {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.PENDING_SYNC_META)
+    const parsed = data ? JSON.parse(data) : {}
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch (error) {
+    console.error('Failed to load pending sync meta:', error)
+    return {}
+  }
+}
+
+function writeSyncMeta(meta: Record<string, PendingSyncMeta>): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PENDING_SYNC_META, JSON.stringify(meta))
+  } catch (error) {
+    console.error('Failed to save pending sync meta:', error)
+  }
+}
+
+/**
+ * Note a failed attempt. A permanent failure — one the server will refuse
+ * again, like an RLS rejection — is marked so it is never retried.
+ */
+export function recordSyncFailure(gameId: string, options?: { permanent?: boolean }): void {
+  const meta = readSyncMeta()
+  const now = Date.now()
+  const existing = meta[gameId]
+
+  meta[gameId] = {
+    attempts: (existing?.attempts ?? 0) + 1,
+    firstFailedAt: existing?.firstFailedAt ?? now,
+    lastAttemptAt: now,
+    permanent: options?.permanent || existing?.permanent,
+  }
+
+  writeSyncMeta(meta)
+}
+
+/**
+ * Whether to stop trying: refused outright, tried too often, or too old.
+ * An id with no record (an older bundle queued it) is never exhausted.
+ */
+export function isSyncExhausted(gameId: string, now = Date.now()): boolean {
+  const entry = readSyncMeta()[gameId]
+  if (!entry) return false
+  return (
+    entry.permanent === true ||
+    entry.attempts >= MAX_SYNC_ATTEMPTS ||
+    now - entry.firstFailedAt > MAX_SYNC_AGE_MS
+  )
+}
+
+/**
+ * Whether the next attempt is still due. Without this, retryPendingSyncs hits
+ * the network for every queued game on every visibilitychange — that is, on
+ * every tab switch.
+ */
+export function isSyncBackedOff(gameId: string, now = Date.now()): boolean {
+  const entry = readSyncMeta()[gameId]
+  if (!entry) return false
+  const wait = Math.min(BACKOFF_BASE_MS * 2 ** (entry.attempts - 1), BACKOFF_MAX_MS)
+  return now - entry.lastAttemptAt < wait
+}
+
+/** Forget the retry history of a game (it synced, or left the queue) */
+export function clearSyncMeta(gameId: string): void {
+  const meta = readSyncMeta()
+  if (gameId in meta) {
+    delete meta[gameId]
+    writeSyncMeta(meta)
   }
 }
 

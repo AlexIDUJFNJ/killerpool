@@ -28,32 +28,8 @@ import { createGame } from '../game-logic';
 import { Game } from '../types';
 
 describe('Storage', () => {
+  // localStorage comes from jsdom and is cleared in jest.setup.ts
   beforeEach(() => {
-    // Create a fresh mock localStorage for each test
-    const storage: { [key: string]: string } = {};
-
-    const localStorageMock = {
-      getItem: (key: string): string | null => storage[key] || null,
-      setItem: (key: string, value: string): void => {
-        storage[key] = value;
-      },
-      removeItem: (key: string): void => {
-        delete storage[key];
-      },
-      clear: (): void => {
-        Object.keys(storage).forEach(key => delete storage[key]);
-      },
-      length: 0,
-      key: jest.fn(),
-    };
-
-    // Replace global localStorage
-    Object.defineProperty(global, 'localStorage', {
-      value: localStorageMock,
-      writable: true,
-    });
-
-    // Clear all console spies
     jest.restoreAllMocks();
   });
 
@@ -82,11 +58,7 @@ describe('Storage', () => {
     it('should handle localStorage errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      // Store the original setItem
-      const originalSetItem = global.localStorage.setItem;
-
-      // Mock localStorage.setItem to throw an error
-      global.localStorage.setItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage quota exceeded');
       });
 
@@ -98,8 +70,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      // Restore original implementation
-      global.localStorage.setItem = originalSetItem;
       consoleErrorSpy.mockRestore();
     });
 
@@ -131,9 +101,7 @@ describe('Storage', () => {
     it('should handle errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalRemoveItem = global.localStorage.removeItem;
-
-      global.localStorage.removeItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
         throw new Error('Failed to remove');
       });
 
@@ -144,7 +112,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      global.localStorage.removeItem = originalRemoveItem;
       consoleErrorSpy.mockRestore();
     });
   });
@@ -224,9 +191,7 @@ describe('Storage', () => {
     it('should handle storage errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalSetItem = global.localStorage.setItem;
-
-      global.localStorage.setItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage error');
       });
 
@@ -241,7 +206,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      global.localStorage.setItem = originalSetItem;
       consoleErrorSpy.mockRestore();
     });
 
@@ -277,9 +241,7 @@ describe('Storage', () => {
     it('should handle errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalRemoveItem = global.localStorage.removeItem;
-
-      global.localStorage.removeItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
         throw new Error('Failed to remove');
       });
 
@@ -290,7 +252,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      global.localStorage.removeItem = originalRemoveItem;
       consoleErrorSpy.mockRestore();
     });
   });
@@ -353,9 +314,7 @@ describe('Storage', () => {
     it('should handle errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalSetItem = global.localStorage.setItem;
-
-      global.localStorage.setItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage error');
       });
 
@@ -367,7 +326,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      global.localStorage.setItem = originalSetItem;
       consoleErrorSpy.mockRestore();
     });
   });

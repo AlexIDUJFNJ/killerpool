@@ -6,7 +6,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { Game } from './types'
-import { mapDbGameToGame } from './game-mapper'
+import { mapDbGameToGame, mapGameToDbRow } from './game-mapper'
 import {
   loadGameHistory,
   saveGameHistory,
@@ -15,7 +15,78 @@ import {
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
+  recordSyncFailure,
+  isSyncExhausted,
+  isSyncBackedOff,
 } from './storage'
+
+/**
+ * Postgres error codes that will never succeed on a retry: the request is
+ * malformed or forbidden, not unlucky. Anything else — network failure, an
+ * expired token, a 5xx — is worth trying again, so it stays out of this list.
+ */
+const PERMANENT_PG_CODES = new Set([
+  '42501', // insufficient_privilege — refused by RLS
+  '22P02', // invalid_text_representation
+  '22007', // invalid_datetime_format
+  '23502', // not_null_violation
+  '23503', // foreign_key_violation
+  '23514', // check_violation
+  '42703', // undefined_column — client is newer than the schema
+])
+
+export type UpsertOutcome =
+  | { ok: true }
+  | { ok: false; permanent: boolean; message: string }
+
+/**
+ * The leaderboard reads display_name from here, so a profile has to exist
+ * before the first game lands. Written with ignoreDuplicates so a custom name
+ * is never overwritten.
+ */
+async function ensurePlayerProfile(
+  supabase: ReturnType<typeof createClient>,
+  user: { id: string; email?: string } | null
+): Promise<void> {
+  if (!user) return
+
+  const { error } = await supabase.from('player_profiles').upsert(
+    { user_id: user.id, display_name: user.email?.split('@')[0] || 'Player' },
+    { onConflict: 'user_id', ignoreDuplicates: true }
+  )
+
+  if (error) {
+    console.warn('Failed to ensure player profile:', error.message)
+  }
+}
+
+/**
+ * The only place that writes a row into `games`.
+ */
+async function upsertGameRow(game: Game): Promise<UpsertOutcome> {
+  try {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    await ensurePlayerProfile(supabase, user)
+
+    const { error } = await supabase
+      .from('games')
+      .upsert(mapGameToDbRow(game, user?.id ?? null), { onConflict: 'id' })
+
+    if (error) {
+      const message = `${error.message}${error.details ? ` - ${error.details}` : ''}`
+      console.error('Failed to sync game to Supabase:', message, error.code)
+      return { ok: false, permanent: PERMANENT_PG_CODES.has(error.code ?? ''), message }
+    }
+
+    return { ok: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Error syncing game to Supabase:', message)
+    return { ok: false, permanent: false, message }
+  }
+}
 
 /**
  * Sync a completed game to Supabase
@@ -26,66 +97,7 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
     return false
   }
 
-  try {
-    const supabase = createClient()
-
-    // Check if user is authenticated
-    const { data: { user } } = await supabase.auth.getUser()
-
-    // Ensure user profile exists before syncing game
-    // Only create profile with default name if it doesn't exist - don't overwrite custom names
-    if (user) {
-      const { data: existingProfile } = await supabase
-        .from('player_profiles')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!existingProfile) {
-        const defaultName = user.email?.split('@')[0] || 'Player'
-        await supabase
-          .from('player_profiles')
-          .insert({
-            user_id: user.id,
-            display_name: defaultName,
-          })
-      }
-    }
-
-    // Prepare game data for Supabase
-    // Note: ruleset_id in database is UUID, but game.rulesetId may be a string like "classic"
-    // We only set ruleset_id if it's a valid UUID format, otherwise set to null
-    const isValidUUID = game.rulesetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.rulesetId)
-
-    const gameData = {
-      id: game.id,
-      created_at: game.createdAt,
-      updated_at: game.updatedAt,
-      status: game.status,
-      participants: game.players,
-      winner_id: game.winnerId,
-      ruleset_id: isValidUUID ? game.rulesetId : null,
-      history: game.history,
-      created_by: user?.id || null,
-    }
-
-    // Insert or update the game
-    const { error } = await supabase
-      .from('games')
-      .upsert(gameData, {
-        onConflict: 'id',
-      })
-
-    if (error) {
-      console.error('Failed to sync game to Supabase:', error)
-      return false
-    }
-
-    return true
-  } catch (error) {
-    console.error('Error syncing game to Supabase:', error)
-    return false
-  }
+  return (await upsertGameRow(game)).ok
 }
 
 /**
@@ -93,16 +105,22 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
  */
 export async function syncAllGamesToSupabase(): Promise<{
   success: number
+  skipped: number
   failed: number
   total: number
 }> {
   const games = loadGameHistory()
+  // Only completed games can be shared, so anything else is nothing to do —
+  // not a failure. Counting them as failures is why this page always reported
+  // "Failed: N" to anyone who had abandoned a game.
+  const syncable = games.filter(game => game.status === 'completed')
+
   let success = 0
   let failed = 0
 
-  for (const game of games) {
-    const result = await syncGameToSupabase(game)
-    if (result) {
+  for (const game of syncable) {
+    // via autoSyncGame so a failure here joins the retry queue like any other
+    if (await autoSyncGame(game)) {
       success++
     } else {
       failed++
@@ -111,6 +129,7 @@ export async function syncAllGamesToSupabase(): Promise<{
 
   return {
     success,
+    skipped: games.length - syncable.length,
     failed,
     total: games.length,
   }
@@ -217,13 +236,15 @@ export async function autoSyncGame(game: Game): Promise<boolean> {
   }
 
   // Always try to sync to Supabase (for sharing game links)
-  const success = await syncGameToSupabase(game)
-  if (success) {
+  const result = await upsertGameRow(game)
+  if (result.ok) {
     unmarkPendingSync(game.id)
-  } else {
-    markPendingSync(game.id)
+    return true
   }
-  return success
+
+  markPendingSync(game.id)
+  recordSyncFailure(game.id, { permanent: result.permanent })
+  return false
 }
 
 let retryInFlight = false
@@ -231,8 +252,8 @@ let retryInFlight = false
 /**
  * Retry syncing completed games that previously failed (e.g. finished offline).
  * Called on 'online' / 'visibilitychange' events, see components/pwa-init.tsx.
- * Achievements for late-synced games are granted here too (without toasts) —
- * the RPC can only see the game once its row exists in Supabase.
+ * Achievements earned by a late sync are announced through an event, because
+ * PWAInit is a sibling of GameProvider and has no access to its state.
  */
 export async function retryPendingSyncs(): Promise<void> {
   if (typeof window === 'undefined') return
@@ -243,17 +264,29 @@ export async function retryPendingSyncs(): Promise<void> {
   try {
     const ids = getPendingSyncIds()
     for (const id of ids) {
+      if (isSyncExhausted(id)) {
+        // Refused outright, or tried long enough. Leaving it queued would mean
+        // a request on every tab switch, forever, that can never succeed.
+        console.warn('[sync] giving up on game after repeated failures:', id)
+        unmarkPendingSync(id)
+        continue
+      }
+      if (isSyncBackedOff(id)) continue
+
       const game = getGameFromHistory(id)
       if (!game) {
         // Game was deleted from history — nothing left to sync
         unmarkPendingSync(id)
         continue
       }
-      const success = await syncGameToSupabase(game)
-      if (success) {
+
+      const result = await upsertGameRow(game)
+      if (result.ok) {
         unmarkPendingSync(id)
-        const { checkAchievementsForGame } = await import('./achievements')
-        await checkAchievementsForGame(game)
+        const { checkAchievementsForGame, emitUnlockedAchievements } = await import('./achievements')
+        emitUnlockedAchievements(await checkAchievementsForGame(game))
+      } else {
+        recordSyncFailure(id, { permanent: result.permanent })
       }
     }
   } finally {
@@ -266,72 +299,6 @@ export async function retryPendingSyncs(): Promise<void> {
  * Unlike syncGameToSupabase, this works for games of any status
  */
 export async function syncActiveGameToSupabase(game: Game): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = createClient()
-
-    // Check if user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError) {
-      console.warn('[syncActiveGame] Auth check failed (continuing as anonymous):', authError.message)
-    }
-
-
-    // Ensure user profile exists before syncing game
-    if (user) {
-      const { data: existingProfile } = await supabase
-        .from('player_profiles')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!existingProfile) {
-        const defaultName = user.email?.split('@')[0] || 'Player'
-        await supabase
-          .from('player_profiles')
-          .insert({
-            user_id: user.id,
-            display_name: defaultName,
-          })
-      }
-    }
-
-    // Prepare game data for Supabase
-    const isValidUUID = game.rulesetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.rulesetId)
-
-    const gameData = {
-      id: game.id,
-      created_at: game.createdAt,
-      updated_at: game.updatedAt || new Date().toISOString(),
-      status: game.status,
-      participants: game.players,
-      winner_id: game.winnerId || null,
-      ruleset_id: isValidUUID ? game.rulesetId : null,
-      history: game.history,
-      created_by: user?.id || null,
-      current_player_index: game.currentPlayerIndex,
-    }
-
-
-    // Insert or update the game
-    const { error } = await supabase
-      .from('games')
-      .upsert(gameData, {
-        onConflict: 'id',
-      })
-      .select()
-
-    if (error) {
-      const errorMsg = `${error.message}${error.details ? ` - ${error.details}` : ''}${error.hint ? ` (Hint: ${error.hint})` : ''}`
-      console.error('[syncActiveGame] Failed to sync:', errorMsg)
-      console.error('[syncActiveGame] Error code:', error.code)
-      return { success: false, error: errorMsg }
-    }
-
-    return { success: true }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    console.error('[syncActiveGame] Error:', errorMsg)
-    return { success: false, error: errorMsg }
-  }
+  const result = await upsertGameRow(game)
+  return result.ok ? { success: true } : { success: false, error: result.message }
 }

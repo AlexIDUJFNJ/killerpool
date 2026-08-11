@@ -4,11 +4,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Game, GameHistoryEntry } from '@/lib/types'
-import {
-  subscribeToGame,
-  unsubscribeFromGame,
-  syncGameForRealtime,
-} from '@/lib/realtime'
+import { subscribeToGame, unsubscribeFromGame } from '@/lib/realtime'
+import { syncActiveGameToSupabase } from '@/lib/sync'
 import { RealtimeChannel } from '@supabase/supabase-js'
 
 interface UseRealtimeGameOptions {
@@ -99,8 +96,8 @@ export function useSyncGameForRealtime(game: Game | null) {
 
     inFlightRef.current = true
 
-    syncGameForRealtime(game)
-      .then((success) => {
+    syncActiveGameToSupabase(game)
+      .then(({ success }) => {
         if (success) setSyncedGameId(game.id)
       })
       .catch((error) => {

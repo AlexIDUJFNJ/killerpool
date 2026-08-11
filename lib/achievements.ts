@@ -102,6 +102,43 @@ export async function checkAchievementsForGame(game: Game): Promise<AchievementT
   }
 }
 
+const ACHIEVEMENTS_EVENT = 'killerpool:achievements-unlocked'
+
+/**
+ * Achievements granted outside the game screen — by retryPendingSyncs, which
+ * runs from PWAInit, a sibling of GameProvider with no access to its state.
+ * The buffer covers the gap before the provider subscribes.
+ */
+let bufferedAchievements: AchievementType[] = []
+
+export function emitUnlockedAchievements(types: AchievementType[]): void {
+  if (!types.length || typeof window === 'undefined') return
+  bufferedAchievements.push(...types)
+  window.dispatchEvent(new CustomEvent(ACHIEVEMENTS_EVENT, { detail: { types } }))
+}
+
+/** Subscribe to late-granted achievements. Returns the unsubscribe function. */
+export function onUnlockedAchievements(
+  callback: (types: AchievementType[]) => void
+): () => void {
+  if (typeof window === 'undefined') return () => {}
+
+  if (bufferedAchievements.length) {
+    const pending = bufferedAchievements
+    bufferedAchievements = []
+    callback(pending)
+  }
+
+  const handler = (event: Event) => {
+    const types = (event as CustomEvent<{ types: AchievementType[] }>).detail?.types ?? []
+    bufferedAchievements = bufferedAchievements.filter(t => !types.includes(t))
+    if (types.length) callback(types)
+  }
+
+  window.addEventListener(ACHIEVEMENTS_EVENT, handler)
+  return () => window.removeEventListener(ACHIEVEMENTS_EVENT, handler)
+}
+
 /**
  * Get achievement definition by type
  */

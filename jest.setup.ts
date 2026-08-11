@@ -34,14 +34,12 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
 } as any;
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
-  clear: jest.fn(),
-};
-global.localStorage = localStorageMock as any;
-
-// Mock sessionStorage
-global.sessionStorage = localStorageMock as any;
+// localStorage and sessionStorage are left to jsdom, which implements both for
+// real and — unlike the stubs that used to live here — keeps them separate.
+// The stubs were a single shared object of jest.fn()s that stored nothing, so
+// every suite touching storage had to replace them, and sessionStorage tests
+// were silently asserting against the localStorage mock.
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
