@@ -409,10 +409,10 @@ export interface AchievementDefinition {
 |------|-----------|
 | `killerpool_current_game` | текущая игра |
 | `killerpool_game_history` | история завершённых игр (до 50) |
-| `killerpool_settings` | зарезервирован под настройки |
 | `killerpool_guest_id` | стабильный UUID гостя |
 | `killerpool_rematch_players` | игроки для реванша (**sessionStorage**) |
 | `killerpool_pending_sync` | ID игр, ожидающих ретрая синка |
+| `killerpool_deleted_games` | надгробия удалённых игр, чтобы merge не вернул их из Supabase |
 
 ### Текущая игра
 
@@ -566,12 +566,6 @@ export async function syncGameForRealtime(game: Game): Promise<boolean>
 
 Upsert игры в Supabase для realtime (авторизованные и гости). Используется хуком `useSyncGameForRealtime`.
 
-### isRealtimeAvailable
-
-```typescript
-export async function isRealtimeAvailable(): Promise<boolean>  // всегда true — зрителям auth не нужен
-```
-
 ---
 
 ## Realtime Hooks
@@ -688,7 +682,6 @@ export interface UnlockedAchievement {
 
 export async function getUserAchievements(userId: string): Promise<UnlockedAchievement[]>
 export async function checkAchievements(userId: string, gameId: string): Promise<AchievementType[]>
-export function checkLocalAchievements(game: Game, userId: string): AchievementType[]
 export function getAchievementDefinition(type: AchievementType): AchievementDefinition | undefined
 export function getRarityColor(rarity: AchievementDefinition['rarity']): string
 export function getRarityBgColor(rarity: AchievementDefinition['rarity']): string
@@ -699,7 +692,6 @@ export function getAchievementProgress(unlockedCount: number): number
 
 - `checkAchievements` вызывает RPC `check_achievements(p_user_id, p_game_id)` и возвращает **только новые** ачивки (`is_new === true`).
 - `checkAchievementsForGame(game)` — обёртка с гейтингом: проверяет, что игра завершена, у победителя есть `userId` и он совпадает с текущим авторизованным пользователем, затем зовёт `checkAchievements`. Используется в `GameProvider` после успешного `autoSyncGame` (RPC читает строку игры из БД, поэтому порядок важен) и в `retryPendingSyncs` для игр, досинхронизированных позже.
-- `checkLocalAchievements` — локальная проверка без БД (survivor / perfect_game / pot_black_master) для превью до синка.
 - Ачивки получают **только авторизованные победители**: миграция 00011 отзывает дефолтный `EXECUTE` у `PUBLIC`/`anon`, а сама функция требует `p_user_id = auth.uid()`.
 
 ---

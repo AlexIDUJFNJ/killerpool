@@ -453,7 +453,7 @@ caches.keys().then(keys =>
 
 ## 🗺️ Planned / Not implemented
 
-- **Share Target**: `manifest.json` объявляет `share_target` с `action: "/share"`, но route `app/share` не реализован — шаринг в приложение пока не работает
+- **Share Target**: объявление `share_target` убрано из `manifest.json` — оно указывало на несуществующий route `/share`, из-за чего Android показывал приложение в системном share-меню, а шаринг приводил к 404
 - **UI-кнопка установки**: `beforeinstallprompt` перехватывается в `pwa-init.tsx`, но кастомная кнопка установки не показывается (deferred prompt сохраняется и не используется)
 - **Уведомление о новой версии SW**: событие `updatefound` логируется в консоль; toast для пользователя не реализован
 - **Screenshots в манифесте**: массив `screenshots` пуст
