@@ -208,9 +208,29 @@ describe('syncAllGamesToSupabase', () => {
     expect(await syncAllGamesToSupabase()).toEqual({
       success: 1,
       skipped: 2,
-      failed: 1 - 1,
+      refused: 0,
+      failed: 0,
       total: 3,
     });
+  });
+
+  it('should tell a refusal apart from a retryable failure', async () => {
+    // A game played before signing in leaves an unowned row in Supabase, and
+    // RLS will not let the account claim it. Retrying can never help, so it
+    // must not be shown as an error the user should act on.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    localStorage.setItem('killerpool_game_history', JSON.stringify([completedGame('game-1')]));
+    mockSupabase({ userId: 'user-1', upsertError: { message: 'denied', code: '42501' } });
+
+    expect(await syncAllGamesToSupabase()).toEqual({
+      success: 0,
+      skipped: 0,
+      refused: 1,
+      failed: 0,
+      total: 1,
+    });
+
+    consoleErrorSpy.mockRestore();
   });
 });
 

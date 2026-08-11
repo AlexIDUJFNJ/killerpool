@@ -2,7 +2,7 @@
 
 Этот гайд поможет настроить Supabase для проекта Killerpool.
 
-> **Обновлено:** 2026-08-11. Документ описывает фактическое состояние после миграции `00013`.
+> **Обновлено:** 2026-08-11. Документ описывает фактическое состояние после миграции `00014`.
 
 ## 🚀 Быстрый старт
 
@@ -44,7 +44,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### 4. Запустите миграции
 
-⚠️ **ВАЖНО:** Нужно применить ВСЕ 13 миграций строго по порядку номеров (00001 → 00013). Поздние миграции удаляют и переопределяют политики и функции ранних — итоговое состояние БД определяется только полной последовательностью.
+⚠️ **ВАЖНО:** Нужно применить ВСЕ 14 миграций строго по порядку номеров (00001 → 00014). Поздние миграции удаляют и переопределяют политики и функции ранних — итоговое состояние БД определяется только полной последовательностью.
 
 #### Вариант A: Supabase CLI (рекомендуется)
 
@@ -64,7 +64,7 @@ supabase db push
 
 #### Вариант B: SQL Editor
 
-Откройте **SQL Editor** в Supabase Dashboard и выполните содержимое каждого файла из `supabase/migrations/` по порядку, от `00001` до `00013`. После каждого запуска убедитесь, что нет ошибок.
+Откройте **SQL Editor** в Supabase Dashboard и выполните содержимое каждого файла из `supabase/migrations/` по порядку, от `00001` до `00014`. После каждого запуска убедитесь, что нет ошибок.
 
 ### 5. Проверьте таблицы и функции
 
@@ -102,6 +102,7 @@ SELECT * FROM get_leaderboard(15);
 | 00011 | `00011_fix_achievements_and_defaults.sql` | `check_achievements` v2 (**актуальная**): требование `p_user_id = auth.uid()`, REVOKE EXECUTE у PUBLIC/anon, текстовые сравнения id, regex-защита кастов, статистика победителя, все 10 типов ачивок (включая `perfect_game`, `win_streak_3`, `win_streak_5`); GIN-индекс `idx_games_participants_gin`; UPDATE дефолтного ruleset `max_lives` 10 → 6; DROP политик "Service role can insert achievements" и "Users can view own achievements" на `user_achievements` |
 | 00012 | `00012_harden_leaderboard.sql` | `get_leaderboard` v4 (**актуальная**): убраны касты клиентского JSON — `games` анонимно-записываема, и одна игра с не-UUID `participants[].id` роняла RPC для всех (DoS). Сравнения id текстом с `lower()`, единственный `::uuid` защищён regex'ом, `jsonb_array_elements` за проверкой типа, победы считаются по уникальным играм (раньше 50 копий победителя в одной игре давали 50 побед), запасное `display_name` берётся из самой свежей игры, `limit_count` ограничен диапазоном 0–100 |
 | 00013 | `00013_leaderboard_qualifying_minimum.sql` | `get_leaderboard` v5 (**актуальная**): параметр `min_games` (по умолчанию 3) — в рейтинг попадают только сыгравшие достаточно партий, иначе разовый победитель со 100% всегда стоял выше регулярного игрока. Старая односигнатурная функция удалена через `DROP FUNCTION`, потому что добавление параметра создало бы вторую перегрузку, и вызов с одним аргументом продолжил бы попадать в старую |
+| 00014 | `00014_tighten_game_write_policies.sql` | Ужесточение записи в `games` (**актуальные политики**): у авторизованного `WITH CHECK (created_by = auth.uid())` на INSERT и UPDATE и `USING` без `OR created_by IS NULL` — закрывает захват чужой гостевой игры (после него настоящий хост-гость терял доступ навсегда) и подделку владения. Для `anon` завершённая игра перестаёт принимать записи через час после последней — окно, а не жёсткий запрет, потому что завершение это три гоночные записи, а отмена после победы легальна. Проверено под ролями: `supabase/test/` |
 
 ## 📊 Структура базы данных
 
@@ -220,11 +221,11 @@ SELECT * FROM get_leaderboard(15);
 | `games_select_all` | SELECT | anon, authenticated | `USING (true)` |
 | `games_insert_authenticated` | INSERT | authenticated | `WITH CHECK (true)` |
 | `games_insert_anon` | INSERT | anon | `WITH CHECK (created_by IS NULL)` |
-| `games_update_authenticated` | UPDATE | authenticated | `USING (created_by = auth.uid() OR created_by IS NULL)`, `WITH CHECK (true)` |
-| `games_update_anon` | UPDATE | anon | `USING (created_by IS NULL)`, `WITH CHECK (created_by IS NULL)` |
+| `games_update_authenticated` | UPDATE | authenticated | `USING (created_by = auth.uid())`, `WITH CHECK (created_by = auth.uid())` |
+| `games_update_anon` | UPDATE | anon | `USING (created_by IS NULL AND (status <> 'completed' OR updated_at > now() - interval '1 hour'))`, `WITH CHECK (created_by IS NULL)` |
 | `games_delete_authenticated` | DELETE | authenticated | `USING (created_by = auth.uid())` |
 
-⚠️ **Чтение игр публичное** (`games_select_all` с `USING (true)`): любой, у кого есть id игры, может её прочитать — это осознанное решение для режима зрителя и шаринга ссылок. Утверждение «пользователь видит только свои игры» было верно лишь для миграции 00001 и давно не соответствует действительности. Гостевые игры (`created_by IS NULL`) может обновлять кто угодно.
+⚠️ **Чтение игр публичное** (`games_select_all` с `USING (true)`): любой, у кого есть id игры, может её прочитать — это осознанное решение для режима зрителя и шаринга ссылок. Утверждение «пользователь видит только свои игры» было верно лишь для миграции 00001 и давно не соответствует действительности. Гостевые игры (`created_by IS NULL`) может обновлять кто угодно, пока они идут: хост и зритель на уровне БД неразличимы (у обоих только id игры). После завершения игра перестаёт принимать записи через час — см. 00014.
 
 ### `user_achievements` (после миграции 00011)
 

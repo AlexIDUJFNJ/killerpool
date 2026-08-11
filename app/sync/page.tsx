@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { syncAllGamesToSupabase } from '@/lib/sync'
 import { loadGameHistory } from '@/lib/storage'
-import { ArrowLeft, CloudUpload, CheckCircle, XCircle, MinusCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, CloudUpload, CheckCircle, XCircle, MinusCircle, Lock, Loader2 } from 'lucide-react'
 
 export default function SyncPage() {
   const [localGamesCount, setLocalGamesCount] = React.useState(0)
@@ -16,6 +16,7 @@ export default function SyncPage() {
   const [result, setResult] = React.useState<{
     success: number
     skipped: number
+    refused: number
     failed: number
     total: number
   } | null>(null)
@@ -38,6 +39,7 @@ export default function SyncPage() {
       setResult({
         success: 0,
         skipped: localGamesCount - syncableCount,
+        refused: 0,
         failed: syncableCount,
         total: localGamesCount,
       })
@@ -128,6 +130,21 @@ export default function SyncPage() {
                       <span>Nothing to upload</span>
                     </div>
                     <span className="font-bold text-amber-500">{result.skipped}</span>
+                  </div>
+                )}
+
+                {result.refused > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between p-3 bg-slate-500/10 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-5 w-5 text-slate-400" />
+                        <span>Can&apos;t be uploaded</span>
+                      </div>
+                      <span className="font-bold text-slate-400">{result.refused}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground px-1">
+                      These were played before you signed in, so the cloud copy is not tied to your account. They stay in your local history.
+                    </p>
                   </div>
                 )}
 

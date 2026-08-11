@@ -106,6 +106,7 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
 export async function syncAllGamesToSupabase(): Promise<{
   success: number
   skipped: number
+  refused: number
   failed: number
   total: number
 }> {
@@ -116,12 +117,20 @@ export async function syncAllGamesToSupabase(): Promise<{
   const syncable = games.filter(game => game.status === 'completed')
 
   let success = 0
+  let refused = 0
   let failed = 0
 
   for (const game of syncable) {
-    // via autoSyncGame so a failure here joins the retry queue like any other
-    if (await autoSyncGame(game)) {
+    // via autoSyncGameOutcome so a failure here joins the retry queue like any
+    // other, and so a refusal is told apart from a retryable problem
+    const result = await autoSyncGameOutcome(game)
+    if (result.ok) {
       success++
+    } else if (result.permanent) {
+      // Typically a game played before signing in: its row in Supabase has no
+      // owner, and since nothing in the row proves who that owner is, the
+      // account cannot claim it. Retrying will never help.
+      refused++
     } else {
       failed++
     }
@@ -130,6 +139,7 @@ export async function syncAllGamesToSupabase(): Promise<{
   return {
     success,
     skipped: games.length - syncable.length,
+    refused,
     failed,
     total: games.length,
   }
@@ -230,21 +240,24 @@ export async function isSupabaseAvailable(): Promise<boolean> {
  * Games that fail to sync (e.g. offline) are marked pending and retried later
  * by retryPendingSyncs(). Returns whether the sync succeeded.
  */
-export async function autoSyncGame(game: Game): Promise<boolean> {
+async function autoSyncGameOutcome(game: Game): Promise<UpsertOutcome> {
   if (game.status !== 'completed') {
-    return false
+    return { ok: false, permanent: true, message: 'Only completed games can be synced' }
   }
 
   // Always try to sync to Supabase (for sharing game links)
   const result = await upsertGameRow(game)
   if (result.ok) {
     unmarkPendingSync(game.id)
-    return true
+  } else {
+    markPendingSync(game.id)
+    recordSyncFailure(game.id, { permanent: result.permanent })
   }
+  return result
+}
 
-  markPendingSync(game.id)
-  recordSyncFailure(game.id, { permanent: result.permanent })
-  return false
+export async function autoSyncGame(game: Game): Promise<boolean> {
+  return (await autoSyncGameOutcome(game)).ok
 }
 
 let retryInFlight = false
