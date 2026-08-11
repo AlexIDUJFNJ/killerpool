@@ -16,6 +16,12 @@ const config = [
       "react-hooks/exhaustive-deps": "warn",
       "prefer-const": "warn",
       "no-console": ["warn", { allow: ["warn", "error"] }],
+      // Every hit is the same shape: read localStorage in an effect after mount
+      // and put it in state. It cannot be read during render — the server has
+      // no localStorage — so the effect is the only place left. Moving these to
+      // useSyncExternalStore is worth doing, but as its own change rather than
+      // a side effect of a dependency bump, so this stays visible as a warning.
+      "react-hooks/set-state-in-effect": "warn",
     },
   },
   {

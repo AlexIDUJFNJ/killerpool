@@ -33,11 +33,7 @@ export default function StatsPage() {
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadStats()
-  }, [])
-
-  const loadStats = async () => {
+  async function loadStats() {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -149,6 +145,10 @@ export default function StatsPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadStats()
+  }, [])
 
   if (loading) {
     return (

@@ -42,7 +42,7 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
     return () => subscription.unsubscribe()
   }, [])
 
-  const loadLeaderboard = async () => {
+  async function loadLeaderboard() {
     try {
       setLoading(true)
       setError(null)
