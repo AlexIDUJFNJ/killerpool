@@ -1,3 +1,5 @@
+const { withSentryConfig } = require('@sentry/nextjs')
+
 const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
@@ -126,4 +128,17 @@ const nextConfig = {
   turbopack: {},
 }
 
-module.exports = withPWA(nextConfig)
+// Sentry wraps the outside: the PWA plugin has to see the finished webpack
+// config to attach its service-worker hook.
+module.exports = withSentryConfig(withPWA(nextConfig), {
+  org: 'alexader',
+  project: 'killerpool',
+  // Source maps need SENTRY_AUTH_TOKEN at build time. Without one the build
+  // must still succeed — stack traces are just minified until the token is set
+  // in Vercel.
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  // Keeps the SDK's own debug logging out of the client bundle
+  disableLogger: true,
+  telemetry: false,
+  silent: true,
+})
