@@ -10,9 +10,10 @@ import * as Sentry from '@sentry/nextjs'
  */
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  // Without a DSN — local development, or a preview built before the variable
-  // existed — the SDK stays inert rather than warning on every page load
-  enabled: !!process.env.NEXT_PUBLIC_SENTRY_DSN,
+  // Inert without a DSN, and inert in `next dev` even with one: a developer's
+  // own mistakes should not land in the project that is supposed to show real
+  // users' crashes. Preview and production builds both report.
+  enabled: !!process.env.NEXT_PUBLIC_SENTRY_DSN && process.env.NODE_ENV === 'production',
   tracesSampleRate: 0,
   // The offline-first flows produce a lot of expected network noise
   ignoreErrors: ['Failed to fetch', 'NetworkError', 'Load failed', 'AbortError'],
