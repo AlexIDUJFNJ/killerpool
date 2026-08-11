@@ -50,16 +50,13 @@ export function useRealtimeGame(
       return
     }
 
-    console.log('Setting up realtime subscription for game:', gameId)
 
     const channel = subscribeToGame(
       gameId,
       (gameUpdate) => {
-        console.log('Received game update:', gameUpdate)
         onGameUpdateRef.current?.(gameUpdate)
       },
       (action) => {
-        console.log('Received new action:', action)
         onNewActionRef.current?.(action)
       },
       // Driven by the channel's own status, so "live" means subscribed rather
@@ -74,7 +71,6 @@ export function useRealtimeGame(
     // Cleanup on unmount or when gameId/enabled changes
     return () => {
       if (channelRef.current) {
-        console.log('Cleaning up realtime subscription')
         unsubscribeFromGame(channelRef.current)
         channelRef.current = null
         setIsConnected(false)

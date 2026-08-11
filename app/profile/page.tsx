@@ -58,7 +58,7 @@ export default function ProfilePage() {
             onConflict: 'user_id',
           })
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading user:', err)
       setError('Failed to load profile')
     } finally {
@@ -93,8 +93,8 @@ export default function ProfilePage() {
 
       setMessage('Profile updated successfully!')
       setTimeout(() => setMessage(null), 3000)
-    } catch (err: any) {
-      setError(err.message || 'Failed to update profile')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update profile')
     } finally {
       setSaving(false)
     }
@@ -106,7 +106,7 @@ export default function ProfilePage() {
       await supabase.auth.signOut()
       router.push('/')
       router.refresh()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error signing out:', err)
       setError('Failed to sign out')
     }

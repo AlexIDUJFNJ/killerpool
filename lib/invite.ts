@@ -59,7 +59,6 @@ export async function downloadQRCode(gameId: string, filename?: string): Promise
     link.click()
     document.body.removeChild(link)
 
-    console.log('QR code downloaded successfully')
   } catch (error) {
     console.error('Failed to download QR code:', error)
     throw error
@@ -82,11 +81,9 @@ export async function shareInviteLink(gameId: string, gameName?: string): Promis
           : 'Join my Killerpool game!',
         url: inviteLink,
       })
-      console.log('Invite link shared successfully')
       return true
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
-        console.log('Share cancelled by user')
       } else {
         console.error('Error sharing invite link:', error)
       }
@@ -96,7 +93,6 @@ export async function shareInviteLink(gameId: string, gameName?: string): Promis
   // Fallback to copying to clipboard
   try {
     await navigator.clipboard.writeText(inviteLink)
-    console.log('Invite link copied to clipboard')
     return true
   } catch (error) {
     console.error('Failed to copy invite link:', error)
@@ -112,7 +108,6 @@ export async function copyInviteLink(gameId: string): Promise<boolean> {
 
   try {
     await navigator.clipboard.writeText(inviteLink)
-    console.log('Invite link copied to clipboard')
     return true
   } catch (error) {
     console.error('Failed to copy invite link:', error)

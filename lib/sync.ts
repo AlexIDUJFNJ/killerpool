@@ -81,7 +81,6 @@ export async function syncGameToSupabase(game: Game): Promise<boolean> {
       return false
     }
 
-    console.log('Game successfully synced to Supabase:', game.id)
     return true
   } catch (error) {
     console.error('Error syncing game to Supabase:', error)
@@ -128,7 +127,6 @@ export async function loadGamesFromSupabase(): Promise<Game[]> {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      console.log('User not authenticated, skipping Supabase sync')
       return []
     }
 
@@ -190,7 +188,6 @@ export async function mergeGamesWithSupabase(): Promise<void> {
     // Save merged games to localStorage
     saveGameHistory(mergedGames)
 
-    console.log('Games successfully merged with Supabase')
   } catch (error) {
     console.error('Error merging games with Supabase:', error)
   }
@@ -279,10 +276,6 @@ export async function syncActiveGameToSupabase(game: Game): Promise<{ success: b
       console.warn('[syncActiveGame] Auth check failed (continuing as anonymous):', authError.message)
     }
 
-    console.log('[syncActiveGame] Starting sync for game:', game.id)
-    console.log('[syncActiveGame] User:', user?.id || 'anonymous')
-    console.log('[syncActiveGame] Game status:', game.status)
-    console.log('[syncActiveGame] Players count:', game.players?.length || 0)
 
     // Ensure user profile exists before syncing game
     if (user) {
@@ -319,10 +312,9 @@ export async function syncActiveGameToSupabase(game: Game): Promise<{ success: b
       current_player_index: game.currentPlayerIndex,
     }
 
-    console.log('[syncActiveGame] Upserting game data:', JSON.stringify(gameData, null, 2))
 
     // Insert or update the game
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('games')
       .upsert(gameData, {
         onConflict: 'id',
@@ -336,7 +328,6 @@ export async function syncActiveGameToSupabase(game: Game): Promise<{ success: b
       return { success: false, error: errorMsg }
     }
 
-    console.log('[syncActiveGame] Success! Synced game:', data)
     return { success: true }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error'

@@ -21,7 +21,7 @@ const AvatarImage = React.forwardRef<
   React.ImgHTMLAttributes<HTMLImageElement>
 >(({ className, alt = "", ...props }, ref) => (
   // Using img element instead of next/image for Avatar component compatibility
-  // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+  // eslint-disable-next-line @next/next/no-img-element
   <img
     ref={ref}
     alt={alt}

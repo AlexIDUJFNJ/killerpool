@@ -85,12 +85,10 @@ export default function GamePage() {
       setLoadError(null)
 
       try {
-        console.log('[GamePage] Game not found locally, loading from Supabase:', gameId)
         const loadedGame = await loadGameFromSupabase(gameId)
 
         if (loadedGame) {
           // Set as spectator game (will subscribe to realtime)
-          console.log('[GamePage] Setting spectator game')
           setSpectatorGame(loadedGame)
 
           if (loadedGame.status === 'completed') {
@@ -121,7 +119,6 @@ export default function GamePage() {
   React.useEffect(() => {
     return () => {
       if (isSpectatorMode) {
-        console.log('[GamePage] Cleanup: clearing spectator game')
         clearSpectatorGame()
       }
     }
@@ -153,11 +150,10 @@ export default function GamePage() {
   // Watch for game completion and show winner screen
   React.useEffect(() => {
     if (game && game.status === 'completed' && !showWinner) {
-      console.log('[GamePage] Game completed, showing winner screen')
       setShowWinner(true)
       haptics.victory()
     }
-  }, [game?.status, game?.id, showWinner])
+  }, [game, showWinner])
 
   // Show loading state
   if (isLoading || isLoadingFromSupabase) {

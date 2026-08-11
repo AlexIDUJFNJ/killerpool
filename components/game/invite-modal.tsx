@@ -28,13 +28,11 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   // Skip for spectators - the game is already in Supabase
   React.useEffect(() => {
     if (open && !isSharingEnabled && !isSpectatorMode) {
-      console.log('[InviteModal] Opening, attempting to enable sharing...')
       setIsSyncing(true)
       setSyncError(null)
 
       enableSharing()
         .then((success) => {
-          console.log('[InviteModal] enableSharing result:', success)
           if (!success) {
             setSyncError('Failed to enable live sharing. Check console for details. You may need to apply the database migration.')
           }

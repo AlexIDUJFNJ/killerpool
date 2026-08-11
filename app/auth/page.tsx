@@ -43,8 +43,8 @@ export default function AuthPage() {
 
       setMessage('Check your email for the magic link!')
       setEmail('') // Clear email field after success
-    } catch (err: any) {
-      setError(err.message || 'An error occurred')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
@@ -65,8 +65,8 @@ export default function AuthPage() {
       })
 
       if (error) throw error
-    } catch (err: any) {
-      setError(err.message || 'An error occurred')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
       setLoading(false)
     }
   }

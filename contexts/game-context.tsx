@@ -8,7 +8,7 @@
 
 import * as React from 'react'
 import { Game, GameAction, AchievementType } from '@/lib/types'
-import { applyAction, undoLastAction, getCurrentPlayer, addPlayerToGame } from '@/lib/game-logic'
+import { applyAction, undoLastAction, addPlayerToGame } from '@/lib/game-logic'
 import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
 import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
 import { checkAchievementsForGame } from '@/lib/achievements'
@@ -72,9 +72,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             ...gameUpdate,
           } as Game
         })
-      },
-      onNewAction: (action) => {
-        console.log('New action from realtime:', action)
       },
     }
   )
@@ -171,12 +168,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       // Sync full game state to Supabase if sharing is enabled
       // This ensures spectators see all updates in realtime
       if (isSharingEnabled) {
-        console.log('[performAction] Syncing game state to Supabase for spectators')
         syncActiveGameToSupabase(updatedGame).then((result) => {
           if (!result.success) {
             console.error('[performAction] Failed to sync game:', result.error)
-          } else {
-            console.log('[performAction] Game synced successfully')
           }
         }).catch((error) => {
           console.error('[performAction] Failed to sync game:', error)
@@ -195,7 +189,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     // Sync to Supabase if sharing is enabled
     if (isSharingEnabled) {
-      console.log('[undoAction] Syncing game state to Supabase for spectators')
       syncActiveGameToSupabase(updatedGame).catch((error) => {
         console.error('[undoAction] Failed to sync game:', error)
       })
@@ -211,7 +204,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       // Sync to Supabase if sharing is enabled
       if (isSharingEnabled) {
-        console.log('[addPlayer] Syncing game state to Supabase for spectators')
         syncActiveGameToSupabase(updatedGame).catch((error) => {
           console.error('[addPlayer] Failed to sync game:', error)
         })
@@ -247,7 +239,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     try {
       const supabase = createClient()
 
-      console.log('[loadGameFromSupabase] Loading game:', gameId)
 
       const { data: gameData, error } = await supabase
         .from('games')
@@ -255,7 +246,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         .eq('id', gameId)
         .single()
 
-      console.log('[loadGameFromSupabase] Result:', { gameData, error })
 
       if (error || !gameData) {
         console.error('[loadGameFromSupabase] Failed:', error?.message, error?.details, error?.hint)
@@ -271,8 +261,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   // Set a game for spectator mode (don't save to localStorage)
   const setSpectatorGame = React.useCallback((spectatorGame: Game) => {
-    console.log('[setSpectatorGame] Setting up spectator mode for game:', spectatorGame.id)
-
     // Cleanup previous spectator channel
     if (spectatorChannelRef.current) {
       unsubscribeFromGame(spectatorChannelRef.current)
@@ -283,29 +271,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setRealtimeEnabled(false)
 
     // Subscribe to realtime updates for spectator
-    console.log('[setSpectatorGame] Subscribing to realtime updates...')
     const channel = subscribeToGame(
       spectatorGame.id,
       (gameUpdate) => {
-        console.log('[Spectator] Received game update:', gameUpdate)
         setGame((currentGame) => {
           if (!currentGame) return null
           const updated = {
             ...currentGame,
             ...gameUpdate,
           } as Game
-          console.log('[Spectator] Updated game state, players:', updated.players?.length)
           return updated
         })
       },
-      (action) => {
-        console.log('[Spectator] Received action:', action)
-      }
+      // Actions arrive folded into the game update above; nothing extra to do
+      () => {}
     )
 
-    if (channel) {
-      console.log('[setSpectatorGame] Realtime channel created successfully')
-    } else {
+    if (!channel) {
       console.error('[setSpectatorGame] Failed to create realtime channel!')
     }
 
@@ -330,13 +312,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (isSharingEnabled) {
-      console.log('[enableSharing] Already enabled for game:', game.id)
       return true
     }
 
     try {
-      console.log('[enableSharing] Starting for game:', game.id)
-      console.log('[enableSharing] Game players:', game.players?.length || 0)
 
       // Sync game to Supabase first (this ensures the game exists in DB)
       const syncResult = await syncActiveGameToSupabase(game)
@@ -351,7 +330,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setRealtimeEnabled(true)
       setIsSharingEnabled(true)
 
-      console.log('[enableSharing] Success! Game is now shareable:', game.id)
       return true
     } catch (error) {
       console.error('[enableSharing] Error:', error instanceof Error ? error.message : error)

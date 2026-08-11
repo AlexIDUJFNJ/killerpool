@@ -9,7 +9,6 @@ import { Game, NewGamePlayerInput } from './types'
 const STORAGE_KEYS = {
   CURRENT_GAME: 'killerpool_current_game',
   GAME_HISTORY: 'killerpool_game_history',
-  SETTINGS: 'killerpool_settings',
   GUEST_ID: 'killerpool_guest_id',
   REMATCH_PLAYERS: 'killerpool_rematch_players',
   PENDING_SYNC: 'killerpool_pending_sync',

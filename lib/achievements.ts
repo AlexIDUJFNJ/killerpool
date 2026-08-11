@@ -103,44 +103,6 @@ export async function checkAchievementsForGame(game: Game): Promise<AchievementT
 }
 
 /**
- * Check achievements locally (without database)
- * Useful for showing potential achievements before sync
- */
-export function checkLocalAchievements(game: Game, userId: string): AchievementType[] {
-  const newAchievements: AchievementType[] = []
-
-  // Find winner
-  const winner = game.players.find(p => p.id === game.winnerId)
-  if (!winner || winner.userId !== userId) {
-    return newAchievements
-  }
-
-  // Check survivor (win with 1 life)
-  if (winner.lives === 1) {
-    newAchievements.push('survivor')
-  }
-
-  // Check perfect game (no lives lost — no history entry where the winner's
-  // lives went down; lives >= starting_lives would wrongly count a player who
-  // lost lives and regained them with pot blacks)
-  const lostLife = game.history.some(
-    h => h.playerId === winner.id && h.livesAfter < h.livesBefore
-  )
-  if (!lostLife) {
-    newAchievements.push('perfect_game')
-  }
-
-  // Check pot_black_master
-  const winnerHistory = game.history.filter(h => h.playerId === winner.id)
-  const potBlacks = winnerHistory.filter(h => h.action === 'pot_black').length
-  if (potBlacks >= 5) {
-    newAchievements.push('pot_black_master')
-  }
-
-  return newAchievements
-}
-
-/**
  * Get achievement definition by type
  */
 export function getAchievementDefinition(type: AchievementType): AchievementDefinition | undefined {

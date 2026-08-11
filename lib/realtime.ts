@@ -5,8 +5,12 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
-import { Game, GameHistoryEntry } from './types'
+import { Game, GameHistoryEntry, Player } from './types'
 import { RealtimeChannel } from '@supabase/supabase-js'
+import type { Database } from '@/lib/types/database.types'
+
+type GameRow = Database['public']['Tables']['games']['Row']
+type GameUpdate = Database['public']['Tables']['games']['Update']
 // NOTE: writes during a shared game go through syncActiveGameToSupabase
 // (lib/sync.ts), which upserts the full game state owned by the host —
 // there is no per-action write path here.
@@ -21,7 +25,6 @@ export function subscribeToGame(
   onStatus?: (connected: boolean) => void
 ): RealtimeChannel | null {
   try {
-    console.log('[subscribeToGame] Creating subscription for game:', gameId)
     const supabase = createClient()
 
     // Create a channel for this game
@@ -36,44 +39,38 @@ export function subscribeToGame(
           filter: `id=eq.${gameId}`,
         },
         (payload) => {
-          console.log('[subscribeToGame] Received UPDATE event:', payload)
+          const newData = payload.new as GameRow
 
-          const newData = payload.new as any
-
-          // Convert database format to Game format
+          // Convert database format to Game format. participants/history are
+          // Json in the schema but hold the client's own shapes.
           const gameUpdate: Partial<Game> = {
             id: newData.id,
             updatedAt: newData.updated_at,
             status: newData.status,
-            players: newData.participants,
+            players: newData.participants as unknown as Player[],
             winnerId: newData.winner_id,
-            history: newData.history,
+            history: (newData.history ?? []) as unknown as GameHistoryEntry[],
             currentPlayerIndex: newData.current_player_index ?? 0,
           }
 
-          console.log('[subscribeToGame] Calling onUpdate with:', gameUpdate)
           onUpdate(gameUpdate)
 
           // If history changed, notify about new action
-          if (newData.history && Array.isArray(newData.history)) {
-            const lastAction = newData.history[newData.history.length - 1]
-            if (lastAction) {
-              onAction(lastAction)
-            }
+          const history = gameUpdate.history ?? []
+          const lastAction = history[history.length - 1]
+          if (lastAction) {
+            onAction(lastAction)
           }
         }
       )
       .subscribe((status, err) => {
-        console.log('[subscribeToGame] Subscription status:', status)
         if (err) {
           console.error('[subscribeToGame] Subscription error:', err)
         }
         // Report the real state: having a channel object is not the same as
         // being subscribed, and the "live" indicator used to claim otherwise
         onStatus?.(status === 'SUBSCRIBED')
-        if (status === 'SUBSCRIBED') {
-          console.log('[subscribeToGame] Successfully subscribed to game:', gameId)
-        } else if (status === 'CHANNEL_ERROR') {
+        if (status === 'CHANNEL_ERROR') {
           console.error('[subscribeToGame] Channel error for game:', gameId)
         } else if (status === 'TIMED_OUT') {
           console.error('[subscribeToGame] Subscription timed out for game:', gameId)
@@ -96,7 +93,6 @@ export async function unsubscribeFromGame(channel: RealtimeChannel | null): Prom
   try {
     const supabase = createClient()
     await supabase.removeChannel(channel)
-    console.log('Unsubscribed from game')
   } catch (error) {
     console.error('Failed to unsubscribe from game:', error)
   }
@@ -113,7 +109,7 @@ export async function updateGameStatus(
   try {
     const supabase = createClient()
 
-    const updateData: any = {
+    const updateData: GameUpdate = {
       status,
       updated_at: new Date().toISOString(),
     }
@@ -132,7 +128,6 @@ export async function updateGameStatus(
       return false
     }
 
-    console.log('Game status updated successfully')
     return true
   } catch (error) {
     console.error('Failed to update game status:', error)
@@ -178,7 +173,6 @@ export async function syncGameForRealtime(game: Game): Promise<boolean> {
       return false
     }
 
-    console.log('Game synced for realtime successfully')
     return true
   } catch (error) {
     console.error('Failed to sync game for realtime:', error)
