@@ -123,7 +123,7 @@ export default function HelpPage() {
                 <h3 className="font-semibold">Theme Switcher</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                The app supports light, dark, and system themes. Access theme settings from your profile page to customize the appearance.
+                The app uses a dark theme by default. If you have not chosen one, it follows your system setting.
               </p>
             </div>
           </CardContent>
@@ -181,9 +181,9 @@ export default function HelpPage() {
             </div>
 
             <div>
-              <h3 className="font-semibold mb-2">Can multiple people control the same game?</h3>
+              <h3 className="font-semibold mb-2">Can other people follow my game?</h3>
               <p className="text-muted-foreground">
-                Yes! If you&apos;re signed in and enable realtime sync, multiple devices can view and control the same game simultaneously.
+                Yes. Share the game from the invite button and anyone with the link watches it live, no account needed. Watching is read-only — the device that started the game stays in control.
               </p>
             </div>
 

@@ -8,10 +8,17 @@
 
 import * as React from 'react'
 import { Game, GameAction, AchievementType } from '@/lib/types'
-import { applyAction, undoLastAction, getCurrentPlayer, addPlayerToGame } from '@/lib/game-logic'
-import { saveCurrentGame, loadCurrentGame, clearCurrentGame, saveToHistory } from '@/lib/storage'
+import { applyAction, undoLastAction, addPlayerToGame } from '@/lib/game-logic'
+import {
+  saveCurrentGame,
+  loadCurrentGame,
+  clearCurrentGame,
+  saveToHistory,
+  resolveRosterPlayerId,
+  rememberRosterPlayers,
+} from '@/lib/storage'
 import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
-import { checkAchievementsForGame } from '@/lib/achievements'
+import { checkAchievementsForGame, onUnlockedAchievements } from '@/lib/achievements'
 import { AchievementToasts } from '@/components/achievements/achievement-toast'
 import { mapDbGameToGame } from '@/lib/game-mapper'
 import { useRealtimeGame, useSyncGameForRealtime } from '@/hooks/use-realtime-game'
@@ -51,8 +58,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
   const [newAchievements, setNewAchievements] = React.useState<AchievementType[]>([])
   const spectatorChannelRef = React.useRef<RealtimeChannel | null>(null)
-  // Track completed games that have already been synced to prevent infinite loops
-  const syncedCompletedGamesRef = React.useRef<Set<string>>(new Set())
+  // Id of the completion whose pipeline (history + sync + achievements) already
+  // ran. Cleared as soon as the game leaves 'completed', so undoing a win and
+  // finishing again — possibly on a different winner — is processed afresh.
+  const handledCompletionRef = React.useRef<string | null>(null)
 
   // Sync game for realtime when enabled
   const { isSynced } = useSyncGameForRealtime(realtimeEnabled ? game : null)
@@ -70,9 +79,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             ...gameUpdate,
           } as Game
         })
-      },
-      onNewAction: (action) => {
-        console.log('New action from realtime:', action)
       },
     }
   )
@@ -94,6 +100,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
+  // Achievements for games that synced late (retryPendingSyncs runs from
+  // PWAInit, which sits outside this provider) still deserve their toast
+  React.useEffect(
+    () =>
+      onUnlockedAchievements(types => {
+        setNewAchievements(prev => [...prev, ...types.filter(t => !prev.includes(t))])
+      }),
+    []
+  )
+
   // Cleanup spectator channel on unmount
   React.useEffect(() => {
     return () => {
@@ -105,43 +121,42 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   // Save game to localStorage whenever it changes (skip for spectator mode)
   React.useEffect(() => {
-    if (game && !isSpectatorMode) {
-      saveCurrentGame(game)
+    if (!game || isSpectatorMode) return
 
-      // If game is completed, save to history and sync to Supabase (only once per game)
-      if (game.status === 'completed') {
-        // Check if we've already synced this completed game to prevent infinite loops
-        if (syncedCompletedGamesRef.current.has(game.id)) {
-          console.log('[useEffect] Game already synced, skipping:', game.id)
-          return
+    saveCurrentGame(game)
+
+    if (game.status !== 'completed') {
+      // Undo took the game back to 'active' — re-arm the pipeline. Nothing here
+      // sets state, so this cannot loop.
+      handledCompletionRef.current = null
+      return
+    }
+
+    // This completion was already handled. Without the guard, the postgres echo
+    // of our own updateGameStatus below would re-run this effect forever.
+    if (handledCompletionRef.current === game.id) return
+    handledCompletionRef.current = game.id
+
+    saveToHistory(game)
+    // Auto-sync to Supabase in background, then grant achievements
+    // (the RPC reads the game row, so it must run after a successful sync;
+    // a failed sync is retried by retryPendingSyncs, which also grants)
+    autoSyncGame(game)
+      .then(async (synced) => {
+        if (!synced) return
+        const unlocked = await checkAchievementsForGame(game)
+        if (unlocked.length > 0) {
+          setNewAchievements((prev) => [...prev, ...unlocked])
         }
-
-        // Mark this game as synced
-        syncedCompletedGamesRef.current.add(game.id)
-        console.log('[useEffect] Syncing completed game:', game.id)
-
-        saveToHistory(game)
-        // Auto-sync to Supabase in background, then grant achievements
-        // (the RPC reads the game row, so it must run after a successful sync;
-        // a failed sync is retried by retryPendingSyncs, which also grants)
-        autoSyncGame(game)
-          .then(async (synced) => {
-            if (!synced) return
-            const unlocked = await checkAchievementsForGame(game)
-            if (unlocked.length > 0) {
-              setNewAchievements((prev) => [...prev, ...unlocked])
-            }
-          })
-          .catch((error) => {
-            console.error('Failed to auto-sync game:', error)
-          })
-        // Update status in realtime if enabled
-        if (realtimeEnabled) {
-          updateGameStatus(game.id, 'completed', game.winnerId).catch((error) => {
-            console.error('Failed to update game status in realtime:', error)
-          })
-        }
-      }
+      })
+      .catch((error) => {
+        console.error('Failed to auto-sync game:', error)
+      })
+    // Update status in realtime if enabled
+    if (realtimeEnabled) {
+      updateGameStatus(game.id, 'completed', game.winnerId).catch((error) => {
+        console.error('Failed to update game status in realtime:', error)
+      })
     }
   }, [game, realtimeEnabled, isSpectatorMode])
 
@@ -152,6 +167,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       unsubscribeFromGame(spectatorChannelRef.current)
       spectatorChannelRef.current = null
     }
+    handledCompletionRef.current = null
     setGame(newGame)
     setRealtimeEnabled(enableRealtime)
     setIsSpectatorMode(false)
@@ -159,7 +175,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const performAction = React.useCallback((action: GameAction) => {
-    if (!game) return
+    // A finished game takes no more actions, and a spectator drives nothing
+    if (!game || game.status !== 'active' || isSpectatorMode) return
 
     try {
       const updatedGame = applyAction(game, action)
@@ -168,12 +185,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       // Sync full game state to Supabase if sharing is enabled
       // This ensures spectators see all updates in realtime
       if (isSharingEnabled) {
-        console.log('[performAction] Syncing game state to Supabase for spectators')
         syncActiveGameToSupabase(updatedGame).then((result) => {
           if (!result.success) {
             console.error('[performAction] Failed to sync game:', result.error)
-          } else {
-            console.log('[performAction] Game synced successfully')
           }
         }).catch((error) => {
           console.error('[performAction] Failed to sync game:', error)
@@ -182,33 +196,34 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Failed to perform action:', error)
     }
-  }, [game, isSharingEnabled])
+  }, [game, isSharingEnabled, isSpectatorMode])
 
   const undoAction = React.useCallback(() => {
-    if (!game || game.history.length === 0) return
+    if (!game || game.history.length === 0 || isSpectatorMode) return
 
     const updatedGame = undoLastAction(game)
     setGame(updatedGame)
 
     // Sync to Supabase if sharing is enabled
     if (isSharingEnabled) {
-      console.log('[undoAction] Syncing game state to Supabase for spectators')
       syncActiveGameToSupabase(updatedGame).catch((error) => {
         console.error('[undoAction] Failed to sync game:', error)
       })
     }
-  }, [game, isSharingEnabled])
+  }, [game, isSharingEnabled, isSpectatorMode])
 
   const addPlayer = React.useCallback((name: string, avatar: string) => {
-    if (!game || game.status !== 'active') return
+    if (!game || game.status !== 'active' || isSpectatorMode) return
 
     try {
-      const updatedGame = addPlayerToGame(game, name, avatar)
+      // Someone joining mid-game is still the same person as last time
+      const playerId = resolveRosterPlayerId(name)
+      const updatedGame = addPlayerToGame(game, name, avatar, playerId)
+      rememberRosterPlayers([{ id: playerId, name: name.trim(), avatar }])
       setGame(updatedGame)
 
       // Sync to Supabase if sharing is enabled
       if (isSharingEnabled) {
-        console.log('[addPlayer] Syncing game state to Supabase for spectators')
         syncActiveGameToSupabase(updatedGame).catch((error) => {
           console.error('[addPlayer] Failed to sync game:', error)
         })
@@ -216,16 +231,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Failed to add player:', error)
     }
-  }, [game, isSharingEnabled])
+  }, [game, isSharingEnabled, isSpectatorMode])
 
   const endGame = React.useCallback(() => {
+    // A spectator watching someone else's game must not wipe their own saved
+    // game — the same guard the persistence effect above already has
+    if (isSpectatorMode) return
+
     if (game) {
       const completedGame = { ...game, status: 'abandoned' as const }
       saveToHistory(completedGame)
     }
+    handledCompletionRef.current = null
     clearCurrentGame()
     setGame(null)
-  }, [game])
+  }, [game, isSpectatorMode])
 
   const resumeGame = React.useCallback(() => {
     const savedGame = loadCurrentGame()
@@ -239,7 +259,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     try {
       const supabase = createClient()
 
-      console.log('[loadGameFromSupabase] Loading game:', gameId)
 
       const { data: gameData, error } = await supabase
         .from('games')
@@ -247,7 +266,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         .eq('id', gameId)
         .single()
 
-      console.log('[loadGameFromSupabase] Result:', { gameData, error })
 
       if (error || !gameData) {
         console.error('[loadGameFromSupabase] Failed:', error?.message, error?.details, error?.hint)
@@ -263,8 +281,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   // Set a game for spectator mode (don't save to localStorage)
   const setSpectatorGame = React.useCallback((spectatorGame: Game) => {
-    console.log('[setSpectatorGame] Setting up spectator mode for game:', spectatorGame.id)
-
     // Cleanup previous spectator channel
     if (spectatorChannelRef.current) {
       unsubscribeFromGame(spectatorChannelRef.current)
@@ -275,29 +291,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setRealtimeEnabled(false)
 
     // Subscribe to realtime updates for spectator
-    console.log('[setSpectatorGame] Subscribing to realtime updates...')
     const channel = subscribeToGame(
       spectatorGame.id,
       (gameUpdate) => {
-        console.log('[Spectator] Received game update:', gameUpdate)
         setGame((currentGame) => {
           if (!currentGame) return null
           const updated = {
             ...currentGame,
             ...gameUpdate,
           } as Game
-          console.log('[Spectator] Updated game state, players:', updated.players?.length)
           return updated
         })
       },
-      (action) => {
-        console.log('[Spectator] Received action:', action)
-      }
+      // Actions arrive folded into the game update above; nothing extra to do
+      () => {}
     )
 
-    if (channel) {
-      console.log('[setSpectatorGame] Realtime channel created successfully')
-    } else {
+    if (!channel) {
       console.error('[setSpectatorGame] Failed to create realtime channel!')
     }
 
@@ -322,13 +332,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (isSharingEnabled) {
-      console.log('[enableSharing] Already enabled for game:', game.id)
       return true
     }
 
     try {
-      console.log('[enableSharing] Starting for game:', game.id)
-      console.log('[enableSharing] Game players:', game.players?.length || 0)
 
       // Sync game to Supabase first (this ensures the game exists in DB)
       const syncResult = await syncActiveGameToSupabase(game)
@@ -343,7 +350,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setRealtimeEnabled(true)
       setIsSharingEnabled(true)
 
-      console.log('[enableSharing] Success! Game is now shareable:', game.id)
       return true
     } catch (error) {
       console.error('[enableSharing] Error:', error instanceof Error ? error.message : error)

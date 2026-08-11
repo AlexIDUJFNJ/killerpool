@@ -23,6 +23,36 @@ export interface SwipeablePlayerCardProps {
 const SWIPE_THRESHOLD = 100
 const SWIPE_VELOCITY_THRESHOLD = 500
 
+/**
+ * One place for how each action looks. The big indicator, the badge and the
+ * legend used to carry their own copy of these colours, and the badge's copy
+ * had POT and BLACK the wrong way round.
+ */
+const SWIPE_STYLES: Record<
+  SwipeAction,
+  { label: string; icon: typeof X; text: string; badge: string }
+> = {
+  miss: {
+    label: 'MISS',
+    icon: X,
+    text: 'text-red-500',
+    badge: 'border-red-500 bg-red-500/10',
+  },
+  pot: {
+    label: 'POT',
+    icon: Circle,
+    text: 'text-emerald-500',
+    badge: 'border-emerald-500 bg-emerald-500/10',
+  },
+  pot_black: {
+    label: 'BLACK',
+    icon: Target,
+    text: 'text-slate-900 dark:text-slate-100',
+    badge:
+      'border-slate-900 bg-slate-900/10 dark:border-slate-100 dark:bg-slate-100/10',
+  },
+}
+
 export function SwipeablePlayerCard({
   name,
   avatar = '🎱',
@@ -129,9 +159,9 @@ export function SwipeablePlayerCard({
         style={{ opacity: missOpacity }}
         className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-24 z-0"
       >
-        <div className="flex flex-col items-center gap-2 text-red-500">
+        <div className={cn('flex flex-col items-center gap-2', SWIPE_STYLES.miss.text)}>
           <X className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">MISS</span>
+          <span className="text-xl font-bold">{SWIPE_STYLES.miss.label}</span>
         </div>
       </motion.div>
 
@@ -139,9 +169,9 @@ export function SwipeablePlayerCard({
         style={{ opacity: blackOpacity }}
         className="absolute left-1/2 -translate-x-1/2 top-0 -translate-y-24 z-0"
       >
-        <div className="flex flex-col items-center gap-2 text-slate-900 dark:text-slate-100">
+        <div className={cn('flex flex-col items-center gap-2', SWIPE_STYLES.pot_black.text)}>
           <Target className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">BLACK</span>
+          <span className="text-xl font-bold">{SWIPE_STYLES.pot_black.label}</span>
         </div>
       </motion.div>
 
@@ -149,9 +179,9 @@ export function SwipeablePlayerCard({
         style={{ opacity: potOpacity }}
         className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-24 z-0"
       >
-        <div className="flex flex-col items-center gap-2 text-emerald-500">
+        <div className={cn('flex flex-col items-center gap-2', SWIPE_STYLES.pot.text)}>
           <Circle className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">POT</span>
+          <span className="text-xl font-bold">{SWIPE_STYLES.pot.label}</span>
         </div>
       </motion.div>
 
@@ -178,25 +208,16 @@ export function SwipeablePlayerCard({
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className={cn(
-                    'absolute top-4 right-4',
-                    swipeDirection === 'miss' && 'text-red-500',
-                    swipeDirection === 'pot' && 'text-slate-400',
-                    swipeDirection === 'pot_black' && 'text-emerald-500'
-                  )}
+                  className={cn('absolute top-4 right-4', SWIPE_STYLES[swipeDirection].text)}
                 >
                   <Badge
                     variant="outline"
                     className={cn(
                       'text-lg px-3 py-1 border-2',
-                      swipeDirection === 'miss' && 'border-red-500 bg-red-500/10',
-                      swipeDirection === 'pot' && 'border-slate-400 bg-slate-400/10',
-                      swipeDirection === 'pot_black' && 'border-emerald-500 bg-emerald-500/10'
+                      SWIPE_STYLES[swipeDirection].badge
                     )}
                   >
-                    {swipeDirection === 'miss' && 'MISS'}
-                    {swipeDirection === 'pot' && 'POT'}
-                    {swipeDirection === 'pot_black' && 'BLACK'}
+                    {SWIPE_STYLES[swipeDirection].label}
                   </Badge>
                 </motion.div>
               )}
@@ -261,19 +282,19 @@ export function SwipeablePlayerCard({
                   </p>
                   <div className="grid grid-cols-3 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs">
                     <div className="flex flex-col items-center gap-1">
-                      <div className="text-red-500">
+                      <div className={SWIPE_STYLES.miss.text}>
                         <X className="h-5 w-5 mx-auto" />
                       </div>
                       <span className="text-muted-foreground">← Miss</span>
                     </div>
                     <div className="flex flex-col items-center gap-1">
-                      <div className="text-slate-900 dark:text-slate-100">
+                      <div className={SWIPE_STYLES.pot_black.text}>
                         <Target className="h-5 w-5 mx-auto" />
                       </div>
                       <span className="text-muted-foreground">↑ Black</span>
                     </div>
                     <div className="flex flex-col items-center gap-1">
-                      <div className="text-emerald-500">
+                      <div className={SWIPE_STYLES.pot.text}>
                         <Circle className="h-5 w-5 mx-auto" />
                       </div>
                       <span className="text-muted-foreground">Pot →</span>

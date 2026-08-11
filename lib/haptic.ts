@@ -28,9 +28,8 @@ export function triggerHaptic(intensity: HapticIntensity = 'medium'): void {
 
   try {
     navigator.vibrate(pattern)
-  } catch (error) {
+  } catch {
     // Silently fail if vibration is not supported or blocked
-    console.debug('Haptic feedback not available:', error)
   }
 }
 

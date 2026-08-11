@@ -15,37 +15,21 @@ import {
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
+  getDeletedGameIds,
+  markGameDeleted,
+  clearGameDeleted,
+  loadRoster,
+  findRosterPlayer,
+  resolveRosterPlayerId,
+  rememberRosterPlayers,
+  getPlayerNamesSuggestions,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
 
 describe('Storage', () => {
+  // localStorage comes from jsdom and is cleared in jest.setup.ts
   beforeEach(() => {
-    // Create a fresh mock localStorage for each test
-    const storage: { [key: string]: string } = {};
-
-    const localStorageMock = {
-      getItem: (key: string): string | null => storage[key] || null,
-      setItem: (key: string, value: string): void => {
-        storage[key] = value;
-      },
-      removeItem: (key: string): void => {
-        delete storage[key];
-      },
-      clear: (): void => {
-        Object.keys(storage).forEach(key => delete storage[key]);
-      },
-      length: 0,
-      key: jest.fn(),
-    };
-
-    // Replace global localStorage
-    Object.defineProperty(global, 'localStorage', {
-      value: localStorageMock,
-      writable: true,
-    });
-
-    // Clear all console spies
     jest.restoreAllMocks();
   });
 
@@ -74,11 +58,7 @@ describe('Storage', () => {
     it('should handle localStorage errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      // Store the original setItem
-      const originalSetItem = global.localStorage.setItem;
-
-      // Mock localStorage.setItem to throw an error
-      global.localStorage.setItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage quota exceeded');
       });
 
@@ -90,8 +70,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      // Restore original implementation
-      global.localStorage.setItem = originalSetItem;
       consoleErrorSpy.mockRestore();
     });
 
@@ -123,9 +101,7 @@ describe('Storage', () => {
     it('should handle errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalRemoveItem = global.localStorage.removeItem;
-
-      global.localStorage.removeItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
         throw new Error('Failed to remove');
       });
 
@@ -136,7 +112,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      global.localStorage.removeItem = originalRemoveItem;
       consoleErrorSpy.mockRestore();
     });
   });
@@ -216,9 +191,7 @@ describe('Storage', () => {
     it('should handle storage errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalSetItem = global.localStorage.setItem;
-
-      global.localStorage.setItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage error');
       });
 
@@ -227,12 +200,12 @@ describe('Storage', () => {
 
       saveToHistory(game);
 
+      // The write goes through saveGameHistory, which owns the history key
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to save game to history:',
+        'Failed to save game history:',
         expect.any(Error)
       );
 
-      global.localStorage.setItem = originalSetItem;
       consoleErrorSpy.mockRestore();
     });
 
@@ -268,9 +241,7 @@ describe('Storage', () => {
     it('should handle errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalRemoveItem = global.localStorage.removeItem;
-
-      global.localStorage.removeItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
         throw new Error('Failed to remove');
       });
 
@@ -281,7 +252,6 @@ describe('Storage', () => {
         expect.any(Error)
       );
 
-      global.localStorage.removeItem = originalRemoveItem;
       consoleErrorSpy.mockRestore();
     });
   });
@@ -344,20 +314,137 @@ describe('Storage', () => {
     it('should handle errors gracefully', () => {
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const originalSetItem = global.localStorage.setItem;
-
-      global.localStorage.setItem = jest.fn(() => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new Error('Storage error');
       });
 
       deleteGameFromHistory('game-1');
 
+      // Both writes it makes (history, tombstone) swallow and log the failure
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to delete game from history:',
+        'Failed to save game history:',
         expect.any(Error)
       );
 
-      global.localStorage.setItem = originalSetItem;
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('deleted game tombstones', () => {
+    const completedGame = (id: string): Game => {
+      const game = createGame([
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ]);
+      return { ...game, id, status: 'completed' };
+    };
+
+    it('should record a tombstone when a game is deleted', () => {
+      saveToHistory(completedGame('game-1'));
+
+      deleteGameFromHistory('game-1');
+
+      expect(getDeletedGameIds().has('game-1')).toBe(true);
+      expect(loadGameHistory()).toHaveLength(0);
+    });
+
+    it('should drop the game from the pending sync queue when deleted', () => {
+      saveToHistory(completedGame('game-1'));
+      markPendingSync('game-1');
+
+      deleteGameFromHistory('game-1');
+
+      expect(getPendingSyncIds()).not.toContain('game-1');
+    });
+
+    it('should clear the tombstone when the game is saved again', () => {
+      markGameDeleted('game-1');
+
+      saveToHistory(completedGame('game-1'));
+
+      expect(getDeletedGameIds().has('game-1')).toBe(false);
+    });
+
+    it('should let a tombstone be cleared explicitly', () => {
+      markGameDeleted('game-1');
+      clearGameDeleted('game-1');
+
+      expect(getDeletedGameIds().has('game-1')).toBe(false);
+    });
+
+    it('should read the legacy plain-string format', () => {
+      localStorage.setItem('killerpool_deleted_games', JSON.stringify(['game-1']));
+
+      expect(getDeletedGameIds().has('game-1')).toBe(true);
+    });
+
+    it('should survive corrupted data', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      localStorage.setItem('killerpool_deleted_games', 'not json');
+
+      expect(getDeletedGameIds().size).toBe(0);
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('player roster', () => {
+    const uuid = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
+
+    it('should mint an id for somebody new', () => {
+      const id = resolveRosterPlayerId('Misha');
+
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    });
+
+    it('should reuse the id of a known player', () => {
+      rememberRosterPlayers([{ id: uuid(1), name: 'Misha', avatar: '🎱' }]);
+
+      expect(resolveRosterPlayerId('Misha')).toBe(uuid(1));
+    });
+
+    it('should match names regardless of case and padding', () => {
+      rememberRosterPlayers([{ id: uuid(1), name: 'Misha', avatar: '🎱' }]);
+
+      expect(resolveRosterPlayerId('  mIsHa ')).toBe(uuid(1));
+      expect(findRosterPlayer('MISHA')?.id).toBe(uuid(1));
+    });
+
+    it('should keep the original id when a player is seen again', () => {
+      // The id is what the leaderboard groups by — a second sighting must not
+      // split the same person into two entries
+      rememberRosterPlayers([{ id: uuid(1), name: 'Misha', avatar: '🎱' }]);
+      rememberRosterPlayers([{ id: uuid(2), name: 'Misha', avatar: '🎯' }]);
+
+      const roster = loadRoster();
+      expect(roster).toHaveLength(1);
+      expect(roster[0].id).toBe(uuid(1));
+      expect(roster[0].avatar).toBe('🎯');
+    });
+
+    it('should ignore blank names', () => {
+      rememberRosterPlayers([{ id: uuid(1), name: '   ', avatar: '🎱' }]);
+
+      expect(loadRoster()).toHaveLength(0);
+      expect(findRosterPlayer('   ')).toBeNull();
+    });
+
+    it('should offer known players for autocomplete', () => {
+      rememberRosterPlayers([
+        { id: uuid(1), name: 'Misha', avatar: '🎱' },
+        { id: uuid(2), name: 'Anton', avatar: '🎯' },
+      ]);
+
+      expect(getPlayerNamesSuggestions()).toEqual(['Anton', 'Misha']);
+    });
+
+    it('should survive corrupted data', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      localStorage.setItem('killerpool_roster', 'not json');
+
+      expect(loadRoster()).toEqual([]);
+      expect(resolveRosterPlayerId('Misha')).toBeTruthy();
+
       consoleErrorSpy.mockRestore();
     });
   });

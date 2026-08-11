@@ -183,14 +183,13 @@ killerpool/
 │   │   │                         #   input, label, dialog, bottom-sheet
 │   │   └── __tests__/            # Тесты компонентов
 │   ├── game/                     # player-card, swipeable-player-card,
-│   │   │                         #   action-buttons, life-bar, invite-modal,
-│   │   │                         #   black-ball-celebration
+│   │   │                         #   invite-modal, black-ball-celebration
 │   │   └── __tests__/
 │   ├── achievements/             # achievement-card, achievement-toast, list
 │   ├── leaderboard/              # leaderboard-card, leaderboard-list
-│   ├── lazy-components.tsx       # dynamic() обёртки (InviteModal, BottomSheet)
-│   ├── pwa-init.tsx              # SW-регистрация + retryPendingSyncs
-│   ├── theme-provider.tsx / theme-switcher.tsx
+│   ├── pwa-init.tsx              # SW-регистрация + retryPendingSyncs + install-промпт
+│   ├── pwa-install-button.tsx    # кнопка установки (на главной)
+│   ├── theme-provider.tsx
 │
 ├── contexts/
 │   └── game-context.tsx          # GameProvider: state, персист, синк, ачивки
@@ -214,7 +213,7 @@ killerpool/
 │   ├── types/database.types.ts   # Типы Supabase-схемы
 │   └── __tests__/                # Тесты lib-слоя
 │
-├── supabase/migrations/          # 00001–00011 (см. раздел про БД)
+├── supabase/migrations/          # 00001–00012 (см. раздел про БД)
 ├── public/                       # manifest.json, иконки, sw.js (генерируется)
 │
 ├── proxy.ts                      # Next 16 proxy (замена middleware.ts)
@@ -235,18 +234,7 @@ killerpool/
 
 **Компоненты:** `app/*/page.tsx`, `components/ui/*`, `components/game/*`
 
-Почти все игровые экраны — Client Components (`'use client'`): игра интерактивна и живёт в браузере. Тяжёлые компоненты грузятся лениво через `components/lazy-components.tsx`:
-
-```typescript
-// components/lazy-components.tsx
-export const InviteModal = dynamic(
-  () => import('./game/invite-modal').then((mod) => ({ default: mod.InviteModal })),
-  {
-    loading: () => <LoadingSpinner />,
-    ssr: false, // QR code generation only works on client
-  }
-)
-```
+Почти все игровые экраны — Client Components (`'use client'`): игра интерактивна и живёт в браузере. Ленивой загрузки нет: обёртки `next/dynamic` лежали в `components/lazy-components.tsx`, но ни один экран их не импортировал — игровой экран тянул `InviteModal` и `BottomSheet` напрямую, — поэтому файл удалён как мёртвый. Если понадобится вынести `qrcode` из основного чанка, `dynamic()` ставится прямо в месте импорта.
 
 ### Layer 2: Business Logic
 
@@ -487,7 +475,7 @@ if (user && request.nextUrl.pathname === '/auth') { /* → '/' */ }
 
 ## Схема базы данных и RLS
 
-Миграции: `supabase/migrations/00001–00011`.
+Миграции: `supabase/migrations/00001–00012`.
 
 ### Таблицы
 
@@ -538,7 +526,7 @@ CREATE TABLE games (
 
 ### RPC-функции
 
-- **`get_leaderboard(limit_count INTEGER DEFAULT 15)`** — v3 из миграции 00005, `SECURITY DEFINER`, `GRANT anon + authenticated`
+- **`get_leaderboard(limit_count INTEGER DEFAULT 15)`** — v4 из миграции 00012, `SECURITY DEFINER`, `GRANT anon + authenticated`
 - **`check_achievements(p_user_id UUID, p_game_id UUID)`** — v2 из миграции 00011, `SECURITY DEFINER`, `GRANT` только `authenticated`
 
 ---
@@ -549,14 +537,16 @@ CREATE TABLE games (
 
 1. Берутся только `status = 'completed'` игры
 2. Участники разворачиваются из JSONB (`jsonb_array_elements(participants)`)
-3. Группировка по стабильному идентификатору: `COALESCE(userId участника, player_id)` — где `userId` парсится как UUID только если проходит regex-валидацию
-4. Считаются `total_games`, `games_won`, `games_lost`, `win_rate`, `total_actions`, `total_black_pots`
-5. Ранжирование: `ORDER BY win_rate DESC, games_won DESC, total_games DESC`
-6. Имя — из `player_profiles.display_name` (если есть профиль), иначе имя игрока из последней игры
+3. Группировка по стабильному идентификатору: `COALESCE(userId участника, id участника)` — сравнения идут текстом, без приведения клиентского JSON к `uuid`
+4. Считаются `total_games`, `games_won` (по уникальным играм), `games_lost`, `win_rate`, `total_actions`, `total_black_pots`
+5. Ранжирование: `ORDER BY win_rate DESC, games_won DESC, total_games DESC`, тай-брейк по идентификатору — чтобы равные игроки не менялись местами между вызовами
+6. Имя — из `player_profiles.display_name` (если есть профиль), иначе имя игрока из самой свежей его игры
+
+Таблица `games` записывается анонимами (RLS 00009), поэтому `participants`/`history` — недоверенный ввод. До миграции 00012 функция кастовала оттуда id в `uuid` без проверок, и одна игра с некорректным id роняла RPC для **всех** пользователей. Теперь единственный `::uuid` защищён regex'ом, а участник без пригодного идентификатора просто выпадает из выдачи.
 
 **Важные следствия реализации:**
 
-- `userId` получает **только первый игрок** каждой игры (создатель) — либо `user.id`, либо стабильный guest-UUID (`getGuestId()`). Остальные участники имеют `userId = null` и трекаются по своему `player_id`, уникальному для каждой игры — их статистика между играми не агрегируется.
+- `userId` получает **только помеченный создателем игрок** (в форме создания это отмечается явно и переживает перемешивание) — либо `user.id`, либо стабильный guest-UUID (`getGuestId()`). Остальные участники имеют `userId = null` и трекаются по своему `player_id`, уникальному для каждой игры — их статистика между играми не агрегируется.
 - Гостевые игры **тоже попадают** в лидерборд (guest-UUID стабилен на устройстве), но без профиля и с потерей истории при очистке localStorage. Регистрация даёт стабильный профиль, имя и ачивки.
 
 ---
@@ -567,7 +557,6 @@ CREATE TABLE games (
 
 - Начисление — исключительно в БД: `check_achievements` v2 (миграция 00011) сравнивает id как текст (без cast'ов JSON-значений в uuid), читает статы именно победителя, считает total wins/стрики/социальные игры и вставляет с `ON CONFLICT DO NOTHING`
 - Клиент (`lib/achievements.ts`): `checkAchievements(userId, gameId)` вызывает RPC и возвращает только новые (`is_new`) ачивки; `getUserAchievements` — для профиля
-- `checkLocalAchievements(game, userId)` — локальный предпросчёт без БД (использует ту же семантику perfect_game: ни одной записи истории с уменьшением жизней)
 - UI: тосты `components/achievements/achievement-toast.tsx` на экране игры, список — в профиле
 
 ---
@@ -598,7 +587,7 @@ CREATE TABLE games (
 
 1. **Запись:** localStorage немедленно (optimistic); Supabase — при завершении игры (`autoSyncGame`) или на каждое действие при включённом шаринге (`syncActiveGameToSupabase`)
 2. **Офлайн:** неудачный синк → `markPendingSync(game.id)` → retry при возвращении сети
-3. **Conflict resolution:** last-write-wins; `mergeGamesWithSupabase()` (страница `/history`, кнопка Sync) при слиянии истории сравнивает `updatedAt` и берёт более новую версию
+2. **Conflict resolution:** last-write-wins; `mergeGamesWithSupabase()` (страница `/history`, кнопка Sync) при слиянии истории сравнивает `updatedAt` и берёт более новую версию
 
 ---
 
@@ -606,13 +595,12 @@ CREATE TABLE games (
 
 Реально применённые техники:
 
-1. **Lazy loading** — `components/lazy-components.tsx`: `InviteModal` (qrcode, `ssr: false`) и `BottomSheet` через `next/dynamic`
-2. **optimizePackageImports** — `['lucide-react']` в `next.config.js`
+1. **optimizePackageImports** — `['lucide-react']` в `next.config.js`
 3. **Бандлеры** — dev на Turbopack (`next dev`); production-сборка на webpack (`next build --webpack`): `@ducanh2912/next-pwa` генерирует service worker через webpack-хук, который Turbopack не выполняет — Turbopack-сборка выпускается без `sw.js`
-4. **Динамические OG-изображения** — `app/opengraph-image.tsx` и `app/twitter-image.tsx` (статического og-image.png нет), `metadataBase` в `layout.tsx`
-5. **SW-кеширование** — см. раздел PWA
-6. **Форматы изображений** — `formats: ['image/avif', 'image/webp']` в `next.config.js`
-7. **Bundle analyzer** — `npm run analyze` (`scripts/analyze-bundle.js`)
+3. **Динамические OG-изображения** — `app/opengraph-image.tsx` и `app/twitter-image.tsx` (статического og-image.png нет), `metadataBase` в `layout.tsx`
+4. **SW-кеширование** — см. раздел PWA
+5. **Форматы изображений** — `formats: ['image/avif', 'image/webp']` в `next.config.js`
+6. **Bundle analyzer** — `npm run analyze` (`scripts/analyze-bundle.js`)
 
 > Численные Lighthouse/Web Vitals-метрики в этом документе не приводятся — замеры не автоматизированы.
 
@@ -620,17 +608,18 @@ CREATE TABLE games (
 
 ## Тестирование
 
-Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **10 сьютов, 164 теста** (`npm test`):
+Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **10 сьютов, 177 тестов** (`npm test`):
 
 | Область | Файлы |
 |---------|-------|
 | Игровая логика | `lib/__tests__/game-logic.test.ts` |
 | Хранилище | `lib/__tests__/storage.test.ts` |
 | Маппер БД | `lib/__tests__/game-mapper.test.ts` |
-| Ачивки | `lib/__tests__/achievements.test.ts` |
+| Ачивки | `lib/__tests__/achievements.test.ts` (гейтинг `checkAchievementsForGame` + хелперы) |
+| Install-промпт | `lib/__tests__/pwa-install.test.ts` |
 | Утилиты | `lib/__tests__/utils.test.ts` |
 | UI-компоненты | `components/ui/__tests__/{button,badge,card}.test.tsx` |
-| Игровые компоненты | `components/game/__tests__/{player-card,action-buttons}.test.tsx` |
+| Игровые компоненты | `components/game/__tests__/player-card.test.tsx` |
 
 ---
 

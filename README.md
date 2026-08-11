@@ -30,6 +30,7 @@
 | Анимации | Motion 12 |
 | Backend | Supabase (Postgres, Auth, Realtime, RLS) |
 | Деплой | Vercel (fra1 регион) |
+| Тесты | Jest 30 + Testing Library |
 | Линтинг | ESLint 9 (flat config), Prettier |
 | Runtime | Node.js 22 |
 
@@ -51,23 +52,23 @@
 - Цвета жизней (красный/жёлтый/зелёный) одинаковы у хоста и зрителей
 
 ### PWA
-- Установка на iOS/Android
+- Установка на iOS/Android (кнопка на главной; в Safari — подсказка про «На экран Домой»)
 - Service Worker для офлайн-режима
-- Background Sync
+- Догон синхронизации при возврате в сеть
 - localStorage для оффлайн-игр
 
 ### Аккаунт и статистика
 - Google OAuth / Magic Link
 - Глобальный лидерборд (топ-15)
 - Детальная статистика игроков
-- Система достижений (7 типов бейджей)
+- Система достижений (10 типов бейджей)
 - Экспорт данных (CSV, JSON, Screenshot)
 - Синхронизация localStorage → Supabase
 
 ### UI/UX
 - Mobile-first адаптивный дизайн
 - Dark / Light / System тема
-- Bottom sheet, анимированные карточки, life bar
+- Bottom sheet, анимированные карточки
 - Скроллируемые модальные окна на маленьких экранах
 
 ## 📦 Быстрый старт
@@ -119,7 +120,7 @@ killerpool/
 │   ├── sync.ts             # Синхронизация с Supabase
 │   ├── invite.ts           # QR-код и ссылки
 │   └── types.ts            # TypeScript типы
-├── supabase/migrations/    # SQL миграции (10 шт.)
+├── supabase/migrations/    # SQL миграции (12 шт.)
 ├── proxy.ts                # Next.js proxy (auth)
 ├── eslint.config.mjs       # ESLint 9 flat config
 └── postcss.config.js       # @tailwindcss/postcss
@@ -138,9 +139,23 @@ npm run test:coverage # Тесты с покрытием
 npm run format       # Prettier
 ```
 
+## 📚 Документация
+
+| Документ | О чём |
+|----------|-------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Слои, потоки данных, что осознанно не сделано |
+| [API.md](./API.md) | Сигнатуры внутренних модулей, схема БД, RPC |
+| [SECURITY.md](./SECURITY.md) | RLS-политики и их следствия, модель угроз |
+| [supabase/README.md](./supabase/README.md) | Настройка Supabase, список миграций |
+| [PWA_SETUP.md](./PWA_SETUP.md) | Service worker, кеширование, офлайн |
+| [DEPLOYMENT.md](./DEPLOYMENT.md) | Деплой на Vercel |
+| [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | Частые проблемы |
+| [LEADERBOARD_TROUBLESHOOTING.md](./LEADERBOARD_TROUBLESHOOTING.md) | Почему лидерборд пустой |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Как вносить изменения |
+
 ## 📝 License
 
-MIT
+[MIT](./LICENSE)
 
 ---
 

@@ -67,6 +67,25 @@ export interface Game {
 }
 
 /**
+ * Player entry from the new-game form.
+ * `isOwner` marks the row belonging to the person creating the game. It
+ * travels with the object, so shuffling rows or dropping unnamed ones cannot
+ * move it onto somebody else — and only that player receives the userId that
+ * achievements, the leaderboard and /stats are keyed on.
+ */
+export interface NewGamePlayerInput {
+  name: string
+  avatar: string
+  isOwner?: boolean
+  /**
+   * Reuses a known player's id from the device roster. The leaderboard groups
+   * by it, so a person keeps their stats across games. Omitted for one-off
+   * players, who then get a fresh id.
+   */
+  id?: string
+}
+
+/**
  * New game form data
  */
 export interface NewGameFormData {

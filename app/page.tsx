@@ -8,6 +8,7 @@ import { useGame } from '@/contexts/game-context'
 import { motion } from 'motion/react'
 import { Play, History, Trophy, Users, CircleUser, LogIn, Award } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { PWAInstallButton } from '@/components/pwa-install-button'
 import type { User } from '@supabase/supabase-js'
 
 export default function Home() {
@@ -190,6 +191,16 @@ export default function Home() {
               </p>
             </CardContent>
           </Card>
+        </motion.div>
+
+        {/* Renders nothing unless the app is installable and not installed yet */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="mt-4"
+        >
+          <PWAInstallButton className="w-full h-14" />
         </motion.div>
       </div>
     </main>

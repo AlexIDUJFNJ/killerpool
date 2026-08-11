@@ -2,35 +2,39 @@
 
 import { WifiOff, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
+
+// Module-level so useSyncExternalStore does not resubscribe on every render
+function subscribeToConnectivity(onStoreChange: () => void) {
+  window.addEventListener('online', onStoreChange)
+  window.addEventListener('offline', onStoreChange)
+  return () => {
+    window.removeEventListener('online', onStoreChange)
+    window.removeEventListener('offline', onStoreChange)
+  }
+}
+
+const getIsOnline = () => navigator.onLine
+// The service worker serves this page as the offline fallback, so assume
+// offline until the client says otherwise — the opposite default would flash
+// "connection restored" at someone who genuinely has no network
+const getIsOnlineServer = () => false
 
 export default function OfflinePage() {
   const router = useRouter()
-  const [isOnline, setIsOnline] = useState(false)
+  const isOnline = useSyncExternalStore(
+    subscribeToConnectivity,
+    getIsOnline,
+    getIsOnlineServer
+  )
 
+  // Redirect on the state, not on the event: opening this page while already
+  // online used to promise a redirect and then never perform one
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true)
-      setTimeout(() => {
-        router.push('/')
-      }, 1000)
-    }
-
-    const handleOffline = () => {
-      setIsOnline(false)
-    }
-
-    // Check initial state
-    setIsOnline(navigator.onLine)
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [router])
+    if (!isOnline) return
+    const timer = setTimeout(() => router.push('/'), 1000)
+    return () => clearTimeout(timer)
+  }, [isOnline, router])
 
   const handleRetry = () => {
     if (navigator.onLine) {

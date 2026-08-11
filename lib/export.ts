@@ -132,7 +132,6 @@ export function exportGameToCSV(game: Game): void {
   link.click()
   document.body.removeChild(link)
 
-  console.log('Game exported to CSV successfully')
 }
 
 /**
@@ -157,7 +156,6 @@ export function exportGameToJSON(game: Game): void {
   link.click()
   document.body.removeChild(link)
 
-  console.log('Game exported to JSON successfully')
 }
 
 /**
@@ -193,7 +191,6 @@ export async function exportScreenshot(elementId: string, filename?: string): Pr
       link.click()
       document.body.removeChild(link)
 
-      console.log('Screenshot exported successfully')
     })
   } catch (error) {
     console.error('Failed to export screenshot:', error)
@@ -221,11 +218,9 @@ export async function shareGame(game: Game): Promise<boolean> {
 
   try {
     await navigator.share(shareData)
-    console.log('Game shared successfully')
     return true
   } catch (error) {
     if ((error as Error).name === 'AbortError') {
-      console.log('Share cancelled by user')
     } else {
       console.error('Error sharing game:', error)
     }
@@ -260,7 +255,6 @@ ${game.players.map(p => {
 
   try {
     await navigator.clipboard.writeText(summary)
-    console.log('Game summary copied to clipboard')
     return true
   } catch (error) {
     console.error('Failed to copy to clipboard:', error)

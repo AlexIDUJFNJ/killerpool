@@ -102,42 +102,41 @@ export async function checkAchievementsForGame(game: Game): Promise<AchievementT
   }
 }
 
+const ACHIEVEMENTS_EVENT = 'killerpool:achievements-unlocked'
+
 /**
- * Check achievements locally (without database)
- * Useful for showing potential achievements before sync
+ * Achievements granted outside the game screen — by retryPendingSyncs, which
+ * runs from PWAInit, a sibling of GameProvider with no access to its state.
+ * The buffer covers the gap before the provider subscribes.
  */
-export function checkLocalAchievements(game: Game, userId: string): AchievementType[] {
-  const newAchievements: AchievementType[] = []
+let bufferedAchievements: AchievementType[] = []
 
-  // Find winner
-  const winner = game.players.find(p => p.id === game.winnerId)
-  if (!winner || winner.userId !== userId) {
-    return newAchievements
+export function emitUnlockedAchievements(types: AchievementType[]): void {
+  if (!types.length || typeof window === 'undefined') return
+  bufferedAchievements.push(...types)
+  window.dispatchEvent(new CustomEvent(ACHIEVEMENTS_EVENT, { detail: { types } }))
+}
+
+/** Subscribe to late-granted achievements. Returns the unsubscribe function. */
+export function onUnlockedAchievements(
+  callback: (types: AchievementType[]) => void
+): () => void {
+  if (typeof window === 'undefined') return () => {}
+
+  if (bufferedAchievements.length) {
+    const pending = bufferedAchievements
+    bufferedAchievements = []
+    callback(pending)
   }
 
-  // Check survivor (win with 1 life)
-  if (winner.lives === 1) {
-    newAchievements.push('survivor')
+  const handler = (event: Event) => {
+    const types = (event as CustomEvent<{ types: AchievementType[] }>).detail?.types ?? []
+    bufferedAchievements = bufferedAchievements.filter(t => !types.includes(t))
+    if (types.length) callback(types)
   }
 
-  // Check perfect game (no lives lost — no history entry where the winner's
-  // lives went down; lives >= starting_lives would wrongly count a player who
-  // lost lives and regained them with pot blacks)
-  const lostLife = game.history.some(
-    h => h.playerId === winner.id && h.livesAfter < h.livesBefore
-  )
-  if (!lostLife) {
-    newAchievements.push('perfect_game')
-  }
-
-  // Check pot_black_master
-  const winnerHistory = game.history.filter(h => h.playerId === winner.id)
-  const potBlacks = winnerHistory.filter(h => h.action === 'pot_black').length
-  if (potBlacks >= 5) {
-    newAchievements.push('pot_black_master')
-  }
-
-  return newAchievements
+  window.addEventListener(ACHIEVEMENTS_EVENT, handler)
+  return () => window.removeEventListener(ACHIEVEMENTS_EVENT, handler)
 }
 
 /**

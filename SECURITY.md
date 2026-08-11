@@ -148,7 +148,7 @@ CREATE POLICY "games_select_all"
 CREATE POLICY "games_insert_authenticated"
     ON games FOR INSERT
     TO authenticated
-    WITH CHECK (true);
+    WITH CHECK (created_by = auth.uid());
 
 -- INSERT: Anonymous users can create games (must have created_by = NULL)
 CREATE POLICY "games_insert_anon"
@@ -160,14 +160,15 @@ CREATE POLICY "games_insert_anon"
 CREATE POLICY "games_update_authenticated"
     ON games FOR UPDATE
     TO authenticated
-    USING (created_by = auth.uid() OR created_by IS NULL)
-    WITH CHECK (true);
+    USING (created_by = auth.uid())
+    WITH CHECK (created_by = auth.uid());
 
 -- UPDATE: Anonymous users can update games without owner
 CREATE POLICY "games_update_anon"
     ON games FOR UPDATE
     TO anon
-    USING (created_by IS NULL)
+    USING (created_by IS NULL
+           AND (status <> 'completed' OR updated_at > now() - interval '1 hour'))
     WITH CHECK (created_by IS NULL);
 
 -- DELETE: Authenticated users can delete their own games
@@ -180,8 +181,8 @@ CREATE POLICY "games_delete_authenticated"
 **Честные следствия этой модели:**
 
 - **Любая игра читается кем угодно** (включая роль `anon`) — это фича spectator mode: зритель по ссылке с UUID игры видит её состояние. Обратная сторона: UUID игры — единственный «секрет». Перебор UUID v4 практически невозможен, но кто получил ссылку — видит всё содержимое игры (имена игроков, историю ходов). **Не кладите чувствительные данные в имена игроков.**
-- **Гостевые игры (`created_by IS NULL`) может изменять кто угодно** — и `anon`, и любой авторизованный пользователь. Знаешь ID гостевой игры — можешь её переписать. Это цена guest mode без auth.
-- **`games_insert_authenticated` / `games_update_authenticated` имеют `WITH CHECK (true)`** — авторизованный пользователь технически может записать строку с чужим `created_by` или «присвоить» бесхозную игру при update. Клиентский код (`lib/sync.ts`) всегда пишет `created_by: user?.id || null`, но на уровне БД это не форсируется.
+- **Идущую гостевую игру (`created_by IS NULL`) может изменить любой, кто знает её ID.** Хост и зритель на уровне БД неразличимы: у обоих есть ровно ссылка, поэтому никакое условие над строкой их не разделит — для этого нужен секрет хоста. Пока партия идёт, чужая правка самозалечивается: хост при каждом ходе перезаписывает полное состояние. После завершения игра перестаёт принимать записи через час (миграция 00014), чтобы старая ссылка не оставалась правом записи навсегда.
+- **Авторизованный пишет только свои игры** (миграция 00014): `WITH CHECK (created_by = auth.uid())` на INSERT и UPDATE, `USING` без `OR created_by IS NULL`. До 00014 любой залогиненный мог присвоить себе чужую гостевую игру одним запросом — и настоящий хост, будучи `anon`, терял доступ к ней навсегда. Побочное следствие: игру, сыгранную до регистрации, аккаунт присвоить уже не может (в строке нет ничего, что доказывало бы владельца), поэтому `/sync` показывает такие игры отдельной строкой «нельзя загрузить», а не ошибкой.
 - **Удалять игры может только владелец** (`created_by = auth.uid()`). Гостевые игры через клиент не удаляются вообще (DELETE-политики для `anon` нет).
 
 ### Player Profiles & Rulesets (миграция `00001_initial_schema.sql`)
@@ -341,7 +342,8 @@ Content-Security-Policy:
 
 - **2FA (TOTP)** через `supabase.auth.mfa` — не включено.
 - **Удаление аккаунта / экспорт данных (GDPR-тулинг)** — UI-флоу не реализован; удаление возможно только вручную через Supabase.
-- **Ужесточение RLS**: заменить `WITH CHECK (true)` в `games_insert_authenticated` / `games_update_authenticated` на `WITH CHECK (created_by = auth.uid() OR created_by IS NULL)`, чтобы БД форсировала корректный `created_by`.
+- **Секрет хоста для расшаренной игры**: отдельная таблица с хешем секрета и узкий SECURITY DEFINER RPC для записи — единственный способ отличить хоста от зрителя, пока партия идёт. Пока не сделано.
+- **Защита лидерборда от подделки**: `anon` по-прежнему может вставить выдуманную завершённую игру с любым `participants[].userId`. Лечится в `get_leaderboard` (засчитывать `userId` только если он совпадает с `created_by`), а не в RLS.
 
 ---
 
