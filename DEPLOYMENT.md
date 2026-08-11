@@ -1,7 +1,18 @@
 # 🚀 Deployment Guide - Killerpool
 
+> Обновлено: 2026-08-11.
+
 Деплой Killerpool на Vercel — проект живёт там (`.vercel/project.json`,
 `vercel.json` с регионом `fra1`), а деплой запускается push'ем в GitHub.
+
+Путь коммита длиннее, чем кажется: `origin` указывает не на GitHub, а на зеркало
+Entire (`entire://…/gh/AlexIDUJFNJ/killerpool`), которое форвардит push в GitHub;
+оттуда уже деплоит Vercel. Прямой `git push origin main` зеркало отклоняет
+(«protected branch»), даже когда на самом GitHub никаких branch protection нет —
+это правило зеркала. Штатный путь в прод: работать в `dev`, затем
+`gh pr create --base main --head dev` и `gh pr merge --merge`. Именно `--merge`,
+а не `--rebase`: rebase перепишет хеши, на которые ссылаются чекпоинты Entire.
+Запасной remote `github` существует, но обходить им защиту не нужно.
 
 Инструкции для Netlify, Docker и self-hosted убраны намеренно: они были
 generic-бойлерплейтом, который никто не проверял, и Dockerfile в них копировал
@@ -64,10 +75,13 @@ Install Command: npm install
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 
 # App URL (обновите после первого деплоя)
 NEXT_PUBLIC_APP_URL=https://killerpool.vercel.app
+
+# Sentry (необязательно)
+NEXT_PUBLIC_SENTRY_DSN=https://<key>@<org>.ingest.de.sentry.io/<project>
+SENTRY_AUTH_TOKEN=<token>   # только для сборки, карты исходников
 ```
 
 2. Выберите для каких окружений применить:
@@ -157,24 +171,35 @@ https://killerpool.vercel.app/**
 |------------|----------|-----------|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL вашего Supabase проекта | Supabase Dashboard → Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon key | Supabase Dashboard → Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (⚠️ секретный!) | Supabase Dashboard → Settings → API |
-| `NEXT_PUBLIC_APP_URL` | URL вашего приложения | `https://killerpool.app` |
 
 ### Опциональные переменные
 
-| Переменная | Описание | По умолчанию |
-|------------|----------|--------------|
-| `NODE_ENV` | Окружение | `production` |
-| `PORT` | Порт приложения | `3000` |
+| Переменная | Описание | Что будет без неё |
+|------------|----------|-------------------|
+| `NEXT_PUBLIC_APP_URL` | Абсолютный URL приложения: метаданные, OG-картинки, `sitemap.xml` | `lib/site.ts` возьмёт домен из окружения Vercel, локально — `http://localhost:3000` |
+| `NEXT_PUBLIC_SENTRY_DSN` | Public DSN проекта Sentry | Sentry просто молчит — сборка и приложение работают как обычно |
+| `SENTRY_AUTH_TOKEN` | Токен для загрузки карт исходников **во время сборки** | Билд проходит, загрузка карт пропускается (`sourcemaps.disable` в `next.config.js`), стек-трейсы в Sentry остаются минифицированными |
+
+`SUPABASE_SERVICE_ROLE_KEY` в проекте **не используется**: приложение ходит в
+Supabase только из браузера под `anon`/`authenticated`, и ни одна строка кода
+этот ключ не читает. Ключ, обходящий RLS, не нужно заводить в переменные.
 
 ### Безопасность переменных
 
 ⚠️ **НИКОГДА не коммитьте `.env.local` в Git!**
 
 **Для production:**
-- Используйте секретные менеджеры (Vercel, AWS Secrets Manager, etc.)
-- Ограничьте доступ к `SUPABASE_SERVICE_ROLE_KEY`
+- Секреты, которые не должны быть читаемы обратно (например, `SENTRY_AUTH_TOKEN`), заводите в Vercel как **Sensitive**
 - Ротируйте ключи регулярно
+
+**Грабли Sensitive-переменных.** Такая переменная доступна сборке и рантайму, но
+прочитать её нельзя ни в UI, ни через CLI: `vercel env pull` кладёт в `.env.local`
+**пустое** значение, и это выглядит как «переменную не сохранили». Старый CLI
+даже не показывает тип. Проверять свежим:
+
+```bash
+npx vercel@latest env ls    # колонка type: Encrypted / Sensitive
+```
 
 ---
 
@@ -193,8 +218,27 @@ https://killerpool.vercel.app/**
 ### ✅ PWA
 
 - [ ] Manifest доступен: `https://killerpool.app/manifest.json`
-- [ ] Можно установить приложение на домашний экран
+- [ ] **Service worker выпущен**: `curl -sI https://killerpool.app/sw.js | head -1` → `200`, а не `404`. Это главный признак того, что сборка ушла через Turbopack, а не через webpack
+- [ ] Можно установить приложение на домашний экран (кнопка «Install App» на главной)
 - [ ] Иконки отображаются корректно
+
+### ✅ Серверный рендеринг
+
+Проверять надо на сыром HTML, а не в браузере: после гидратации сломанный SSR
+выглядит нормально.
+
+```bash
+curl -s https://killerpool.app/help | sed 's/<script[^>]*>.*<\/script>//g' | wc -c
+```
+
+Страница `/help` должна содержать заметный объём текста. Ноль означает, что
+что-то в дереве снова возвращает `null` до монтирования — этот баг уже был и
+обнулял `<body>` на всех страницах.
+
+### ✅ Sentry (если DSN задан)
+
+- [ ] В Sentry приходят события из production (в dev и локальном билде Sentry молчит намеренно)
+- [ ] Стек-трейсы читаемы. Если минифицированы — в сборке не было `SENTRY_AUTH_TOKEN`. Проверять загрузку карт по `/projects/{org}/{project}/files/artifact-bundles/`; легаси-страница релизов для debug-id формата всегда показывает 0 файлов
 
 ### ✅ Performance
 
@@ -274,12 +318,16 @@ curl -I https://killerpool.app
 
 ## Мониторинг
 
-### Рекомендуемые инструменты
+**Sentry — подключён.** `instrumentation-client.ts` (браузер),
+`instrumentation.ts` (сервер и edge), `app/global-error.tsx` (падение самого
+layout). Настройки, о которых стоит знать:
 
-- **Vercel Analytics** - встроенная аналитика
-- **Sentry** - error tracking
-- **PostHog** - product analytics
-- **Uptime Robot** - мониторинг доступности
+- инициализация обёрнута в `!!DSN && NODE_ENV === 'production'` — локальная разработка не засоряет боевой проект;
+- `tracesSampleRate: 0` — собираются только ошибки, не производительность;
+- `ignoreErrors` отсекает офлайн-шум (обрывы сети, отменённые запросы), которого у PWA много и который ничего не значит.
+
+Не подключено (и пока не нужно): Vercel Analytics, product-аналитика,
+внешний uptime-мониторинг.
 
 ---
 

@@ -38,9 +38,11 @@ cp .env.local.example .env.local
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
+
+Service-role ключ здесь не нужен: приложение работает с Supabase только из
+браузера под ролями `anon`/`authenticated`, и в коде он нигде не читается.
 
 ### 4. Запустите миграции
 
@@ -85,7 +87,7 @@ SELECT * FROM get_leaderboard(15);
 
 **Проверка Realtime:** миграция `00009` добавляет таблицу `games` в publication `supabase_realtime`. Убедитесь в **Database** → **Replication**, что для `games` включена репликация — без этого не работает режим зрителя (live sharing).
 
-## 📜 Миграции (все 11)
+## 📜 Миграции (все 14)
 
 | # | Файл | Назначение |
 |---|------|-----------|
@@ -93,14 +95,14 @@ SELECT * FROM get_leaderboard(15);
 | 00002 | `00002_leaderboard_function.sql` | Первая версия функции `get_leaderboard` (без SECURITY DEFINER) |
 | 00003 | `00003_fix_leaderboard_and_profile.sql` | UNIQUE constraint на `player_profiles.user_id` (для upsert); `get_leaderboard` v2 с `SECURITY DEFINER` (обход RLS для глобального лидерборда) |
 | 00004 | `00004_fix_uuid_min_issue.sql` | Повторная чистка дубликатов `user_id` через `DISTINCT ON` (вместо `MIN(id)`, который не работает с UUID); идемпотентное добавление constraint |
-| 00005 | `00005_fix_leaderboard_grouping.sql` | `get_leaderboard` v3 (**актуальная**): группировка по `COALESCE(userId, player_id)`, чтобы один игрок не появлялся в лидерборде несколько раз; невалидные `userId` (не-UUID) отбрасываются в NULL |
+| 00005 | `00005_fix_leaderboard_grouping.sql` | `get_leaderboard` v3: группировка по `COALESCE(userId, player_id)`, чтобы один игрок не появлялся в лидерборде несколько раз; невалидные `userId` (не-UUID) отбрасываются в NULL |
 | 00006 | `00006_public_game_access.sql` | Публичное чтение игр по ссылке: SELECT для anon и authenticated `USING (true)`; INSERT для anon |
 | 00007 | `00007_achievements.sql` | Таблица `user_achievements`, её RLS-политики, первая версия функции `check_achievements` |
 | 00008 | `00008_live_sharing_policies.sql` | Промежуточная правка политик `games` для live sharing (полностью пересоздаются в 00009) |
-| 00009 | `00009_fix_live_sharing_policies.sql` | **Финальные** политики `games`: DROP всех прежних, 6 чистых политик `games_*` (см. ниже); добавление `games` в publication `supabase_realtime` |
+| 00009 | `00009_fix_live_sharing_policies.sql` | Политики `games` пересозданы начисто (условия записи позже ужесточены в 00014): DROP всех прежних, 6 чистых политик `games_*` (см. ниже); добавление `games` в publication `supabase_realtime` |
 | 00010 | `00010_add_current_player_index.sql` | Колонка `games.current_player_index INTEGER DEFAULT 0` — синхронизация текущего хода для зрителей |
 | 00011 | `00011_fix_achievements_and_defaults.sql` | `check_achievements` v2 (**актуальная**): требование `p_user_id = auth.uid()`, REVOKE EXECUTE у PUBLIC/anon, текстовые сравнения id, regex-защита кастов, статистика победителя, все 10 типов ачивок (включая `perfect_game`, `win_streak_3`, `win_streak_5`); GIN-индекс `idx_games_participants_gin`; UPDATE дефолтного ruleset `max_lives` 10 → 6; DROP политик "Service role can insert achievements" и "Users can view own achievements" на `user_achievements` |
-| 00012 | `00012_harden_leaderboard.sql` | `get_leaderboard` v4 (**актуальная**): убраны касты клиентского JSON — `games` анонимно-записываема, и одна игра с не-UUID `participants[].id` роняла RPC для всех (DoS). Сравнения id текстом с `lower()`, единственный `::uuid` защищён regex'ом, `jsonb_array_elements` за проверкой типа, победы считаются по уникальным играм (раньше 50 копий победителя в одной игре давали 50 побед), запасное `display_name` берётся из самой свежей игры, `limit_count` ограничен диапазоном 0–100 |
+| 00012 | `00012_harden_leaderboard.sql` | `get_leaderboard` v4: убраны касты клиентского JSON — `games` анонимно-записываема, и одна игра с не-UUID `participants[].id` роняла RPC для всех (DoS). Сравнения id текстом с `lower()`, единственный `::uuid` защищён regex'ом, `jsonb_array_elements` за проверкой типа, победы считаются по уникальным играм (раньше 50 копий победителя в одной игре давали 50 побед), запасное `display_name` берётся из самой свежей игры, `limit_count` ограничен диапазоном 0–100 |
 | 00013 | `00013_leaderboard_qualifying_minimum.sql` | `get_leaderboard` v5 (**актуальная**): параметр `min_games` (по умолчанию 3) — в рейтинг попадают только сыгравшие достаточно партий, иначе разовый победитель со 100% всегда стоял выше регулярного игрока. Старая односигнатурная функция удалена через `DROP FUNCTION`, потому что добавление параметра создало бы вторую перегрузку, и вызов с одним аргументом продолжил бы попадать в старую |
 | 00014 | `00014_tighten_game_write_policies.sql` | Ужесточение записи в `games` (**актуальные политики**): у авторизованного `WITH CHECK (created_by = auth.uid())` на INSERT и UPDATE и `USING` без `OR created_by IS NULL` — закрывает захват чужой гостевой игры (после него настоящий хост-гость терял доступ навсегда) и подделку владения. Для `anon` завершённая игра перестаёт принимать записи через час после последней — окно, а не жёсткий запрет, потому что завершение это три гоночные записи, а отмена после победы легальна. Проверено под ролями: `supabase/test/` |
 
@@ -214,12 +216,12 @@ SELECT * FROM get_leaderboard(15);
 
 Все таблицы защищены RLS. Ниже — **финальное** состояние после применения всех миграций (`pg_policies` — источник истины: `SELECT * FROM pg_policies WHERE schemaname = 'public';`).
 
-### `games` (миграция 00009 — все прежние политики удалены)
+### `games` (00009 создала набор, 00014 ужесточила запись)
 
 | Политика | Команда | Роли | Правило |
 |----------|---------|------|---------|
 | `games_select_all` | SELECT | anon, authenticated | `USING (true)` |
-| `games_insert_authenticated` | INSERT | authenticated | `WITH CHECK (true)` |
+| `games_insert_authenticated` | INSERT | authenticated | `WITH CHECK (created_by = auth.uid())` |
 | `games_insert_anon` | INSERT | anon | `WITH CHECK (created_by IS NULL)` |
 | `games_update_authenticated` | UPDATE | authenticated | `USING (created_by = auth.uid())`, `WITH CHECK (created_by = auth.uid())` |
 | `games_update_anon` | UPDATE | anon | `USING (created_by IS NULL AND (status <> 'completed' OR updated_at > now() - interval '1 hour'))`, `WITH CHECK (created_by IS NULL)` |
@@ -249,10 +251,10 @@ INSERT/UPDATE/DELETE-политик **нет**: запись возможна т
 
 ## ⚙️ RPC-функции
 
-### `get_leaderboard` (актуальная версия — миграция 00005)
+### `get_leaderboard` (актуальная версия — v5, миграция 00013)
 
 ```sql
-get_leaderboard(limit_count INTEGER DEFAULT 15)
+get_leaderboard(limit_count INTEGER DEFAULT 15, min_games INTEGER DEFAULT 3)
 RETURNS TABLE (
     player_id UUID,
     display_name TEXT,
@@ -270,10 +272,15 @@ RETURNS TABLE (
 - `SECURITY DEFINER`, `SET search_path = public`; `GRANT EXECUTE TO authenticated, anon`
 - Только игры со `status = 'completed'`
 - Группировка по стабильному идентификатору `COALESCE(userId участника, player_id)`; `userId`, не являющийся валидным UUID, приводится к NULL
-- Имя: из `player_profiles.display_name` (join по `userId`), иначе имя участника из одной из его игр (подзапрос сортирует `ORDER BY game_id DESC`, а `game_id` — случайный UUID, так что это произвольная игра, не последняя)
-- Сортировка: win rate ↓, затем победы ↓, затем игры ↓
+- **Клиентский JSON нигде не кастуется** (00012): `games` записывается ролью `anon`, и одна игра с не-UUID `participants[].id` роняла вызов с `22P02` для всех. Сравнения идут по тексту с `lower()`, единственный `::uuid` стоит за regex-гардом
+- Победы считаются по различным играм — 50 копий победителя в одной строке дают одну победу, а не 50
+- Имя: из `player_profiles.display_name` (join по стабильному id), иначе имя участника из его **последней по времени** игры
+- В рейтинг попадают только игроки с `total_games >= min_games`; сам `min_games` зажат в 1–100, `limit_count` — в 0–100 (RPC доступна `anon`, `NULL` означал бы «без лимита»)
+- Сортировка: win rate ↓, победы ↓, игры ↓, затем стабильный id — чтобы равные игроки не менялись местами между запросами
 
-Клиент: `supabase.rpc('get_leaderboard', { limit_count: limit })` в `components/leaderboard/leaderboard-list.tsx`.
+Клиент: `supabase.rpc('get_leaderboard', { limit_count: limit })` в `components/leaderboard/leaderboard-list.tsx` — `min_games` не передаётся, работает значение по умолчанию.
+
+⚠️ При изменении сигнатуры функции обязателен `DROP FUNCTION` старой версии (так делает 00013). Postgres иначе создаст **перегрузку**, и вызов клиента с одним аргументом продолжит уходить в старую функцию — молча, без единой ошибки.
 
 ### `check_achievements` (актуальная версия — миграция 00011)
 
@@ -349,11 +356,14 @@ RETURNS TABLE(achievement_type TEXT, is_new BOOLEAN)
 ```
 NEXT_PUBLIC_SUPABASE_URL = https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY = your-anon-key
-SUPABASE_SERVICE_ROLE_KEY = your-service-role-key
 NEXT_PUBLIC_APP_URL = https://killerpool.app
 ```
 
 3. Scope: **Production**, **Preview**, **Development**
+
+Service-role ключ заводить не нужно: приложение ходит в Supabase только из
+браузера под `anon`/`authenticated`, и в коде он не используется. Подробнее —
+[DEPLOYMENT.md](../DEPLOYMENT.md#environment-variables).
 
 ## 📝 Полезные команды
 
@@ -377,6 +387,34 @@ supabase db reset
 supabase migration new your_migration_name
 ```
 
+### Прогон миграций локально (без Supabase CLI)
+
+Локальной среды Supabase в проекте нет (нет даже `config.toml`), а `supabase db
+push` не годится: проект не слинкован и таблица истории миграций пуста, поэтому
+push начал бы с 00001. Для проверки перед продом есть свой харнесс:
+
+```bash
+./supabase/test/setup-local.sh          # поднять Postgres и накатить всю цепочку
+psql -h /tmp/kp-pg-sock -p 55432 -U postgres -f supabase/test/rls-policies.sql
+./supabase/test/setup-local.sh --stop   # убрать за собой
+```
+
+Скрипт подделывает то, что Supabase даёт из коробки: схему `auth`, роли
+`anon`/`authenticated`/`service_role`, `auth.uid()` через GUC (её можно
+подменять в тестах) и publication `supabase_realtime`. Политики проверяются
+**под ролями**, с позитивными и негативными сценариями: хост-гость ведёт игру,
+зритель пытается её испортить, авторизованный лезет в чужую.
+
+Применение к прод-Supabase — через SQL Editor. Перед миграцией, меняющей
+политики, полезно снять текущее определение — это и есть артефакт отката:
+
+```sql
+SELECT polname,
+       pg_get_expr(polqual, polrelid)      AS using_expr,
+       pg_get_expr(polwithcheck, polrelid) AS with_check_expr
+FROM pg_policy WHERE polrelid = 'games'::regclass;
+```
+
 ## 🧭 Planned / Not implemented
 
 Идеи из ранних версий этого документа, которые **не реализованы**:
@@ -384,7 +422,8 @@ supabase migration new your_migration_name
 - Social providers: Apple, GitHub, Discord
 - Парольная аутентификация (сейчас только Magic Link + Google OAuth)
 - Кастомные rulesets в UI (таблица и INSERT-политика есть, клиент всегда использует `DEFAULT_RULESET`)
-- Ужесточение публичных политик `games` (сейчас чтение всех игр и обновление гостевых игр доступно любому — принято как trade-off ради live sharing)
+- Ужесточение записи в **идущую** гостевую игру: хост и зритель на уровне БД неразличимы, для этого нужен секрет хоста и отдельная RPC (00014 закрыла только захват авторизованным и заморозила завершённые игры)
+- Защита лидерборда от подделки: `anon` может вставить выдуманную завершённую игру. Лечится в самой `get_leaderboard`, а не в RLS
 
 ## 🔗 Полезные ссылки
 
@@ -396,4 +435,4 @@ supabase migration new your_migration_name
 
 **Готово!** Теперь ваш проект настроен для работы с Supabase 🎉
 
-_Последнее обновление: 2026-07-07_
+_Последнее обновление: 2026-08-11_

@@ -61,11 +61,14 @@ Visit [http://localhost:3000](http://localhost:3000) to see the app.
 
 ### Branching Strategy
 
-- `main` - Production-ready code
-- `develop` - Development branch (if applicable)
-- `feature/your-feature-name` - New features
-- `fix/bug-description` - Bug fixes
-- `docs/description` - Documentation updates
+- `main` — production; this is what Vercel deploys
+- `dev` — integration branch; work lands here before it reaches `main`
+- `feature/…`, `fix/…`, `docs/…` — one branch per task
+
+Changes reach `main` **through a pull request only**. `origin` points at the
+Entire mirror, which rejects a direct push to `main` regardless of what branch
+protection GitHub itself has. Merge with `gh pr merge --merge`, not `--rebase`:
+a rebase rewrites the commit hashes that Entire checkpoints refer to.
 
 ### Creating a Branch
 
@@ -253,10 +256,25 @@ npm run test:coverage # with coverage
 
 Tests live next to the code they cover, in `__tests__/` directories, named
 `*.test.ts` / `*.test.tsx`. Setup lives in `jest.config.ts` and `jest.setup.ts`.
+Coverage is collected from `lib/`, `components/`, `hooks/` and `contexts/` —
+`contexts/` was added deliberately: the state machine that lives there is where
+the real bugs were, and for a long time it was not even measured.
 
 New code under `lib/` is expected to come with tests. Pure logic is the priority
 — the game rules in `lib/__tests__/game-logic.test.ts` are, in practice, the
-specification of how Killer Pool behaves here.
+specification of how Killer Pool behaves here. The write path (`lib/sync.ts`,
+`contexts/game-context.tsx`) is the second priority: every bug fixed in the last
+two rounds lived there, and 164 green tests noticed none of them.
+
+`jest.setup.ts` deliberately does **not** stub `localStorage` / `sessionStorage`.
+jsdom provides both, separately; the old stub handed out one shared object for
+the two, so the `sessionStorage` tests were quietly asserting against
+`localStorage`. Both stores are cleared in a global `beforeEach` instead.
+
+Database changes have their own harness, outside Jest: `./supabase/test/setup-local.sh`
+brings up a throwaway Postgres and applies every migration from scratch, and
+`supabase/test/rls-policies.sql` exercises the policies under the real roles.
+Run both before sending a migration to production.
 
 End-to-end tests are not set up. See the Planned section of ARCHITECTURE.md.
 
@@ -282,13 +300,15 @@ killerpool/
 │   ├── types/              # TypeScript types
 │   ├── game-logic.ts       # Game logic
 │   └── storage.ts          # Storage helpers
-├── contexts/               # React contexts
-├── supabase/               # Supabase configuration
-│   └── migrations/         # SQL migrations
-├── public/                 # Static files
 ├── contexts/               # React context (game state)
 ├── hooks/                  # Shared hooks
+├── supabase/
+│   ├── migrations/         # SQL migrations
+│   └── test/               # Local Postgres harness + RLS checks
+├── public/                 # Static files
 ├── scripts/                # Build-time scripts (icon generation)
+├── instrumentation.ts      # Sentry (server + edge)
+├── instrumentation-client.ts # Sentry (browser)
 └── proxy.ts                # Next.js middleware (auth session refresh)
 ```
 

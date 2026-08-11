@@ -70,10 +70,14 @@ killerpool/
 │   └── offline/
 │       └── page.tsx        # Офлайн страница
 ├── components/
-│   └── pwa-init.tsx        # Регистрация SW + retry pending-синков
+│   ├── pwa-init.tsx        # Регистрация SW + retry pending-синков + захват install-события
+│   └── pwa-install-button.tsx  # Кнопка «Install App» (на главной)
+├── hooks/
+│   └── use-install-prompt.ts   # useSyncExternalStore над стором установки
 ├── lib/
+│   ├── pwa-install.ts      # Стор beforeinstallprompt вне React
 │   ├── sync.ts             # autoSyncGame / retryPendingSyncs / syncActiveGameToSupabase
-│   └── storage.ts          # killerpool_pending_sync (mark/unmark/getPendingSyncIds)
+│   └── storage.ts          # killerpool_pending_sync + killerpool_pending_sync_meta
 └── scripts/
     └── generate-icons.js   # Генерация иконок из icon.svg (sharp)
 ```
@@ -132,7 +136,7 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 
 - `navigator.serviceWorker.register('/sw.js')`
 - слушает `updatefound` / `statechange` — логирует появление новой версии SW
-- слушает `beforeinstallprompt` / `appinstalled` (сохраняет deferred prompt, кастомная UI-кнопка установки пока не показывается)
+- вызывает `initInstallCapture()` (`lib/pwa-install.ts`), который перехватывает `beforeinstallprompt` / `appinstalled`; сама кнопка живёт в `components/pwa-install-button.tsx`
 
 ### Жизненный цикл
 
@@ -178,6 +182,8 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 2. Если синк не удался (например, офлайн) → id игры помечается в localStorage-ключе **`killerpool_pending_sync`** (`markPendingSync`, `lib/storage.ts`)
 3. `retryPendingSyncs()` проходит по pending-ids, находит игры в истории и повторяет `syncGameToSupabase(game)`; успешные — снимаются с pending (`unmarkPendingSync`)
 4. Игры, удалённые из истории, просто снимаются с pending
+5. **Попытки не бесконечны.** Неустранимые ошибки Postgres (`42501`, `22P02`, `23502`, …) снимают игру с очереди сразу; остальные — после `MAX_SYNC_ATTEMPTS = 5` попыток с нарастающей паузой. Без этого предела игра с постоянным отказом ломилась бы в сеть при каждом переключении вкладки
+6. Ачивки, разблокированные при позднем синке, доезжают до UI через событие `killerpool:achievements-unlocked` — `PWAInit` не внутри `GameProvider` и напрямую до состояния не дотянется
 
 ### API
 
@@ -191,7 +197,19 @@ export async function syncGameToSupabase(game: Game): Promise<boolean>
 export function getPendingSyncIds(): string[]
 export function markPendingSync(gameId: string): void
 export function unmarkPendingSync(gameId: string): void
+
+// lib/storage.ts (ключ killerpool_pending_sync_meta) — счётчик попыток
+export const MAX_SYNC_ATTEMPTS = 5
+export function recordSyncFailure(gameId: string): void
+export function isSyncExhausted(gameId: string): boolean
+export function isSyncBackedOff(gameId: string): boolean
+export function clearSyncMeta(gameId: string): void
 ```
+
+Счётчик держится в **отдельном** ключе намеренно: `killerpool_pending_sync`
+остаётся простым массивом строк, потому что часть пользователей какое-то время
+работает со старым бандлом из кеша service worker и должна уметь прочитать
+очередь, записанную новой версией.
 
 ### Когда запускается retry
 
@@ -296,6 +314,30 @@ OG/Twitter-картинки — динамические route-файлы `app/o
 2. Справа в адресной строке появится иконка установки
 3. Нажмите на иконку
 4. Подтвердите установку
+
+### Кнопка «Install App» в приложении
+
+`components/pwa-install-button.tsx` (на главной, `app/page.tsx`) показывает
+кнопку сам, без обращения к системному меню браузера. Состояние приходит из
+стора `lib/pwa-install.ts` через `useInstallPrompt()`:
+
+| Состояние | Что показывается |
+|-----------|------------------|
+| `available` | Кнопка, вызывающая сохранённый `beforeinstallprompt` |
+| `ios` | Кнопка, открывающая bottom sheet с инструкцией про «На экран Домой» |
+| `installed` | Ничего |
+| `unavailable` | Ничего |
+
+Два решения, которые стоит держать в голове при правках:
+
+- Стор живёт **вне React**: `beforeinstallprompt` срабатывает один раз и может
+  прилететь раньше, чем что-либо смонтируется. Компонент читает его через
+  `useSyncExternalStore`, а не подписывается сам.
+- `initInstallCapture()` вызывает `preventDefault()` на событии, то есть гасит
+  собственную плашку браузера. Тот, кто это делает, обязан пользователю кнопку:
+  без неё приложение просто нельзя установить этим путём.
+- iPadOS 13+ представляется как Macintosh, поэтому iOS определяется по
+  `navigator.maxTouchPoints`, а не по одному user agent.
 
 ---
 
@@ -454,7 +496,6 @@ caches.keys().then(keys =>
 ## 🗺️ Planned / Not implemented
 
 - **Share Target**: объявление `share_target` убрано из `manifest.json` — оно указывало на несуществующий route `/share`, из-за чего Android показывал приложение в системном share-меню, а шаринг приводил к 404
-- **UI-кнопка установки**: `beforeinstallprompt` перехватывается в `pwa-init.tsx`, но кастомная кнопка установки не показывается (deferred prompt сохраняется и не используется)
 - **Уведомление о новой версии SW**: событие `updatefound` логируется в консоль; toast для пользователя не реализован
 - **Screenshots в манифесте**: массив `screenshots` пуст
 
@@ -470,5 +511,5 @@ caches.keys().then(keys =>
 
 ---
 
-**Последнее обновление:** 2026-07-07
-**Статус:** ✅ PWA работает; офлайн-синк переведён с Background Sync API на простой retry-механизм
+**Последнее обновление:** 2026-08-11
+**Статус:** ✅ PWA работает; офлайн-синк — retry с пределом попыток; кнопка установки реализована

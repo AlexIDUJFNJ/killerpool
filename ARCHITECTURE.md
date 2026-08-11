@@ -2,7 +2,7 @@
 
 Документация архитектуры Killerpool.app - PWA-приложения для игры в Killer Pool.
 
-**Документ обновлен:** 2026-07-07 (сверен с реальным кодом)
+**Документ обновлен:** 2026-08-11 (сверен с реальным кодом)
 
 ## 📋 Содержание
 
@@ -16,6 +16,7 @@
 - [Схема базы данных и RLS](#схема-базы-данных-и-rls)
 - [Leaderboard Architecture](#leaderboard-architecture)
 - [Ачивки](#ачивки)
+- [Наблюдаемость](#наблюдаемость)
 - [PWA и офлайн-режим](#pwa-и-офлайн-режим)
 - [Performance оптимизации](#performance-оптимизации)
 - [Тестирование](#тестирование)
@@ -44,7 +45,8 @@ Killerpool — это **client-first** приложение на Next.js 16 App 
 │  │  GameProvider    │  │ localStorage │  │ Service Worker│  │
 │  │ (game-context)   │→ │ current_game │  │    (sw.js,    │  │
 │  │ + game-logic.ts  │  │ game_history │  │   Workbox)    │  │
-│  │  (pure functions)│  │ pending_sync │  │               │  │
+│  │  (pure functions)│  │ roster       │  │               │  │
+│  │                  │  │ pending_sync │  │               │  │
 │  └────────┬─────────┘  └──────────────┘  └───────────────┘  │
 └───────────┼──────────────────────────────────────────────────┘
             │ Supabase JS client (HTTPS + WebSocket)
@@ -52,7 +54,7 @@ Killerpool — это **client-first** приложение на Next.js 16 App 
 ┌───────────▼──────────────────────────────────────────────────┐
 │                 Vercel (region: fra1)                        │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │           Next.js 16 Application (Turbopack)           │  │
+│  │                Next.js 16 Application                  │  │
 │  │  ┌──────────────┐  ┌──────────────────────────────┐    │  │
 │  │  │    Pages     │  │  proxy.ts (Next 16 convention)│    │  │
 │  │  │ (App Router) │  │  → updateSession() Supabase   │    │  │
@@ -82,14 +84,15 @@ Killerpool — это **client-first** приложение на Next.js 16 App 
 
 | Технология | Версия | Назначение |
 |------------|--------|------------|
-| **Next.js** | 16.1 | React framework, App Router, Turbopack |
+| **Next.js** | 16.3 | React framework, App Router; dev на Turbopack, production-сборка на webpack |
 | **React** | 19.2 | UI библиотека |
 | **TypeScript** | 5.x (strict) | Type safety |
-| **Tailwind CSS** | 4.2 | Utility-first CSS, токены через `@theme` в `app/globals.css` |
+| **Tailwind CSS** | 4.3 | Utility-first CSS, токены через `@theme` в `app/globals.css` |
 | **shadcn/ui** | — | UI компоненты (Radix UI + CVA) |
 | **Motion** | 12 | Анимации (`motion/react`, бывший Framer Motion) |
 | **Lucide React** | 0.577 | Иконки |
 | **qrcode** | 1.5 | QR-код в invite modal |
+| **@sentry/nextjs** | 10 | Сбор ошибок (браузер, сервер, edge) |
 
 ### Backend & Database
 
@@ -144,7 +147,7 @@ REST-эндпоинтов нет (`app/api` не существует). Клие
 
 - `strict: true` в tsconfig
 - Типы БД в `lib/types/database.types.ts`
-- Единый маппинг строки БД → доменный тип: `mapDbGameToGame` (`lib/game-mapper.ts`)
+- Единый маппинг между строкой БД и доменным типом в обе стороны: `mapDbGameToGame` и `mapGameToDbRow` (`lib/game-mapper.ts`)
 
 ---
 
@@ -154,10 +157,12 @@ REST-эндпоинтов нет (`app/api` не существует). Клие
 killerpool/
 │
 ├── app/                          # Next.js App Router
-│   ├── layout.tsx                # Root layout (metadataBase, Providers, PWAInit)
+│   ├── layout.tsx                # Root layout (metadataBase, GameProvider,
+│   │                             #   PWAInit, инлайн-скрипт темы)
 │   ├── page.tsx                  # Home page
 │   ├── globals.css               # Tailwind 4: @theme токены, @custom-variant dark
 │   ├── error.tsx / loading.tsx / not-found.tsx
+│   ├── global-error.tsx          # Падения самого layout (вне error.tsx)
 │   ├── opengraph-image.tsx       # Динамическая OG-картинка
 │   ├── twitter-image.tsx         # Динамическая Twitter-картинка
 │   ├── robots.ts / sitemap.ts    # SEO
@@ -188,22 +193,27 @@ killerpool/
 │   ├── achievements/             # achievement-card, achievement-toast, list
 │   ├── leaderboard/              # leaderboard-card, leaderboard-list
 │   ├── pwa-init.tsx              # SW-регистрация + retryPendingSyncs + install-промпт
-│   ├── pwa-install-button.tsx    # кнопка установки (на главной)
-│   ├── theme-provider.tsx
+│   └── pwa-install-button.tsx    # Кнопка установки (на главной)
 │
 ├── contexts/
-│   └── game-context.tsx          # GameProvider: state, персист, синк, ачивки
+│   ├── game-context.tsx          # GameProvider: state, персист, синк, ачивки
+│   └── __tests__/
 │
 ├── hooks/
-│   └── use-realtime-game.ts      # useRealtimeGame, useSyncGameForRealtime
+│   ├── use-realtime-game.ts      # useRealtimeGame, useSyncGameForRealtime
+│   └── use-install-prompt.ts     # Состояние install-промпта (внешний стор)
 │
 ├── lib/
 │   ├── game-logic.ts             # Чистые функции игры
-│   ├── game-mapper.ts            # mapDbGameToGame (строка БД → Game)
-│   ├── storage.ts                # localStorage (игры, guest ID, pending sync)
-│   ├── sync.ts                   # Синк с Supabase + офлайн-retry
+│   ├── game-mapper.ts            # Game ↔ строка БД (в обе стороны)
+│   ├── storage.ts                # localStorage: игры, ростер, guest ID,
+│   │                             #   очередь синка, надгробия удалённых
+│   ├── sync.ts                   # Синк с Supabase + офлайн-retry с пределом
 │   ├── realtime.ts               # Подписки на postgres_changes
-│   ├── achievements.ts           # checkAchievements (RPC) + определения
+│   ├── achievements.ts           # checkAchievements (RPC) + событие о поздних
+│   ├── pwa-install.ts            # Перехват beforeinstallprompt (вне React)
+│   ├── site.ts                   # getBaseUrl для метаданных и sitemap
+│   ├── logger.ts                 # logger.debug, молчит в проде
 │   ├── invite.ts / export.ts / haptic.ts / utils.ts
 │   ├── supabase/
 │   │   ├── client.ts             # createBrowserClient (Client Components)
@@ -213,11 +223,15 @@ killerpool/
 │   ├── types/database.types.ts   # Типы Supabase-схемы
 │   └── __tests__/                # Тесты lib-слоя
 │
-├── supabase/migrations/          # 00001–00012 (см. раздел про БД)
+├── supabase/
+│   ├── migrations/               # 00001–00014 (см. раздел про БД)
+│   └── test/                     # Локальный Postgres + проверка RLS под ролями
 ├── public/                       # manifest.json, иконки, sw.js (генерируется)
 │
+├── instrumentation.ts            # Sentry: сервер и edge
+├── instrumentation-client.ts     # Sentry: браузер
 ├── proxy.ts                      # Next 16 proxy (замена middleware.ts)
-├── next.config.js                # PWA + turbopack, headers() НЕТ
+├── next.config.js                # PWA + Sentry + turbopack, headers() НЕТ
 ├── vercel.json                   # regions: fra1, security headers
 ├── eslint.config.mjs             # ESLint 9 flat config
 ├── jest.config.ts / jest.setup.ts
@@ -294,7 +308,7 @@ export async function proxy(request: NextRequest) {
 User Input (game/new)
         │
         ▼
-createGame(players, DEFAULT_RULESET, user?.id || getGuestId())
+createGame(игроки с id из ростера, DEFAULT_RULESET, user?.id || getGuestId())
         │
         ▼
 GameProvider.startGame(game)          ← realtime по умолчанию выключен
@@ -313,6 +327,13 @@ UI re-render (optimistic, мгновенно, офлайн работает)
 ```
 
 До завершения игры (или включения шаринга) в Supabase **ничего не пишется**.
+
+**Идентичность игроков.** Знакомое имя получает постоянный id из ростера на
+устройстве (`killerpool_roster`), и этот же id уходит в `participants[].id`.
+На нём стоит агрегация лидерборда, поэтому человек, сыгравший десять партий,
+остаётся одной строкой, а не десятью. Отсюда же требование формы: два игрока в
+одной игре не могут носить одно имя — иначе они получили бы один id, а на его
+уникальности внутри игры держатся `winner_id` и `history[].playerId`.
 
 ### 2. Live sharing / зритель
 
@@ -380,7 +401,8 @@ RPC вызывается **после** синка, потому что чита
 autoSyncGame(game)
    │
    ├─ success → unmarkPendingSync(game.id)
-   └─ failure → markPendingSync(game.id)     ← id в killerpool_pending_sync
+   └─ failure → markPendingSync(game.id)          ← id в killerpool_pending_sync
+                recordSyncFailure(game.id, …)     ← попытки в killerpool_pending_sync_meta
 
 retryPendingSyncs()          ← lib/sync.ts
    │  вызывается из components/pwa-init.tsx:
@@ -388,10 +410,23 @@ retryPendingSyncs()          ← lib/sync.ts
    │  - на window 'online'
    │  - на document 'visibilitychange' (visible + navigator.onLine)
    ▼
-для каждого id: getGameFromHistory(id) → syncGameToSupabase(game)
-   → success: unmarkPendingSync(id)
-   → игра удалена из истории: unmarkPendingSync(id) (нечего синкать)
+для каждого id:
+   → исчерпан (отказ прав, 5 попыток или 14 дней) → выкинуть из очереди
+   → рано (экспоненциальная отсрочка от 1 минуты до 6 часов) → пропустить
+   → игра удалена из истории → выкинуть из очереди
+   → иначе upsert; при успехе снять из очереди и начислить ачивки
 ```
+
+Предел попыток обязателен: без него игра, которую сервер отвергает навсегда
+(например, по правам), уходила в сеть при **каждом** переключении вкладки.
+Ачивки за поздний синк доезжают до тостов через событие — `retryPendingSyncs`
+вызывается из `PWAInit`, а он сиблинг `GameProvider` и до его состояния не
+дотягивается.
+
+Счётчик попыток лежит в отдельном ключе, чтобы `killerpool_pending_sync`
+оставался простым массивом строк: это PWA, и часть пользователей какое-то время
+работает со старым бандлом из кеша service worker — он должен уметь дренировать
+очередь, которую записал новый.
 
 ---
 
@@ -466,16 +501,20 @@ if (user && request.nextUrl.pathname === '/auth') { /* → '/' */ }
 
 ### Environment variables
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_APP_URL` (metadataBase в `app/layout.tsx`)
+- `NEXT_PUBLIC_SUPABASE_URL` — обязательна
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — обязательна
+- `NEXT_PUBLIC_APP_URL` — необязательна; `lib/site.ts` иначе берёт домен из окружения Vercel
+- `NEXT_PUBLIC_SENTRY_DSN` — необязательна; без неё Sentry молчит
+- `SENTRY_AUTH_TOKEN` — только на этапе сборки, загрузка карт исходников
+
+Service-role ключа нет: приложение целиком клиентское, серверных операций с
+Supabase не существует, и ключ, обходящий RLS, в проекте не нужен.
 
 ---
 
 ## Схема базы данных и RLS
 
-Миграции: `supabase/migrations/00001–00012`.
+Миграции: `supabase/migrations/00001–00014`.
 
 ### Таблицы
 
@@ -503,20 +542,25 @@ CREATE TABLE games (
 - **rulesets** — JSONB `params`; дефолтный сид "Classic Killer Pool" после миграции 00011: `starting_lives: 3, miss: -1, pot: 0, pot_black: 1, max_lives: 6` (совпадает с `DEFAULT_RULESET` в `lib/types.ts`)
 - **user_achievements** (00007) — `UNIQUE(user_id, achievement_type)`, `game_id` nullable
 
-### Финальные RLS-политики games (миграция 00009)
-
-Миграция 00009 дропает все предыдущие политики и создаёт чистый набор:
+### Финальные RLS-политики games (00009, ужесточены в 00014)
 
 | Политика | Операция | Роли | Условие |
 |----------|----------|------|---------|
 | `games_select_all` | SELECT | anon, authenticated | `USING (true)` — публичное чтение любой игры (spectator mode) |
-| `games_insert_authenticated` | INSERT | authenticated | `WITH CHECK (true)` |
+| `games_insert_authenticated` | INSERT | authenticated | `WITH CHECK (created_by = auth.uid())` |
 | `games_insert_anon` | INSERT | anon | `WITH CHECK (created_by IS NULL)` |
-| `games_update_authenticated` | UPDATE | authenticated | `USING (created_by = auth.uid() OR created_by IS NULL)`, `WITH CHECK (true)` |
-| `games_update_anon` | UPDATE | anon | `created_by IS NULL` (USING и WITH CHECK) |
+| `games_update_authenticated` | UPDATE | authenticated | `USING` и `WITH CHECK`: `created_by = auth.uid()` |
+| `games_update_anon` | UPDATE | anon | `USING (created_by IS NULL AND (status <> 'completed' OR updated_at > now() - interval '1 hour'))`, `WITH CHECK (created_by IS NULL)` |
 | `games_delete_authenticated` | DELETE | authenticated | `USING (created_by = auth.uid())` |
 
-Там же таблица `games` добавляется в публикацию `supabase_realtime`.
+Публикация `supabase_realtime` включает `games` начиная с 00009.
+
+Что закрыла 00014 и почему именно так — в SECURITY.md. Коротко: до неё любой
+залогиненный пользователь одним запросом присваивал себе чужую гостевую игру, и
+её настоящий хост, будучи `anon`, терял доступ навсегда. Условие по времени у
+`games_update_anon` — окно, а не запрет: завершение игры это три гоночные записи,
+а отмена после победы легальна, поэтому жёсткое `status <> 'completed'` сломало бы
+нормальный ход партии.
 
 ### RLS user_achievements (после миграции 00011)
 
@@ -526,7 +570,7 @@ CREATE TABLE games (
 
 ### RPC-функции
 
-- **`get_leaderboard(limit_count INTEGER DEFAULT 15)`** — v4 из миграции 00012, `SECURITY DEFINER`, `GRANT anon + authenticated`
+- **`get_leaderboard(limit_count INTEGER DEFAULT 15, min_games INTEGER DEFAULT 3)`** — v5 из миграции 00013, `SECURITY DEFINER`, `GRANT anon + authenticated`
 - **`check_achievements(p_user_id UUID, p_game_id UUID)`** — v2 из миграции 00011, `SECURITY DEFINER`, `GRANT` только `authenticated`
 
 ---
@@ -539,14 +583,25 @@ CREATE TABLE games (
 2. Участники разворачиваются из JSONB (`jsonb_array_elements(participants)`)
 3. Группировка по стабильному идентификатору: `COALESCE(userId участника, id участника)` — сравнения идут текстом, без приведения клиентского JSON к `uuid`
 4. Считаются `total_games`, `games_won` (по уникальным играм), `games_lost`, `win_rate`, `total_actions`, `total_black_pots`
-5. Ранжирование: `ORDER BY win_rate DESC, games_won DESC, total_games DESC`, тай-брейк по идентификатору — чтобы равные игроки не менялись местами между вызовами
-6. Имя — из `player_profiles.display_name` (если есть профиль), иначе имя игрока из самой свежей его игры
+5. В рейтинг попадают только сыгравшие не меньше `min_games` партий (по умолчанию 3)
+6. Ранжирование: `ORDER BY win_rate DESC, games_won DESC, total_games DESC`, тай-брейк по идентификатору — чтобы равные игроки не менялись местами между вызовами
+7. Имя — из `player_profiles.display_name` (если есть профиль), иначе имя игрока из самой свежей его игры
 
 Таблица `games` записывается анонимами (RLS 00009), поэтому `participants`/`history` — недоверенный ввод. До миграции 00012 функция кастовала оттуда id в `uuid` без проверок, и одна игра с некорректным id роняла RPC для **всех** пользователей. Теперь единственный `::uuid` защищён regex'ом, а участник без пригодного идентификатора просто выпадает из выдачи.
 
+**Почему нужен квалификационный минимум.** Ранжирование идёт по проценту побед,
+поэтому без порога любой, кто сыграл одну партию и выиграл, стоит со своими 100%
+выше того, кто выиграл сорок из шестидесяти. Порог — стандартный приём спортивных
+таблиц. Следствие, которое видно новичку: пока сыграно меньше трёх партий,
+лидерборд для него пуст, и текст пустого состояния это объясняет.
+
+Ранжировать по числу побед вместо процента отвергнуто: владелец телефона
+участвует почти в каждой партии и занял бы первое место объёмом, а не игрой.
+
 **Важные следствия реализации:**
 
-- `userId` получает **только помеченный создателем игрок** (в форме создания это отмечается явно и переживает перемешивание) — либо `user.id`, либо стабильный guest-UUID (`getGuestId()`). Остальные участники имеют `userId = null` и трекаются по своему `player_id`, уникальному для каждой игры — их статистика между играми не агрегируется.
+- `userId` получает **только помеченный создателем игрок** (в форме создания это отмечается явно и переживает перемешивание) — либо `user.id`, либо стабильный guest-UUID (`getGuestId()`). Остальные участники имеют `userId = null`, и агрегируются они по `participants[].id`, который берётся из ростера на устройстве.
+- Отсюда граница: соперники склеиваются между играми **в пределах устройства**, на котором ведётся счёт. Один и тот же человек, отмеченный на двух разных телефонах, останется двумя строками. Связать их может только вход в аккаунт.
 - Гостевые игры **тоже попадают** в лидерборд (guest-UUID стабилен на устройстве), но без профиля и с потерей истории при очистке localStorage. Регистрация даёт стабильный профиль, имя и ачивки.
 
 ---
@@ -558,6 +613,27 @@ CREATE TABLE games (
 - Начисление — исключительно в БД: `check_achievements` v2 (миграция 00011) сравнивает id как текст (без cast'ов JSON-значений в uuid), читает статы именно победителя, считает total wins/стрики/социальные игры и вставляет с `ON CONFLICT DO NOTHING`
 - Клиент (`lib/achievements.ts`): `checkAchievements(userId, gameId)` вызывает RPC и возвращает только новые (`is_new`) ачивки; `getUserAchievements` — для профиля
 - UI: тосты `components/achievements/achievement-toast.tsx` на экране игры, список — в профиле
+- Ачивки за игру, синхронизированную позже (офлайн-очередь), приезжают событием `killerpool:achievements-unlocked` с буфером на случай, если провайдер ещё не подписался
+
+---
+
+## Наблюдаемость
+
+Ошибки собирает Sentry (`instrumentation-client.ts` — браузер,
+`instrumentation.ts` — сервер и edge, `app/global-error.tsx` — падения самого
+корневого layout, до которых `app/error.tsx` не дотягивается, потому что живёт
+внутри него).
+
+Осознанные настройки:
+
+- **Только ошибки, без трейсинга** (`tracesSampleRate: 0`) — вопрос стоит «что ломается», а не «что тормозит», а PWA платит за каждый килобайт
+- **Молчит вне продакшена** — без DSN и в `next dev` SDK инертен, чтобы ошибки разработки не попадали в проект, который должен показывать падения пользователей
+- **Ожидаемый сетевой шум отфильтрован** — офлайн-первый режим постоянно порождает `Failed to fetch` и подобное
+- **Карты исходников** загружаются, если задан `SENTRY_AUTH_TOKEN`; без токена сборка не падает, просто трейсы остаются минифицированными. Загруженные карты удаляются из сборки и посетителям не отдаются
+
+Проверять загрузку карт надо через `/projects/{org}/{project}/files/artifact-bundles/`:
+современный формат — debug-id бандлы, а легаси-список файлов релиза показывает ноль
+и вводит в заблуждение.
 
 ---
 
@@ -579,9 +655,18 @@ CREATE TABLE games (
 
 ### PWAInit (`components/pwa-init.tsx`)
 
-- Регистрирует `/sw.js`, слушает `updatefound`
+- Регистрирует `/sw.js`
 - Запускает `retryPendingSyncs()` при монтировании и на событиях `online` / `visibilitychange`
-- Перехватывает `beforeinstallprompt` / `appinstalled`
+- Через `initInstallCapture()` (`lib/pwa-install.ts`) перехватывает `beforeinstallprompt` и `appinstalled`
+
+### Установка приложения
+
+`beforeinstallprompt` приходит один раз и рано — до того, как что-либо
+смонтировано, — поэтому событие живёт в модуле-сторе вне React, а компонент
+читает его через `useSyncExternalStore`. Кнопка (`components/pwa-install-button.tsx`)
+стоит на главной и не рендерит ничего, если приложение уже установлено или
+браузер установку не предлагает. В Safari события нет вовсе, поэтому там
+показывается инструкция про «Поделиться → На экран Домой».
 
 ### Стратегия синхронизации
 
@@ -608,18 +693,39 @@ CREATE TABLE games (
 
 ## Тестирование
 
-Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **10 сьютов, 177 тестов** (`npm test`):
+Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **12 сьютов, 218 тестов** (`npm test`):
 
 | Область | Файлы |
 |---------|-------|
 | Игровая логика | `lib/__tests__/game-logic.test.ts` |
-| Хранилище | `lib/__tests__/storage.test.ts` |
-| Маппер БД | `lib/__tests__/game-mapper.test.ts` |
+| Хранилище, ростер, очередь синка | `lib/__tests__/storage.test.ts` |
+| Синк с Supabase | `lib/__tests__/sync.test.ts` |
+| Машина состояний игры | `contexts/__tests__/game-context.test.tsx` |
+| Маппер БД (в обе стороны) | `lib/__tests__/game-mapper.test.ts` |
 | Ачивки | `lib/__tests__/achievements.test.ts` (гейтинг `checkAchievementsForGame` + хелперы) |
 | Install-промпт | `lib/__tests__/pwa-install.test.ts` |
 | Утилиты | `lib/__tests__/utils.test.ts` |
 | UI-компоненты | `components/ui/__tests__/{button,badge,card}.test.tsx` |
 | Игровые компоненты | `components/game/__tests__/player-card.test.tsx` |
+
+Покрытие неравномерно и осознанно: чистая логика и слой ввода-вывода покрыты
+(`game-logic` 86%, `storage` 89%, `sync` 88%, `game-context` 74%), страницы `app/**` —
+нет. Общая цифра по проекту около 25% именно поэтому: она считается вместе со
+всем UI, который тестами не покрыт.
+
+`jest.setup.ts` не подменяет `localStorage` и `sessionStorage` — jsdom даёт оба
+по-настоящему и раздельно, они лишь очищаются перед каждым тестом. Инъекция
+ошибок хранилища делается через `jest.spyOn(Storage.prototype, …)`: присваивание
+метода экземпляру на настоящем `Storage` молча не сработает.
+
+**Проверка миграций.** SQL тестируется отдельно, вне Jest: `supabase/test/setup-local.sh`
+поднимает временный Postgres, подменяет то, что даёт Supabase (схема `auth`, роли
+`anon`/`authenticated`, `auth.uid()` через GUC), и накатывает всю цепочку с нуля.
+`supabase/test/rls-policies.sql` проверяет политики **под ролями** — читать текст
+политики недостаточно. Там же зафиксированы две ловушки Postgres, на которых легко
+получить ложный результат: обычный `UPDATE`, не прошедший `USING`, не поднимает
+ошибку (меняет ноль строк), а `WITH CHECK` у INSERT-политики применяется и к ветке
+`DO UPDATE` любого upsert.
 
 ---
 
@@ -643,10 +749,13 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **10 сь
 4. **Background Sync API** — удалён вместе с `lib/sync-manager.ts`; заменён localStorage-очередью `killerpool_pending_sync`
 5. **Автогенерация типов из Supabase-схемы** — `lib/types/database.types.ts` поддерживается вручную
 6. **E2E-тесты (Playwright)** — только unit/component (Jest)
-7. **Мониторинг** — Sentry / RUM / product-аналитика не подключены
+7. **RUM и product-аналитика** — не подключены (Sentry собирает ошибки, но не трейсинг и не поведение)
 8. **Расширения лидерборда** — недельные/месячные таблицы, рейтинги среди друзей
 9. **Push-уведомления** о приглашениях в игру
 10. **Кастомные rulesets в UI** — таблица `rulesets` и политика на INSERT есть, но клиент всегда использует `DEFAULT_RULESET` (classic)
+11. **Секрет хоста для расшаренной игры** — пока партия идёт, хост и зритель на уровне БД неразличимы (см. SECURITY.md); отличить их может только секрет, которого у зрителя нет
+12. **Защита лидерборда от подделки** — аноним может вставить выдуманную завершённую игру с любым `participants[].userId`; лечится в `get_leaderboard`, а не в RLS
+13. **Склейка гостевой и аккаунтной личности** — после входа в аккаунт прошлая гостевая статистика пропадает из `/stats`, а гостевые игры не восстанавливаются из облака (`created_by` у них `NULL`)
 
 ---
 

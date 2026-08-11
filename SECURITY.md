@@ -133,9 +133,9 @@ if (user && request.nextUrl.pathname === '/auth') {
 
 ## Row Level Security (RLS)
 
-RLS включён на всех таблицах (`00001_initial_schema.sql`). Ниже — **финальное** состояние политик после всех миграций (00001–00011). История правок: 00006 открыл публичное чтение игр, 00008 добавил политики live sharing, 00009 снёс все политики `games` и пересоздал начисто, 00011 ужесточил `user_achievements`.
+RLS включён на всех таблицах (`00001_initial_schema.sql`). Ниже — **финальное** состояние политик после всех миграций (00001–00014). История правок: 00006 открыл публичное чтение игр, 00008 добавил политики live sharing, 00009 снёс все политики `games` и пересоздал начисто, 00011 ужесточил `user_achievements`, 00014 ужесточил запись в `games`.
 
-### Games (финал — миграция `00009_fix_live_sharing_policies.sql`)
+### Games (00009 + ужесточение в `00014_tighten_game_write_policies.sql`)
 
 ```sql
 -- SELECT: Anyone can view any game (required for spectator mode)
@@ -156,14 +156,15 @@ CREATE POLICY "games_insert_anon"
     TO anon
     WITH CHECK (created_by IS NULL);
 
--- UPDATE: Authenticated users can update their own games or games without owner
+-- UPDATE: Authenticated users can update only their own games (00014)
 CREATE POLICY "games_update_authenticated"
     ON games FOR UPDATE
     TO authenticated
     USING (created_by = auth.uid())
     WITH CHECK (created_by = auth.uid());
 
--- UPDATE: Anonymous users can update games without owner
+-- UPDATE: Anonymous users can update unowned games; completed ones freeze
+-- one hour after the last write (00014)
 CREATE POLICY "games_update_anon"
     ON games FOR UPDATE
     TO anon
@@ -223,7 +224,12 @@ Rulesets: `SELECT` для всех (`USING (true)`), `INSERT` — только `
 
 ### Leaderboard
 
-`get_leaderboard(limit_count)` — тоже `SECURITY DEFINER` RPC, `GRANT EXECUTE ... TO authenticated, anon` (миграция `00005`). Считает только `completed`-игры. Лидерборд публичный по дизайну.
+`get_leaderboard(limit_count INTEGER DEFAULT 15, min_games INTEGER DEFAULT 3)` — `SECURITY DEFINER` RPC, `GRANT EXECUTE ... TO authenticated, anon` (актуальная версия — миграция `00013`). Считает только `completed`-игры. Лидерборд публичный по дизайну.
+
+Функция вызывается ролью `anon` и читает колонку, которую пишет та же роль, поэтому в ней два отдельных класса защиты:
+
+- **Доступность.** Ни одно значение из клиентского JSON не кастуется. До миграции `00012` функция делала `(participant->>'userId')::uuid`, и одной игры с нечисловым id хватало, чтобы вызов падал с `22P02` **для всех** — лидерборд ложился целиком, а стоило это одного анонимного INSERT. Теперь сравнения идут по тексту, единственный `::uuid` защищён regex-гардом, а `limit_count` зажат в диапазон (NULL означал бы «без лимита»).
+- **Достоверность — не закрыта.** `anon` по-прежнему может вставить выдуманную завершённую игру с любыми `participants[].userId` и накрутить себе статистику. Ужесточение RLS этого не лечит: строка создаётся легально. Лечение принадлежит самой функции (например, доверять только играм с непустой `history` или известным `created_by`) и не сделано.
 
 ---
 
@@ -266,17 +272,20 @@ Rulesets: `SELECT` для всех (`USING (true)`), `INSERT` — только `
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_SENTRY_DSN=                     # необязательно
 
-# Приватные (только на сервере)
-# ⚠️ WARNING: This key bypasses Row Level Security - use with caution
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+# Только на этапе сборки, в бандл не попадает
+SENTRY_AUTH_TOKEN=                          # загрузка карт исходников
 ```
 
 - `anon key` публичен по дизайну — вся защита данных лежит на RLS.
-- `SUPABASE_SERVICE_ROLE_KEY` объявлен в примере, но **в коде приложения нигде не используется** (серверных операций с ним нет). Держите его без префикса `NEXT_PUBLIC_` — иначе он утечёт в браузерный бандл и обнулит RLS.
+- **Service-role ключа в проекте нет и не должно быть.** Приложение целиком клиентское: серверных операций с Supabase не существует, ни одна строка кода не читает `SUPABASE_SERVICE_ROLE_KEY`. Ключ, обходящий RLS, убран даже из `.env.local.example` — чтобы никто не завёл его «на всякий случай» и не вынес потом под префиксом `NEXT_PUBLIC_`.
+- `NEXT_PUBLIC_SENTRY_DSN` публичен по дизайну (DSN и рассчитан на браузер: он позволяет слать события, но не читать их). `SENTRY_AUTH_TOKEN` — настоящий секрет, используется только сборкой; в Vercel он заведён как **Sensitive**, поэтому не читается обратно ни через UI, ни через `vercel env pull`.
 - `.env`, `.env.local`, `.env.*.local` — в `.gitignore`. Никогда не коммитьте секреты.
 
 **Ротация ключей:** создайте новый ключ в Supabase → обновите env в Vercel → redeploy → отзовите старый ключ.
+
+**Что уезжает в Sentry.** Ошибки прода содержат стек, URL и user agent. Трассировка выключена (`tracesSampleRate: 0`), `sendDefaultPii` не включается, тела запросов и содержимое localStorage не отправляются. Имена игроков могут попасть в сообщение об ошибке, если окажутся в её тексте — отдельной фильтрации для этого нет.
 
 ---
 
@@ -293,7 +302,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 ### SQL Injection
 
-- Все запросы — через query builder Supabase (`.from('games').select().eq(...)`) с параметризацией. Raw SQL с пользовательским вводом в клиентском коде нет. В RPC-функциях клиентский JSONB защищён от каст-исключений по-разному: `check_achievements` (00011) сравнивает id как `text = text` и гейтит все `::INTEGER`-касты числовым regex; `get_leaderboard` (00005) кастует `userId` в `uuid` только после UUID-regex, но `participant->>'id'` кастует без защиты — не-UUID id участника уронит вызов (известное ограничение v3).
+- Все запросы — через query builder Supabase (`.from('games').select().eq(...)`) с параметризацией. Raw SQL с пользовательским вводом в клиентском коде нет. В RPC-функциях клиентский JSONB защищён от каст-исключений по-разному: `check_achievements` (00011) сравнивает id как `text = text` и гейтит все `::INTEGER`-касты числовым regex; `get_leaderboard` после миграции `00012` не кастует клиентский JSON вообще (сравнения по тексту, единственный `::uuid` под regex-гардом) — до неё не-UUID id участника ронял вызов для всех.
 
 ### PWA / Service Worker
 
@@ -343,7 +352,8 @@ Content-Security-Policy:
 - **2FA (TOTP)** через `supabase.auth.mfa` — не включено.
 - **Удаление аккаунта / экспорт данных (GDPR-тулинг)** — UI-флоу не реализован; удаление возможно только вручную через Supabase.
 - **Секрет хоста для расшаренной игры**: отдельная таблица с хешем секрета и узкий SECURITY DEFINER RPC для записи — единственный способ отличить хоста от зрителя, пока партия идёт. Пока не сделано.
-- **Защита лидерборда от подделки**: `anon` по-прежнему может вставить выдуманную завершённую игру с любым `participants[].userId`. Лечится в `get_leaderboard` (засчитывать `userId` только если он совпадает с `created_by`), а не в RLS.
+- **Защита лидерборда от подделки**: `anon` по-прежнему может вставить выдуманную завершённую игру с любым `participants[].userId`. Лечится в `get_leaderboard` (засчитывать `userId` только если он совпадает с `created_by`), а не в RLS. Квалификационный минимум из `00013` поднимает цену накрутки (нужно минимум три игры), но не закрывает её.
+- **Дефейс внутри окна заморозки**: пока не прошёл час, вандал может вернуть завершённую гостевую игру в `active` и тем самым продлить себе право записи. Закрывается колонкой `completed_at`, которую запись не может стереть.
 
 ---
 
@@ -360,7 +370,7 @@ Content-Security-Policy:
 
 - [x] Environment variables заданы в Vercel
 - [x] Service role key не используется на клиенте (не используется вообще)
-- [x] RLS-политики настроены (миграции 00001–00011)
+- [x] RLS-политики настроены (миграции 00001–00014), проверены под ролями (`supabase/test/rls-policies.sql`)
 - [x] Базовые security headers (`vercel.json`)
 - [x] HTTPS enforced (Vercel)
 - [ ] CSP настроен
@@ -368,7 +378,7 @@ Content-Security-Policy:
 
 ### 📋 Production
 
-- [ ] Мониторинг ошибок (Sentry)
+- [x] Мониторинг ошибок (Sentry: браузер, сервер, edge; только production)
 - [ ] Регулярные backups БД (Supabase-managed)
 - [ ] Ротация ключей каждые 90 дней
 - [ ] Периодические security audits
@@ -438,6 +448,6 @@ Content-Security-Policy:
 
 ---
 
-**Документ обновлен:** 2026-07-07
+**Документ обновлен:** 2026-08-11
 
 **Последний security audit:** Не проводился

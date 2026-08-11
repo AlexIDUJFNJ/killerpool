@@ -1,89 +1,130 @@
 # Устранение проблем с лидербордом
 
-> Обновлено: 2026-07-07. Все утверждения сверены с актуальным кодом
-> (`lib/game-logic.ts`, `lib/sync.ts`, `app/game/new/page.tsx`,
-> `components/leaderboard/leaderboard-list.tsx`, миграции `00002`, `00003`, `00005`).
+> Обновлено: 2026-08-11. Все утверждения сверены с актуальным кодом
+> (`lib/game-logic.ts`, `lib/storage.ts`, `lib/sync.ts`, `app/game/new/page.tsx`,
+> `components/leaderboard/leaderboard-list.tsx`, миграции `00012`, `00013`).
 
-## Проблема
-Лидерборд показывает "The Leaderboard Awaits!" даже после завершения игры.
+## Две разные жалобы
 
-## Как данные попадают в лидерборд (актуальная схема)
+Симптом «в лидерборде не то, что я ожидаю» бывает двух видов, и лечатся они
+по-разному:
 
-1. **Создание игры** — `app/game/new/page.tsx:141-143`:
+| Симптом | Куда смотреть |
+|---------|---------------|
+| Лидерборд пуст («The Leaderboard Awaits!») | Игра не доехала до базы — раздел «Игра не сохранилась» |
+| Игрок сыграл, но его нет в таблице | Квалификационный минимум — раздел «Меньше трёх партий» |
+| Знакомый игрок стоит несколькими строками | Ростер — раздел «Один человек, несколько строк» |
+
+## Как данные попадают в лидерборд
+
+1. **Создание игры** — `app/game/new/page.tsx`. Каждому имени сопоставляется
+   идентификатор из локального ростера:
    ```typescript
-   // Use userId if authenticated, otherwise use stable guest_id
-   const userId = user?.id || getGuestId()
-   const game = createGame(validPlayers, DEFAULT_RULESET, userId)
+   const entries = validPlayers.map(p => ({
+     name: p.name.trim(),
+     avatar: p.avatar,
+     isOwner: p.rowId === meRowId,
+     id: resolveRosterPlayerId(p.name),   // знакомое имя → прежний id
+   }))
+   const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId)
+   rememberRosterPlayers(entries.map(e => ({ id: e.id, name: e.name, avatar: e.avatar })))
    ```
-   `getGuestId()` (`lib/storage.ts`) возвращает стабильный UUID из localStorage-ключа
-   `killerpool_guest_id` — то есть `userId` есть даже у гостя, и это всегда валидный UUID.
+   `resolveRosterPlayerId` (`lib/storage.ts`) ищет имя в ключе
+   `killerpool_roster` (регистр и пробелы не важны) и возвращает сохранённый
+   UUID; для нового имени выдаёт свежий. Именно поэтому имена внутри одной игры
+   обязаны различаться — форма это проверяет и отказывает с сообщением.
 
-2. **`createGame`** (`lib/game-logic.ts:31-54`) присваивает `userId` **только первому игроку**:
-   ```typescript
-   // Only assign userId to the first player (the authenticated user)
-   // Other players should have null userId so they're tracked by their unique player_id
-   const gamePlayers = players.map((p, index) =>
-     createPlayer(p.name, p.avatar, ruleset.params.starting_lives, index === 0 ? userId : null)
-   )
-   ```
-   У остальных игроков `userId = null`, и в лидерборде они трекаются по своему `player_id`
-   (случайный `crypto.randomUUID()` из `createPlayer`).
+2. **`createGame`** (`lib/game-logic.ts:42`) проставляет `userId` тому игроку,
+   который помечен `isOwner` (в форме — «это я»). Позиция в списке значения не
+   имеет: строки можно тасовать и удалять. Если владелец телефона себя не
+   отметил, `userId` не получает никто, и все участники агрегируются по своим
+   ростерным id.
 
-3. **Синхронизация** — при завершении игры `game-context` (эффект в
-   `contexts/game-context.tsx`, строки ~105-150) один раз вызывает `autoSyncGame(game)`
-   (`lib/sync.ts`), которая через `syncGameToSupabase` делает `upsert` в таблицу `games`
-   (`participants = game.players`, `winner_id`, `history`, `created_by = user?.id || null`).
-   Если синк не удался (офлайн), игра помечается в localStorage-ключе
-   `killerpool_pending_sync` и повторяется функцией `retryPendingSyncs()`
-   (вызывается из `components/pwa-init.tsx` при монтировании и на событиях
-   `online` / `visibilitychange`).
+3. **Синхронизация** — при завершении игры эффект в `contexts/game-context.tsx`
+   один раз вызывает `autoSyncGame(game)` (`lib/sync.ts`), которая делает upsert
+   строки `games` (`participants`, `winner_id`, `history`,
+   `created_by = user?.id || null`). При неудаче id игры попадает в
+   `killerpool_pending_sync`, а счётчик попыток — в `killerpool_pending_sync_meta`.
+   Ретрай идёт из `components/pwa-init.tsx` на `online`/`visibilitychange`.
+   **Важно:** попытки не бесконечны — после 5 неудач или при неустранимой ошибке
+   (нет прав, битые данные) игра перестаёт ретраиться. См. «Синк сдался».
 
-4. **Чтение** — `components/leaderboard/leaderboard-list.tsx:53-54`:
+4. **Чтение** — `components/leaderboard/leaderboard-list.tsx:54`:
    ```typescript
    const { data, error: queryError } = await supabase
      .rpc('get_leaderboard', { limit_count: limit })
    ```
-   Дефолтный `limit = 15`.
+   Дефолтный `limit = 15`; `min_games` клиент не передаёт, работает
+   значение по умолчанию — 3.
 
-5. **RPC `get_leaderboard`** — актуальная версия (v3) из миграции
-   `00005_fix_leaderboard_grouping.sql`: `SECURITY DEFINER` (обходит RLS),
-   `GRANT EXECUTE ... TO authenticated, anon`, учитывает **только** игры со
-   `status = 'completed'`. Группировка идёт по стабильному идентификатору:
+5. **RPC `get_leaderboard`** — актуальная версия **v5** (миграция `00013`):
    ```sql
-   COALESCE(pgs.user_id, pgs.player_id) AS stable_id
+   get_leaderboard(limit_count INTEGER DEFAULT 15, min_games INTEGER DEFAULT 3)
    ```
-   где `user_id` берётся из `participant->>'userId'` **только если** он проходит
-   UUID-regex (легаси-значения вида `guest_xxx` превращаются в NULL). Побед считается
-   по `(participant->>'id')::uuid = g.winner_id`, ранжирование —
-   `win_rate DESC, games_won DESC, total_games DESC`.
+   `SECURITY DEFINER` (обходит RLS), `GRANT EXECUTE ... TO authenticated, anon`,
+   учитывает только игры со `status = 'completed'`. Группировка —
+   `COALESCE(user_id, player_id)`, победы считаются по различным играм,
+   отображаемое имя берётся из **последней по времени** игры игрока,
+   ранжирование — `win_rate DESC, games_won DESC, total_games DESC, stable_id ASC`.
 
-История версий функции: `00002` — первая версия (без SECURITY DEFINER, упиралась в RLS),
-`00003` — добавлен `SECURITY DEFINER` + UNIQUE на `player_profiles.user_id`,
-`00005` — текущая группировка по `stable_id`.
+История версий: `00002` — первая (без `SECURITY DEFINER`, упиралась в RLS),
+`00003` — `SECURITY DEFINER` + UNIQUE на `player_profiles.user_id`,
+`00005` — группировка по `stable_id`, `00012` — защита от падения на клиентских
+данных (v4), `00013` — квалификационный минимум (v5).
 
-## Возможные причины
+## Причины
 
-### 1. Игра не сохранилась в базу данных
+### 1. Меньше трёх партий — игрок не в рейтинге
 
-**Как проверить:**
-Откройте консоль браузера (F12) и проверьте наличие ошибок при завершении игры. Ищите сообщения вроде:
-- `Failed to sync game to Supabase`
-- `Failed to auto-sync game`
+Самая частая причина «мою игру видно в истории, а в лидерборде меня нет» после
+миграции `00013`. Порог введён намеренно: без него случайный победитель одной
+партии со 100% всегда стоял выше того, кто сыграл сорок.
 
-При успехе в консоли будет `Game successfully synced to Supabase: <game_id>`.
+**Как проверить** — вызвать функцию без порога и посмотреть, кто отсеивается:
+```sql
+SELECT display_name, total_games, games_won, win_rate
+FROM get_leaderboard(100, 1)     -- min_games = 1, порог фактически снят
+WHERE total_games < 3
+ORDER BY total_games DESC;
+```
+(Сравнивать два вызова через `EXCEPT` бесполезно: `rank` пересчитывается, и
+строки различаются даже у тех, кто есть в обоих результатах.)
 
-**Запустите отладочные SQL запросы** из файла `debug_leaderboard.sql` в Supabase SQL Editor:
+Это не поломка. Играйте дальше — на третьей партии строка появится сама.
+Порог не зашит в функцию намертво: `get_leaderboard(15, 1)` вернёт всех.
+
+### 2. Один человек, несколько строк
+
+До ростера каждый соперник получал новый UUID в каждой игре, поэтому «Вася» из
+вчерашней и сегодняшней игры были двумя разными строками. Сейчас имя из ростера
+переиспользует прежний id, и такие строки схлопываются — но только начиная с
+игр, сыгранных **после** появления ростера. Старые игры остаются как есть:
+переписать их задним числом нельзя, в базе от того игрока не осталось ничего,
+кроме случайного id.
+
+Ещё две законные причины дублей:
+- имя написали иначе, чем в прошлый раз, — ростер сопоставляет по имени
+  (без учёта регистра и краевых пробелов), «Вася» и «Вася К.» это разные люди;
+- игрок сменил устройство: ростер живёт в localStorage конкретного браузера.
+
+**Как проверить содержимое ростера** (в консоли браузера):
+```javascript
+JSON.parse(localStorage.getItem('killerpool_roster') || '[]')
+```
+
+### 3. Игра не сохранилась в базу
+
+**Как проверить:** консоль браузера при завершении игры. При успехе —
+`Game successfully synced to Supabase: <game_id>`; при неудаче —
+`Failed to sync game to Supabase` / `Failed to auto-sync game`.
+
+Отладочные запросы лежат в `debug_leaderboard.sql` (Supabase SQL Editor):
 
 ```sql
--- Проверить наличие завершенных игр
 SELECT
-    id,
-    status,
-    winner_id,
-    created_at,
-    created_by,
-    jsonb_array_length(participants) as player_count,
-    jsonb_array_length(history) as action_count
+    id, status, winner_id, created_at, created_by,
+    jsonb_array_length(participants) AS player_count,
+    jsonb_array_length(history)      AS action_count
 FROM games
 WHERE status = 'completed'
 ORDER BY created_at DESC
@@ -91,26 +132,39 @@ LIMIT 10;
 ```
 
 **Если игр нет:**
-- Аутентификация **не обязательна**: RLS-политика `games_insert_anon` (миграция `00009`)
-  разрешает анонимную вставку при `created_by IS NULL`, а `syncGameToSupabase` для гостя
-  как раз шлёт `created_by: null`. Так что гостевые игры тоже должны сохраняться.
-- Проверьте localStorage-ключ `killerpool_pending_sync` — если там есть id игры, синк
-  падал и ждёт ретрая (сработает при событии `online`/`visibilitychange`).
-- Проверьте RLS политики таблицы `games` (финальный набор — миграция
-  `00009_fix_live_sharing_policies.sql`).
-- Проверьте логи ошибок в консоли браузера.
+- Аутентификация не обязательна: политика `games_insert_anon` разрешает
+  анонимную вставку при `created_by IS NULL`, а для гостя `sync` шлёт именно
+  `created_by: null`.
+- Проверьте `killerpool_pending_sync` — если id игры там, синк падал и ждёт
+  ретрая.
+- После миграции `00014` завершённая гостевая игра перестаёт принимать записи
+  через час после последней. Если игра завершилась офлайн и пролежала сутки,
+  её upsert получит `42501` — это неустранимая ошибка, ретрай её не спасёт.
+  Строка при этом остаётся в localStorage и видна в истории.
 
-### 2. Проблема с форматом данных participants
+### 4. Синк сдался
 
-**Как проверить:**
-Запустите этот запрос в Supabase SQL Editor:
+`lib/sync.ts` больше не ретраит бесконечно: коды `42501`, `22P02`, `22007`,
+`23502`, `23503`, `23514`, `42703` считаются неустранимыми, а любая другая
+ошибка отбрасывается после 5 попыток с нарастающей паузой.
+
+**Как проверить** (консоль браузера):
+```javascript
+JSON.parse(localStorage.getItem('killerpool_pending_sync_meta') || '{}')
+```
+Поля `attempts` и `lastAttemptAt` на id игры. Если `attempts >= 5` — игра выбыла
+из очереди. Страница **`/sync`** покажет сводку `{ success, skipped, refused,
+failed, total }`: `skipped` — незавершённые игры (это нормально, они не должны
+попадать в облако), `refused` — отказ базы.
+
+### 5. Формат participants
 
 ```sql
 SELECT
-    g.id as game_id,
-    participant->>'id' as player_id,
-    participant->>'name' as player_name,
-    participant->>'userId' as user_id,
+    g.id AS game_id,
+    participant->>'id'     AS player_id,
+    participant->>'name'   AS player_name,
+    participant->>'userId' AS user_id,
     g.winner_id
 FROM games g,
 LATERAL jsonb_array_elements(g.participants) AS participant
@@ -118,189 +172,127 @@ WHERE g.status = 'completed'
 LIMIT 10;
 ```
 
-**Ожидаемый результат:**
-- `player_id` должен быть UUID (генерируется в `createPlayer`)
-- `player_name` должен содержать имя игрока
-- `userId` — UUID **только у первого игрока** (id авторизованного пользователя или
-  guest-UUID); у всех остальных игроков `userId` = NULL — это нормально и by design
-- `winner_id` должен совпадать с одним из `player_id`
+Ожидания:
+- `player_id` — UUID в нижнем регистре (на этом стоит regex-гард в `00012`;
+  участник с невалидным id молча выпадает из рейтинга, но не роняет функцию);
+- `userId` — UUID у того игрока, который отмечен как владелец устройства,
+  `NULL` у остальных; это by design;
+- `winner_id` совпадает с одним из `player_id`.
 
-Внимание: не кастуйте `participant->>'userId'` в `::uuid` напрямую в своих запросах —
-в легаси-данных могли остаться значения вида `guest_xxx`, каст упадёт. Сама функция
-v3 защищена от этого UUID-regex'ом.
+**Не кастуйте `participant->>'userId'` в `::uuid` в своих запросах.** Таблица
+`games` пишется анонимными клиентами, поэтому одно мусорное значение уронит
+весь запрос с `22P02` — ровно этот баг чинила миграция `00012`: одна битая
+строка делала лидерборд недоступным для всех. Запросы в
+`debug_leaderboard.sql` сравнивают id как текст именно поэтому.
 
-### 3. Функция get_leaderboard не возвращает данные
-
-**Как проверить:**
-Запустите функцию напрямую в Supabase SQL Editor:
+### 6. Функция не возвращает данные
 
 ```sql
 SELECT * FROM get_leaderboard(15);
+SELECT * FROM get_leaderboard(15, 1);   -- то же самое без порога
 ```
 
-**Если результат пустой:**
-- Убедитесь, что есть хотя бы одна завершенная игра (см. пункт 1)
-- Проверьте, что применена миграция `00005` (актуальная v3), а функция имеет
-  `SECURITY DEFINER`:
-
+Если пусто:
 ```sql
-SELECT
-    routine_name,
-    routine_type,
-    security_type   -- должно быть DEFINER
+SELECT routine_name, routine_type, security_type   -- security_type = DEFINER
 FROM information_schema.routines
 WHERE routine_name = 'get_leaderboard';
 ```
 
-- Проверьте `GRANT EXECUTE` для `authenticated` и `anon` (есть в каждой из миграций
-  `00002`/`00003`/`00005`)
-
-### 4. Игрок появляется в лидерборде несколько раз / статы не суммируются
-
-**Текущее поведение (важно, старая версия этого документа врала):**
-- `userId` получает **только первый игрок** каждой игры (создатель); остальным
-  проставляется `null` (`lib/game-logic.ts:36-40`). Никакого «все игроки получают
-  userId создателя» нет.
-- `get_leaderboard` v3 группирует **не по `player_id`**, а по
-  `COALESCE(user_id, player_id)`. Это значит:
-  - создатель (авторизованный или гость со стабильным guest-UUID) агрегируется
-    между играми по своему `userId`;
-  - остальные игроки получают новый `player_id` в каждой игре, поэтому «Вася» из
-    вчерашней и сегодняшней игры — это две разные строки лидерборда. Это ожидаемое
-    ограничение, а не баг.
-- Дубли одного и того же авторизованного игрока возможны только для старых игр,
-  созданных до миграции `00005`, или если у пользователя сменился guest-UUID
-  (например, очистка localStorage до логина).
-
-### 5. Проверить player_profiles
-
-**Как проверить:**
+Проверьте, что не осталось двух перегрузок функции. `00013` меняет сигнатуру,
+поэтому начинается с `DROP FUNCTION IF EXISTS get_leaderboard(INTEGER)` — без
+этого рядом с v5 жила бы старая одноаргументная v4, и вызов клиента
+`get_leaderboard(limit_count)` уходил бы в неё:
 ```sql
-SELECT
-    user_id,
-    display_name,
-    avatar_url,
-    created_at
-FROM player_profiles
-LIMIT 10;
+SELECT oid::regprocedure FROM pg_proc WHERE proname = 'get_leaderboard';
+-- ожидается ровно одна строка: get_leaderboard(integer,integer)
 ```
 
-`syncGameToSupabase` (`lib/sync.ts`) при синхронизации создаёт профиль для
-**авторизованного** пользователя, если его ещё нет (display_name = часть email до `@`),
-и не перезаписывает существующий. Для гостей профиль не создаётся — в лидерборде
-используется имя игрока из `participants`. Нюанс v3: fallback-имя выбирается
-`ORDER BY game_id DESC`, а `game_id` — случайный UUID v4, так что берётся имя
-из произвольной игры, а не из последней по времени.
-Профиль влияет только на отображаемое имя/аватар: `LEFT JOIN player_profiles`
-не отфильтровывает игроков без профиля.
+### 7. player_profiles
 
-## Решение
-
-### Шаг 1: Запустить все отладочные запросы
-Откройте файл `debug_leaderboard.sql` и запустите все запросы по очереди в Supabase SQL Editor.
-(Учтите: запрос №6 в этом файле кастует `userId` в `::uuid` без проверки — на легаси-данных
-с `guest_xxx` он может упасть; это проблема запроса, а не данных.)
-
-### Шаг 2: Проверить логи
-1. Откройте консоль браузера (F12)
-2. Сыграйте новую игру до конца
-3. Проверьте наличие ошибок
-4. Ищите сообщение `Game successfully synced to Supabase`
-
-### Шаг 3: Проверить userId создателя
-Убедитесь, что:
-- `userId` в `app/game/new/page.tsx:142` не пустой — там всегда должен быть либо
-  `user.id`, либо guest-UUID из `getGuestId()`
-- в localStorage есть валидный UUID в ключе `killerpool_guest_id` (если играете гостем)
-
-### Шаг 4: Проверить базу данных
-После завершения игры, запустите:
 ```sql
-SELECT
-    id,
-    status,
-    winner_id,
-    jsonb_pretty(participants) as participants,
-    created_by,
-    current_player_index
-FROM games
-ORDER BY created_at DESC
-LIMIT 1;
+SELECT user_id, display_name, avatar_url, created_at FROM player_profiles LIMIT 10;
 ```
 
-Убедитесь, что:
-- `status` = `'completed'`
-- `winner_id` не NULL и совпадает с `id` одного из participants
-- `participants` — массив игроков, где `userId` заполнен только у первого
-- `created_by` — UUID авторизованного пользователя или NULL для гостя (это нормально)
+`ensurePlayerProfile` (`lib/sync.ts`) создаёт профиль только **авторизованному**
+пользователю и только если его ещё нет (`display_name` — часть email до `@`),
+существующий не перезаписывается. У гостей профиля нет — лидерборд берёт имя из
+`participants` (из последней игры игрока). Профиль влияет только на имя и
+аватар: `LEFT JOIN player_profiles` никого не отфильтровывает.
 
-### Шаг 5: Дождаться авторетрая или синхронизировать вручную
-Если игра завершилась офлайн, её id лежит в `killerpool_pending_sync` и синк
-повторится автоматически (`retryPendingSyncs()` в `lib/sync.ts`, вызывается из
-`components/pwa-init.tsx` при монтировании и на `online`/`visibilitychange`).
-Достаточно открыть приложение с сетью.
+## Порядок разбора
 
-Принудительную полную синхронизацию истории проще всего запустить со страницы
-**`/sync`** — кнопка «Sync All Games» вызывает `syncAllGamesToSupabase()` из
-`lib/sync.ts` и показывает результат `{ success, failed, total }`. (Импортировать
-модуль из консоли браузера нельзя: алиас `@/lib/sync` существует только на этапе
-сборки.)
+1. **Запустить `debug_leaderboard.sql`** целиком в Supabase SQL Editor.
+2. **Посмотреть консоль**: сыграть партию до конца и найти
+   `Game successfully synced to Supabase`.
+3. **Проверить localStorage**: `killerpool_roster` (id игроков),
+   `killerpool_guest_id` (гостевой UUID), `killerpool_pending_sync` и
+   `killerpool_pending_sync_meta` (очередь и счётчик попыток).
+4. **Проверить строку в базе:**
+   ```sql
+   SELECT id, status, winner_id, jsonb_pretty(participants) AS participants,
+          created_by, current_player_index, updated_at
+   FROM games
+   ORDER BY created_at DESC
+   LIMIT 1;
+   ```
+   `status = 'completed'`, `winner_id` совпадает с id одного из участников,
+   `created_by` — UUID пользователя или `NULL` у гостя (это нормально).
+5. **Досинхронизировать**: страница **`/sync`**, кнопка «Sync All Games» →
+   `syncAllGamesToSupabase()`. Импортировать модуль из консоли нельзя — алиас
+   `@/lib/sync` существует только на этапе сборки.
 
 ## Полезные запросы
 
-### Посмотреть структуру последней завершенной игры
+### Структура последней завершённой игры
 ```sql
-SELECT
-    id,
-    status,
-    winner_id,
-    jsonb_pretty(participants) as participants_structure,
-    jsonb_pretty(history) as history_structure
+SELECT id, status, winner_id,
+       jsonb_pretty(participants) AS participants_structure,
+       jsonb_pretty(history)      AS history_structure
 FROM games
 WHERE status = 'completed'
 ORDER BY created_at DESC
 LIMIT 1;
 ```
 
-### Воспроизвести группировку v3 вручную
+### Воспроизвести группировку вручную (без порога и без кастов)
 ```sql
-WITH player_game_stats AS (
+WITH participant_rows AS (
     SELECT
-        (participant->>'id')::uuid AS player_id,
-        participant->>'name' AS player_name,
-        CASE
-            WHEN participant->>'userId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-            THEN (participant->>'userId')::uuid
-            ELSE NULL
-        END AS user_id,
         g.id AS game_id,
-        CASE WHEN (participant->>'id')::uuid = g.winner_id THEN 1 ELSE 0 END AS is_winner
-    FROM games g,
-    LATERAL jsonb_array_elements(g.participants) AS participant
+        lower(participant->>'id')     AS player_key,
+        participant->>'name'          AS player_name,
+        CASE
+            WHEN lower(participant->>'userId') ~
+                 '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            THEN lower(participant->>'userId')
+            ELSE NULL
+        END                           AS user_key,
+        lower(g.winner_id::text)      AS winner_key
+    FROM games g
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(g.participants) = 'array'
+             THEN g.participants ELSE '[]'::jsonb END
+    ) AS participant
     WHERE g.status = 'completed'
 )
 SELECT
-    COALESCE(user_id, player_id) AS stable_id,
-    MAX(player_name) AS player_name,
-    COUNT(DISTINCT game_id) AS total_games,
-    SUM(is_winner) AS games_won
-FROM player_game_stats
-GROUP BY COALESCE(user_id, player_id)
+    COALESCE(user_key, player_key)                   AS stable_key,
+    max(player_name)                                 AS player_name,
+    COUNT(DISTINCT game_id)                          AS total_games,
+    COUNT(DISTINCT game_id) FILTER (WHERE player_key = winner_key) AS games_won
+FROM participant_rows
+GROUP BY COALESCE(user_key, player_key)
 ORDER BY games_won DESC, total_games DESC;
 ```
 
-### Проверить, что get_leaderboard имеет SECURITY DEFINER
+### Участники с невалидным id
 ```sql
--- В psql:
--- \df+ get_leaderboard
-
--- Или в Supabase SQL Editor:
-SELECT
-    routine_name,
-    routine_type,
-    security_type
-FROM information_schema.routines
-WHERE routine_name = 'get_leaderboard';
+SELECT g.id AS game_id, participant->>'id' AS bad_id, participant->>'name' AS name
+FROM games g,
+LATERAL jsonb_array_elements(g.participants) AS participant
+WHERE lower(participant->>'id') !~
+      '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 ```
 
 ### Очистить все игры (ОСТОРОЖНО!)
@@ -309,18 +301,28 @@ WHERE routine_name = 'get_leaderboard';
 DELETE FROM games WHERE status = 'completed';
 ```
 
-## Planned / Not implemented
+## Известные ограничения
 
-- Агрегация статистики «гостевых» соперников (игроков без `userId`) между играми —
-  сейчас невозможна by design: у них новый `player_id` в каждой игре.
+- Ростер живёт на устройстве: у каждого браузера свой список игроков, и один
+  человек, сыгравший на двух телефонах, останется двумя строками.
+- Игры, сыгранные до появления ростера, не склеиваются задним числом.
+- Гостевая статистика не переносится в аккаунт при логине: `/stats` показывает
+  `user?.id ?? getGuestId()`, поэтому после входа прошлые гостевые игры пропадают
+  с экрана, хотя записи в localStorage целы. Это отдельная фича — склейка
+  гостевой и аккаунтной личности.
+- `participants` пишется анонимными клиентами, поэтому лидерборд в принципе
+  подделывается вставкой выдуманной завершённой игры. Лечится это в
+  `get_leaderboard` (например, доверять только играм с непустой `history`),
+  а не в RLS. См. [SECURITY.md](./SECURITY.md).
 
 ## Контакт для поддержки
 
-Если проблема не решена, предоставьте:
-1. Результаты всех отладочных запросов из `debug_leaderboard.sql`
+Если проблема не решена, приложите:
+1. Результаты запросов из `debug_leaderboard.sql`
 2. Скриншот консоли браузера после завершения игры
-3. Результат запроса структуры последней завершенной игры
-4. Содержимое localStorage-ключей `killerpool_guest_id` и `killerpool_pending_sync`
+3. Структуру последней завершённой игры
+4. Содержимое localStorage-ключей `killerpool_roster`, `killerpool_guest_id`,
+   `killerpool_pending_sync`, `killerpool_pending_sync_meta`
 
 ---
-*Документ актуализирован: 2026-07-07*
+*Документ актуализирован: 2026-08-11*

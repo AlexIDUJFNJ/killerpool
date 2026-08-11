@@ -1,9 +1,9 @@
 # 🎱 Killerpool
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.1-black?logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.3-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2-blue?logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.2-38bdf8?logo=tailwindcss)](https://tailwindcss.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.3-38bdf8?logo=tailwindcss)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-Backend-green?logo=supabase)](https://supabase.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -25,12 +25,13 @@
 
 | Категория | Технология |
 |-----------|-----------|
-| Framework | Next.js 16.1 (App Router) |
-| UI | React 19.2, Tailwind CSS 4.2, shadcn/ui |
+| Framework | Next.js 16.3 (App Router) |
+| UI | React 19.2, Tailwind CSS 4.3, shadcn/ui |
 | Анимации | Motion 12 |
 | Backend | Supabase (Postgres, Auth, Realtime, RLS) |
 | Деплой | Vercel (fra1 регион) |
 | Тесты | Jest 30 + Testing Library |
+| Мониторинг | Sentry (ошибки браузера, сервера и edge) |
 | Линтинг | ESLint 9 (flat config), Prettier |
 | Runtime | Node.js 22 |
 
@@ -59,7 +60,8 @@
 
 ### Аккаунт и статистика
 - Google OAuth / Magic Link
-- Глобальный лидерборд (топ-15)
+- Глобальный лидерборд (топ-15; в рейтинг попадают сыгравшие от 3 партий)
+- Постоянные игроки: знакомое имя сохраняет статистику между играми
 - Детальная статистика игроков
 - Система достижений (10 типов бейджей)
 - Экспорт данных (CSV, JSON, Screenshot)
@@ -67,7 +69,7 @@
 
 ### UI/UX
 - Mobile-first адаптивный дизайн
-- Dark / Light / System тема
+- Тёмная тема по умолчанию, применяется до первой отрисовки (без вспышки)
 - Bottom sheet, анимированные карточки
 - Скроллируемые модальные окна на маленьких экранах
 
@@ -87,7 +89,8 @@ npm run dev
 Нужны переменные:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+
+Необязательные: `NEXT_PUBLIC_APP_URL` (иначе метаданные и sitemap возьмут домен из окружения Vercel), `NEXT_PUBLIC_SENTRY_DSN` и сборочный `SENTRY_AUTH_TOKEN` (карты исходников). Локально Sentry молчит в любом случае.
 
 Подробная настройка Supabase: [supabase/README.md](./supabase/README.md)
 
@@ -120,7 +123,9 @@ killerpool/
 │   ├── sync.ts             # Синхронизация с Supabase
 │   ├── invite.ts           # QR-код и ссылки
 │   └── types.ts            # TypeScript типы
-├── supabase/migrations/    # SQL миграции (12 шт.)
+├── supabase/
+│   ├── migrations/         # SQL миграции (14 шт.)
+│   └── test/               # Локальный Postgres + проверка RLS под ролями
 ├── proxy.ts                # Next.js proxy (auth)
 ├── eslint.config.mjs       # ESLint 9 flat config
 └── postcss.config.js       # @tailwindcss/postcss
@@ -143,14 +148,14 @@ npm run format       # Prettier
 
 | Документ | О чём |
 |----------|-------|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | Слои, потоки данных, что осознанно не сделано |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Слои, потоки данных, наблюдаемость, что осознанно не сделано |
 | [API.md](./API.md) | Сигнатуры внутренних модулей, схема БД, RPC |
 | [SECURITY.md](./SECURITY.md) | RLS-политики и их следствия, модель угроз |
 | [supabase/README.md](./supabase/README.md) | Настройка Supabase, список миграций |
 | [PWA_SETUP.md](./PWA_SETUP.md) | Service worker, кеширование, офлайн |
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | Деплой на Vercel |
 | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | Частые проблемы |
-| [LEADERBOARD_TROUBLESHOOTING.md](./LEADERBOARD_TROUBLESHOOTING.md) | Почему лидерборд пустой |
+| [LEADERBOARD_TROUBLESHOOTING.md](./LEADERBOARD_TROUBLESHOOTING.md) | Почему лидерборд пустой или в нём нет знакомых имён |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Как вносить изменения |
 
 ## 📝 License

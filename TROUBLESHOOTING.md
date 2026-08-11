@@ -2,7 +2,9 @@
 
 Руководство по устранению частых проблем при разработке и использовании Killerpool.
 
-> Стек проекта: Next.js 16.1 (App Router), React 19.2, TypeScript 5, Tailwind CSS 4.2, Supabase, PWA через `@ducanh2912/next-pwa`. Node.js 22 (см. `engines` в `package.json`).
+> Обновлено: 2026-08-11.
+>
+> Стек проекта: Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4, Supabase, PWA через `@ducanh2912/next-pwa`, Sentry. Node.js 22 (см. `engines` в `package.json`).
 
 ## 📋 Содержание
 
@@ -189,7 +191,7 @@ Error: new row violates row-level security policy for table "games"
 SELECT * FROM pg_policies WHERE tablename = 'games';
 ```
 
-2. Финальные политики для `games` задаются миграцией `00009_fix_live_sharing_policies.sql` (она заменяет политики из 00006/00008). После её применения должны существовать:
+2. Набор политик для `games` задаётся миграцией `00009_fix_live_sharing_policies.sql` (она заменяет политики из 00006/00008), а `00014_tighten_game_write_policies.sql` ужесточает условия записи, не добавляя новых имён. Должны существовать:
    - `games_select_all` — публичное чтение (нужно зрителям live-игр)
    - `games_insert_authenticated` / `games_insert_anon`
    - `games_update_authenticated` / `games_update_anon`
@@ -199,14 +201,31 @@ SELECT * FROM pg_policies WHERE tablename = 'games';
 
 3. Анонимные (guest) игры создаются с `created_by IS NULL` — политики `games_insert_anon` / `games_update_anon` разрешают запись только для таких строк. Если вы пытаетесь записать чужой `created_by` без авторизации, получите RLS violation.
 
-4. Проверьте состояние пользователя:
+   После `00014` добавились ещё два законных отказа:
+   - авторизованный пользователь пишет только свои строки (`created_by = auth.uid()` и в `USING`, и в `WITH CHECK`) — присвоить чужую гостевую игру больше нельзя;
+   - завершённая **гостевая** игра замораживается через час после последней записи. Досинхронизация игры, пролежавшей офлайн сутки, вернёт `42501` — это не поломка, а политика.
+
+4. **Отказ в обычном `UPDATE` не выглядит как отказ.** Если строка не проходит `USING`, Postgres не поднимает ошибку — он меняет ноль строк, а PostgREST отвечает `204 No Content`. Это ровно тот случай, когда «всё ок» и «запрещено» неразличимы. Проверять надо так:
+```bash
+curl -X PATCH "$URL/rest/v1/games?id=eq.$GAME_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=representation" \
+  -d '{"status":"active"}'
+# пустой массив [] = политика отказала; строка = запись прошла
+```
+   У upsert поведение другое: строка, не прошедшая `USING` в ветке `DO UPDATE`, роняет запрос с `42501`. Поэтому клиент видит отказ именно на upsert, а не на PATCH.
+
+5. Проверьте состояние пользователя:
 ```typescript
 // В коде
 const { data: { user } } = await supabase.auth.getUser()
 console.log('User:', user)  // null = anon/guest
 ```
 
-5. Временно отключите RLS для тестирования (НЕ на production!):
+6. Проверьте политики под ролями локально, не трогая прод: `./supabase/test/setup-local.sh`, затем `psql -h /tmp/kp-pg-sock -p 55432 -U postgres -f supabase/test/rls-policies.sql`. Прогон переключается на `anon`/`authenticated`, подставляет `auth.uid()` и печатает ALLOWED/DENIED по каждому сценарию.
+
+7. Временно отключите RLS для тестирования (НЕ на production!):
 ```sql
 ALTER TABLE games DISABLE ROW LEVEL SECURITY;
 ```
@@ -222,7 +241,7 @@ Error: column "created_by" does not exist
 
 **Решение:**
 
-1. В `supabase/migrations/` **11 миграций** — их нужно применять строго по порядку:
+1. В `supabase/migrations/` **14 миграций** — их нужно применять строго по порядку:
 ```
 00001_initial_schema.sql
 00002_leaderboard_function.sql
@@ -235,8 +254,13 @@ Error: column "created_by" does not exist
 00009_fix_live_sharing_policies.sql
 00010_add_current_player_index.sql
 00011_fix_achievements_and_defaults.sql
+00012_harden_leaderboard.sql
+00013_leaderboard_qualifying_minimum.sql
+00014_tighten_game_write_policies.sql
 ```
    Ошибки вида «column does not exist» почти всегда означают, что пропущена одна из предыдущих миграций.
+
+   Перед тем как везти миграцию в прод, её стоит прогнать локально: `./supabase/test/setup-local.sh` поднимает временный Postgres, подделывает то, что даёт Supabase (схема `auth`, роли `anon`/`authenticated`, `auth.uid()` через GUC), и накатывает всю цепочку с нуля. Для политик есть отдельный прогон под ролями: `psql ... -f supabase/test/rls-policies.sql`.
 
 2. В крайнем случае удалите все таблицы и примените миграции заново:
 ```sql
@@ -246,10 +270,14 @@ DROP TABLE IF EXISTS games CASCADE;
 DROP TABLE IF EXISTS player_profiles CASCADE;
 DROP TABLE IF EXISTS rulesets CASCADE;
 
--- Затем запустите миграции 00001 → 00011 по порядку
+-- Затем запустите миграции 00001 → 00014 по порядку
 ```
 
-3. Убедитесь что используете актуальные версии миграций из репозитория. В частности, `00011` переписывает функцию `check_achievements`, меняет `max_lives` дефолтного ruleset с 10 на 6 и чинит политики на `user_achievements` — без неё ачивки и лидерборд работают некорректно.
+3. Убедитесь что используете актуальные версии миграций из репозитория. В частности:
+   - `00011` переписывает `check_achievements`, меняет `max_lives` дефолтного ruleset с 10 на 6 и чинит политики на `user_achievements`;
+   - `00012` защищает `get_leaderboard` от падения на клиентских данных (одна игра с нечисловым id раньше делала лидерборд недоступным **для всех**);
+   - `00013` меняет сигнатуру `get_leaderboard`, поэтому начинается с `DROP FUNCTION IF EXISTS get_leaderboard(INTEGER)` — иначе рядом останется старая перегрузка и вызов клиента уйдёт в неё;
+   - `00014` ужесточает политики записи в `games`.
 
 ---
 
@@ -397,17 +425,20 @@ Error: Build failed
 1. Проверьте логи билда в Vercel Dashboard:
    - Deployments → Latest → View Function Logs
 
-2. Убедитесь что environment variables заданы (Settings → Environment Variables). Используются 4 переменные (см. `.env.local.example`):
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (server-only, обходит RLS — не светить на клиенте)
-   - `NEXT_PUBLIC_APP_URL`
+2. Убедитесь что environment variables заданы (Settings → Environment Variables), см. `.env.local.example`:
+   - `NEXT_PUBLIC_SUPABASE_URL` — обязательна
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — обязательна
+   - `NEXT_PUBLIC_APP_URL` — необязательна; без неё `lib/site.ts` возьмёт домен из окружения Vercel
+   - `NEXT_PUBLIC_SENTRY_DSN` — необязательна; без неё Sentry просто молчит
+   - `SENTRY_AUTH_TOKEN` — только для сборки, загружает карты исходников; без неё билд проходит, но стек-трейсы в Sentry остаются минифицированными
 
 3. Попробуйте локальный build:
 ```bash
 npm run build
 ```
    Обратите внимание: перед build автоматически выполняется `prebuild` → `npm run generate-icons` (генерация иконок скриптом `scripts/generate-icons.js`).
+
+   И на всякий случай: в `package.json` это `next build --webpack`, а не просто `next build`. Флаг обязателен — `@ducanh2912/next-pwa` цепляется к webpack-хуку, и под Turbopack сборка **проходит успешно**, но `public/sw.js` не появляется. Приложение молча уезжает в прод без офлайна.
 
 4. Очистите кеш Vercel:
    - Deployments → Latest → ... → Redeploy
@@ -436,6 +467,11 @@ SUPABASE_URL=...
 
 3. Сделайте redeploy после добавления переменных:
    - Deployments → Latest → Redeploy
+
+4. Если `vercel env pull` отдаёт **пустое** значение переменной, которая в дашборде выглядит заполненной — она помечена как **Sensitive**. Такие переменные доступны только сборке и рантайму, прочитать их нельзя ни через CLI, ни в UI, и это не поломка. Старый CLI даже не показывает тип; проверять свежим:
+```bash
+npx vercel@latest env ls    # колонка type: Encrypted / Sensitive
+```
 
 ---
 
@@ -555,6 +591,17 @@ const withPWA = require('@ducanh2912/next-pwa').default({
    Достаточно открыть приложение с сетью — pending-игры досинхронизируются автоматически.
 
 3. Если игра так и не синкается, проверьте в DevTools → Application → Local Storage ключ `killerpool_pending_sync` и ошибки Supabase в Console. Игры, удалённые из истории (`killerpool_game_history`), из pending-очереди просто выбрасываются.
+
+4. Ретраи не бесконечны. Счётчик попыток лежит в отдельном ключе `killerpool_pending_sync_meta`:
+```javascript
+JSON.parse(localStorage.getItem('killerpool_pending_sync_meta') || '{}')
+// { "<game-id>": { attempts: 2, lastAttemptAt: 1754900000000 } }
+```
+   После 5 попыток игра выбывает из очереди; между попытками действует нарастающая пауза. Неустранимые ошибки Postgres (`42501` — нет прав, `22P02` — битые данные и ещё несколько) снимают игру с очереди сразу: повторять их бессмысленно.
+
+5. Ачивки, полученные при позднем синке, приходят не из React-дерева: `PWAInit` — сиблинг `GameProvider`, поэтому `lib/achievements.ts` шлёт событие `killerpool:achievements-unlocked`. Если ачивка «пришла, но не показалась» — смотреть надо на подписчика события, а не на синк.
+
+6. Полная сводка — на странице **`/sync`**: `{ success, skipped, refused, failed, total }`. `skipped` — незавершённые игры (в облако они не едут by design), `refused` — отказ базы, `failed` — сетевые и прочие временные ошибки.
 
 ---
 
@@ -772,6 +819,18 @@ const [data, setData] = useState(() =>
 
 > Состояние игры в проекте живёт целиком на клиенте (`contexts/game-context.tsx` + `localStorage`: ключи `killerpool_current_game`, `killerpool_game_history`), поэтому компоненты, читающие его, — Client Components.
 
+**Особый случай — тема.** Класс `dark` на `<html>` ставит инлайн-скрипт в `<head>` (`app/layout.tsx`) **до** гидратации, читая `localStorage['killerpool-theme']`. Сервер такой класс отрендерить не может, поэтому на `<html>` стоит `suppressHydrationWarning` — и это единственное, что он прикрывает. Отсюда два правила:
+
+- не оборачивайте дерево в провайдер, который до монтирования возвращает `null`. Именно так проект какое-то время отдавал **пустой `<body>` на всех страницах**: сервер честно рендерил контент, клиентская обёртка его стирала, и в HTML оставался только RSC-payload внутри `<script>`. Поисковик получал корректный `<title>` при нулевом тексте;
+- проверять это надо на собранном HTML, а не в браузере — в браузере после гидратации всё выглядит нормально:
+```bash
+npm run build
+# видимый текст серверного рендера конкретной страницы
+node -e "const h=require('fs').readFileSync('.next/server/app/help.html','utf8'); \
+  console.log(h.replace(/<script[\s\S]*?<\/script>/g,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().length)"
+# ноль = SSR сломан
+```
+
 ---
 
 ### ❌ localStorage is not defined
@@ -898,6 +957,20 @@ npm run test:watch
 npm run test:coverage
 ```
 
+Отдельно — база: `./supabase/test/setup-local.sh` поднимает временный Postgres и накатывает все миграции, `supabase/test/rls-policies.sql` проверяет политики под ролями. `./supabase/test/setup-local.sh --stop` убирает за собой.
+
+### 6. Sentry
+
+Ошибки прода уезжают в Sentry (`instrumentation-client.ts` — браузер, `instrumentation.ts` — сервер и edge, `app/global-error.tsx` — падение самого layout).
+
+```bash
+# ничего не приходит?
+```
+- Sentry **намеренно молчит** вне production: инициализация обёрнута в `!!DSN && NODE_ENV === 'production'`, поэтому `npm run dev` и локальный `npm run start` без `NODE_ENV=production` не шлют ничего. Это не поломка — так локальная отладка не засоряет боевой проект.
+- Часть офлайн-шума отфильтрована через `ignoreErrors` (обрывы сети, отменённые запросы). Если ждёте именно такую ошибку и не видите её — проверьте этот список.
+- Трассировка выключена (`tracesSampleRate: 0`): в Performance пусто by design, отправляются только ошибки.
+- Стек-трейсы минифицированы → в сборке не было `SENTRY_AUTH_TOKEN`. Проверять загрузку карт надо по artifact bundles, а не по релизам: `/projects/{org}/{project}/files/artifact-bundles/`. Легаси-эндпоинт `/releases/{version}/files/` для debug-id формата всегда показывает 0 и вводит в заблуждение.
+
 ---
 
 ## Получение помощи
@@ -908,10 +981,12 @@ npm run test:coverage
    - [README.md](./README.md)
    - [CONTRIBUTING.md](./CONTRIBUTING.md)
    - [DEPLOYMENT.md](./DEPLOYMENT.md)
+   - [ARCHITECTURE.md](./ARCHITECTURE.md) — как устроены потоки данных и наблюдаемость
+   - [SECURITY.md](./SECURITY.md) — модель угроз и следствия RLS-политик
    - [LEADERBOARD_TROUBLESHOOTING.md](./LEADERBOARD_TROUBLESHOOTING.md) — отдельный гайд по проблемам лидерборда
 
 2. **Поищите в Issues:**
-   - [GitHub Issues](https://github.com/yourusername/killerpool/issues)
+   - [GitHub Issues](https://github.com/AlexIDUJFNJ/killerpool/issues)
 
 3. **Создайте новый Issue:**
    - Опишите проблему
@@ -925,4 +1000,4 @@ npm run test:coverage
 
 ---
 
-**Документ обновлен:** 2026-07-07
+**Документ обновлен:** 2026-08-11
