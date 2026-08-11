@@ -7,7 +7,6 @@ import { Game, GameHistoryEntry } from '@/lib/types'
 import {
   subscribeToGame,
   unsubscribeFromGame,
-  isRealtimeAvailable,
   syncGameForRealtime,
 } from '@/lib/realtime'
 import { RealtimeChannel } from '@supabase/supabase-js'
@@ -29,7 +28,6 @@ export function useRealtimeGame(
   } = options
 
   const [isConnected, setIsConnected] = useState(false)
-  const [isAvailable, setIsAvailable] = useState(false)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
   // Use refs for callbacks to avoid re-subscribing on every render
@@ -43,12 +41,7 @@ export function useRealtimeGame(
   }, [onGameUpdate, onNewAction])
 
   useEffect(() => {
-    // Check if realtime is available
-    isRealtimeAvailable().then(setIsAvailable)
-  }, [])
-
-  useEffect(() => {
-    if (!gameId || !enabled || !isAvailable) {
+    if (!gameId || !enabled) {
       return
     }
 
@@ -68,12 +61,14 @@ export function useRealtimeGame(
       (action) => {
         console.log('Received new action:', action)
         onNewActionRef.current?.(action)
-      }
+      },
+      // Driven by the channel's own status, so "live" means subscribed rather
+      // than merely "a channel object exists"
+      setIsConnected
     )
 
     if (channel) {
       channelRef.current = channel
-      setIsConnected(true)
     }
 
     // Cleanup on unmount or when gameId/enabled changes
@@ -85,12 +80,10 @@ export function useRealtimeGame(
         setIsConnected(false)
       }
     }
-  }, [gameId, enabled, isAvailable]) // Removed callback dependencies
+  }, [gameId, enabled]) // Removed callback dependencies
 
   return {
     isConnected,
-    isAvailable,
-    channel: channelRef.current,
   }
 }
 
@@ -98,33 +91,31 @@ export function useRealtimeGame(
  * Hook to sync a game for realtime when it's created
  */
 export function useSyncGameForRealtime(game: Game | null) {
-  const [isSynced, setIsSynced] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  // Keyed by game id rather than a plain boolean: a second shared game in the
+  // same session used to be left unsynced, because the flag never reset
+  const [syncedGameId, setSyncedGameId] = useState<string | null>(null)
+  const inFlightRef = useRef(false)
 
-  const syncGame = async () => {
-    if (!game || isSynced || isLoading) return
-
-    setIsLoading(true)
-
-    try {
-      const success = await syncGameForRealtime(game)
-      setIsSynced(success)
-    } catch (error) {
-      console.error('Failed to sync game:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const isSynced = syncedGameId !== null && syncedGameId === (game?.id ?? null)
 
   useEffect(() => {
-    if (game && game.status === 'active' && !isSynced) {
-      syncGame()
-    }
-  }, [game?.id, game?.status])
+    if (!game || game.status !== 'active' || isSynced || inFlightRef.current) return
+
+    inFlightRef.current = true
+
+    syncGameForRealtime(game)
+      .then((success) => {
+        if (success) setSyncedGameId(game.id)
+      })
+      .catch((error) => {
+        console.error('Failed to sync game:', error)
+      })
+      .finally(() => {
+        inFlightRef.current = false
+      })
+  }, [game, isSynced])
 
   return {
     isSynced,
-    isLoading,
-    syncGame,
   }
 }

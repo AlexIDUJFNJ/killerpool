@@ -10,57 +10,77 @@ import { createGame } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { getGuestId, getPlayerNamesSuggestions, loadRematchPlayers } from '@/lib/storage'
+import { cn, shuffle } from '@/lib/utils'
 import { motion } from 'motion/react'
 import { Plus, Trash2, ArrowLeft, Play, Shuffle } from 'lucide-react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
 
+/**
+ * A row in the form. `rowId` is a stable identity so that Shuffle, removal and
+ * the empty-name filter can reorder rows without anything that points at a row
+ * (the "it's me" marker, the avatar picker, autocomplete) following the wrong
+ * one. Ids come from a counter rather than crypto.randomUUID() so server and
+ * client render the same markup.
+ */
+interface PlayerDraft {
+  rowId: string
+  name: string
+  avatar: string
+}
+
 export default function NewGamePage() {
   const router = useRouter()
   const { startGame } = useGame()
 
-  const [players, setPlayers] = React.useState([
-    { name: '', avatar: DEFAULT_AVATARS[0] },
-    { name: '', avatar: DEFAULT_AVATARS[1] },
+  const [players, setPlayers] = React.useState<PlayerDraft[]>([
+    { rowId: 'p0', name: '', avatar: DEFAULT_AVATARS[0] },
+    { rowId: 'p1', name: '', avatar: DEFAULT_AVATARS[1] },
   ])
-  const [selectedPlayerIndex, setSelectedPlayerIndex] = React.useState<number | null>(null)
+  // Row belonging to whoever is creating the game. Only this player gets the
+  // userId, and achievements, the leaderboard and /stats all key off it — so
+  // it is tracked by row id, never by position.
+  const [meRowId, setMeRowId] = React.useState<string | null>('p0')
+  const [selectedRowId, setSelectedRowId] = React.useState<string | null>(null)
   const [user, setUser] = React.useState<User | null>(null)
   const [playerSuggestions, setPlayerSuggestions] = React.useState<string[]>([])
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = React.useState<number | null>(null)
+  const [activeSuggestionRowId, setActiveSuggestionRowId] = React.useState<string | null>(null)
   const [filteredSuggestions, setFilteredSuggestions] = React.useState<string[]>([])
+  const nextRowId = React.useRef(2)
 
   React.useEffect(() => {
     const supabase = createClient()
 
-    // Get initial user
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      setUser(user)
-    })
-
     // Check for rematch players first (takes priority over pre-filling)
     const rematchPlayers = loadRematchPlayers()
-    if (rematchPlayers && rematchPlayers.length >= 2) {
-      setPlayers(rematchPlayers)
-    } else {
-      // Pre-fill first player with user's name if authenticated
-      supabase.auth.getUser().then(async ({ data: { user } }) => {
-        if (user) {
-          const { data: profile } = await supabase
-            .from('player_profiles')
-            .select('display_name')
-            .eq('user_id', user.id)
-            .single()
-
-          if (profile?.display_name) {
-            // Pre-fill first player with user's name
-            setPlayers(prev => [
-              { name: profile.display_name, avatar: prev[0].avatar },
-              ...prev.slice(1)
-            ])
-          }
-        }
-      })
+    const usedRematch = !!rematchPlayers && rematchPlayers.length >= 2
+    if (usedRematch) {
+      const drafts = rematchPlayers.map(p => ({
+        rowId: `p${nextRowId.current++}`,
+        name: p.name,
+        avatar: p.avatar,
+      }))
+      setPlayers(drafts)
+      const ownerIndex = rematchPlayers.findIndex(p => p.isOwner)
+      setMeRowId(ownerIndex >= 0 ? drafts[ownerIndex].rowId : null)
     }
+
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      setUser(user)
+      if (!user || usedRematch) return
+
+      const { data: profile } = await supabase
+        .from('player_profiles')
+        .select('display_name')
+        .eq('user_id', user.id)
+        .single()
+
+      // Pre-fill the first player with the user's name, keeping its rowId —
+      // the "it's me" marker points at that id
+      if (profile?.display_name) {
+        setPlayers(prev => [{ ...prev[0], name: profile.display_name }, ...prev.slice(1)])
+      }
+    })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -76,19 +96,20 @@ export default function NewGamePage() {
 
   const handleAddPlayer = () => {
     const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
-    setPlayers([...players, { name: '', avatar: nextAvatar }])
+    setPlayers([...players, { rowId: `p${nextRowId.current++}`, name: '', avatar: nextAvatar }])
   }
 
-  const handleRemovePlayer = (index: number) => {
+  const handleRemovePlayer = (rowId: string) => {
     if (players.length > 2) {
-      setPlayers(players.filter((_, i) => i !== index))
+      setPlayers(players.filter(p => p.rowId !== rowId))
+      if (meRowId === rowId) {
+        setMeRowId(null)
+      }
     }
   }
 
-  const handleNameChange = (index: number, name: string) => {
-    const updated = [...players]
-    updated[index].name = name
-    setPlayers(updated)
+  const handleNameChange = (rowId: string, name: string) => {
+    setPlayers(prev => prev.map(p => (p.rowId === rowId ? { ...p, name } : p)))
 
     // Update filtered suggestions for autocomplete
     if (name.trim()) {
@@ -97,37 +118,28 @@ export default function NewGamePage() {
         suggestion.toLowerCase() !== name.toLowerCase()
       )
       setFilteredSuggestions(filtered)
-      setActiveSuggestionIndex(index)
+      setActiveSuggestionRowId(rowId)
     } else {
       setFilteredSuggestions([])
-      setActiveSuggestionIndex(null)
+      setActiveSuggestionRowId(null)
     }
   }
 
-  const handleSelectSuggestion = (index: number, suggestion: string) => {
-    const updated = [...players]
-    updated[index].name = suggestion
-    setPlayers(updated)
+  const handleSelectSuggestion = (rowId: string, suggestion: string) => {
+    setPlayers(prev => prev.map(p => (p.rowId === rowId ? { ...p, name: suggestion } : p)))
     setFilteredSuggestions([])
-    setActiveSuggestionIndex(null)
+    setActiveSuggestionRowId(null)
   }
 
   const handleAvatarSelect = (avatar: string) => {
-    if (selectedPlayerIndex !== null) {
-      const updated = [...players]
-      updated[selectedPlayerIndex].avatar = avatar
-      setPlayers(updated)
-      setSelectedPlayerIndex(null)
+    if (selectedRowId !== null) {
+      setPlayers(prev => prev.map(p => (p.rowId === selectedRowId ? { ...p, avatar } : p)))
+      setSelectedRowId(null)
     }
   }
 
   const handleShuffle = () => {
-    const shuffled = [...players]
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-    }
-    setPlayers(shuffled)
+    setPlayers(shuffle(players))
   }
 
   const handleStartGame = () => {
@@ -138,9 +150,20 @@ export default function NewGamePage() {
       return
     }
 
+    // Never guess who the creator is. A wrong guess hands their achievements
+    // and their leaderboard entry to another player, and that is not reversible
+    if (meRowId !== null && !validPlayers.some(p => p.rowId === meRowId)) {
+      alert('Enter your own name, or mark which player is you')
+      return
+    }
+
     // Use userId if authenticated, otherwise use stable guest_id
     const userId = user?.id || getGuestId()
-    const game = createGame(validPlayers, DEFAULT_RULESET, userId)
+    const game = createGame(
+      validPlayers.map(p => ({ name: p.name, avatar: p.avatar, isOwner: p.rowId === meRowId })),
+      DEFAULT_RULESET,
+      meRowId === null ? null : userId
+    )
     startGame(game)
 
     // Navigate to game
@@ -166,7 +189,7 @@ export default function NewGamePage() {
         <div className="space-y-4 mb-6">
           {players.map((player, index) => (
             <motion.div
-              key={index}
+              key={player.rowId}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
@@ -175,7 +198,7 @@ export default function NewGamePage() {
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center gap-3 sm:gap-4">
                     <button
-                      onClick={() => setSelectedPlayerIndex(index)}
+                      onClick={() => setSelectedRowId(player.rowId)}
                       className="shrink-0"
                     >
                       <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-primary/20 cursor-pointer hover:border-primary transition-colors">
@@ -190,28 +213,28 @@ export default function NewGamePage() {
                         type="text"
                         placeholder={`Player ${index + 1} name`}
                         value={player.name}
-                        onChange={(e) => handleNameChange(index, e.target.value)}
+                        onChange={(e) => handleNameChange(player.rowId, e.target.value)}
                         onFocus={() => {
                           if (player.name.trim() && filteredSuggestions.length > 0) {
-                            setActiveSuggestionIndex(index)
+                            setActiveSuggestionRowId(player.rowId)
                           }
                         }}
                         onBlur={() => {
                           // Delay to allow click on suggestion
-                          setTimeout(() => setActiveSuggestionIndex(null), 200)
+                          setTimeout(() => setActiveSuggestionRowId(null), 200)
                         }}
                         className="w-full bg-background border border-input rounded-md px-3 py-3 text-base sm:text-lg sm:px-4 focus:outline-hidden focus:ring-2 focus:ring-ring"
                         maxLength={20}
                       />
 
                       {/* Autocomplete Suggestions */}
-                      {activeSuggestionIndex === index && filteredSuggestions.length > 0 && (
+                      {activeSuggestionRowId === player.rowId && filteredSuggestions.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
                           {filteredSuggestions.slice(0, 5).map((suggestion, i) => (
                             <button
                               key={i}
                               type="button"
-                              onClick={() => handleSelectSuggestion(index, suggestion)}
+                              onClick={() => handleSelectSuggestion(player.rowId, suggestion)}
                               className="w-full px-4 py-2 text-left hover:bg-accent hover:text-accent-foreground transition-colors text-sm"
                             >
                               {suggestion}
@@ -221,11 +244,31 @@ export default function NewGamePage() {
                       )}
                     </div>
 
+                    {/* Which row is the person creating the game. Only this
+                        player carries the userId that achievements, the
+                        leaderboard and /stats are keyed on. */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMeRowId(current => (current === player.rowId ? null : player.rowId))
+                      }
+                      aria-pressed={meRowId === player.rowId}
+                      title={meRowId === player.rowId ? 'This is you' : 'Mark this player as you'}
+                      className={cn(
+                        'shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                        meRowId === player.rowId
+                          ? 'border-primary bg-primary/15 text-primary'
+                          : 'border-border text-muted-foreground hover:border-primary/50'
+                      )}
+                    >
+                      {meRowId === player.rowId ? 'You' : 'Me?'}
+                    </button>
+
                     {players.length > 2 && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleRemovePlayer(index)}
+                        onClick={() => handleRemovePlayer(player.rowId)}
                       >
                         <Trash2 className="h-5 w-5 text-destructive" />
                       </Button>
@@ -246,7 +289,7 @@ export default function NewGamePage() {
           Add Player ({players.length})
         </Button>
 
-        {selectedPlayerIndex !== null && (
+        {selectedRowId !== null && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -254,7 +297,10 @@ export default function NewGamePage() {
           >
             <Card className="border-primary/50">
               <CardHeader>
-                <CardTitle>Select Avatar for Player {selectedPlayerIndex + 1}</CardTitle>
+                <CardTitle>
+                  Select Avatar for Player{' '}
+                  {players.findIndex(p => p.rowId === selectedRowId) + 1}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 sm:gap-2">
@@ -272,7 +318,7 @@ export default function NewGamePage() {
                   variant="ghost"
                   size="sm"
                   className="w-full mt-4"
-                  onClick={() => setSelectedPlayerIndex(null)}
+                  onClick={() => setSelectedRowId(null)}
                 >
                   Cancel
                 </Button>

@@ -15,6 +15,9 @@ import {
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
+  getDeletedGameIds,
+  markGameDeleted,
+  clearGameDeleted,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
@@ -227,8 +230,9 @@ describe('Storage', () => {
 
       saveToHistory(game);
 
+      // The write goes through saveGameHistory, which owns the history key
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to save game to history:',
+        'Failed to save game history:',
         expect.any(Error)
       );
 
@@ -352,12 +356,71 @@ describe('Storage', () => {
 
       deleteGameFromHistory('game-1');
 
+      // Both writes it makes (history, tombstone) swallow and log the failure
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to delete game from history:',
+        'Failed to save game history:',
         expect.any(Error)
       );
 
       global.localStorage.setItem = originalSetItem;
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('deleted game tombstones', () => {
+    const completedGame = (id: string): Game => {
+      const game = createGame([
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ]);
+      return { ...game, id, status: 'completed' };
+    };
+
+    it('should record a tombstone when a game is deleted', () => {
+      saveToHistory(completedGame('game-1'));
+
+      deleteGameFromHistory('game-1');
+
+      expect(getDeletedGameIds().has('game-1')).toBe(true);
+      expect(loadGameHistory()).toHaveLength(0);
+    });
+
+    it('should drop the game from the pending sync queue when deleted', () => {
+      saveToHistory(completedGame('game-1'));
+      markPendingSync('game-1');
+
+      deleteGameFromHistory('game-1');
+
+      expect(getPendingSyncIds()).not.toContain('game-1');
+    });
+
+    it('should clear the tombstone when the game is saved again', () => {
+      markGameDeleted('game-1');
+
+      saveToHistory(completedGame('game-1'));
+
+      expect(getDeletedGameIds().has('game-1')).toBe(false);
+    });
+
+    it('should let a tombstone be cleared explicitly', () => {
+      markGameDeleted('game-1');
+      clearGameDeleted('game-1');
+
+      expect(getDeletedGameIds().has('game-1')).toBe(false);
+    });
+
+    it('should read the legacy plain-string format', () => {
+      localStorage.setItem('killerpool_deleted_games', JSON.stringify(['game-1']));
+
+      expect(getDeletedGameIds().has('game-1')).toBe(true);
+    });
+
+    it('should survive corrupted data', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      localStorage.setItem('killerpool_deleted_games', 'not json');
+
+      expect(getDeletedGameIds().size).toBe(0);
+
       consoleErrorSpy.mockRestore();
     });
   });

@@ -210,10 +210,11 @@ export default function GamePage() {
     // Increment key to trigger card animation
     setCurrentPlayerKey((prev) => prev + 1)
 
-    // Perform action after brief delay for animation
-    setTimeout(() => {
-      performAction(gameAction)
-    }, 300)
+    // Applied straight away. The card animation is driven by currentPlayerKey
+    // and AnimatePresence, so the old 300ms timer bought nothing visually —
+    // it only opened a window where a second swipe ran against the state
+    // captured before the first one landed, silently dropping an action.
+    performAction(gameAction)
   }
 
   const handleUndo = () => {
@@ -234,7 +235,10 @@ export default function GamePage() {
     if (game) {
       const players = game.players.map(p => ({
         name: p.name,
-        avatar: p.avatar
+        avatar: p.avatar,
+        // Carry over who the creator is, so the rematch does not have to
+        // guess it again from row order
+        isOwner: !!p.userId,
       }))
       saveRematchPlayers(players)
     }
@@ -251,6 +255,9 @@ export default function GamePage() {
   // Winner Screen
   if (showWinner && game.status === 'completed') {
     const winner = game.players.find((p) => p.id === game.winnerId)
+    // Only the creator carries a userId, so this is true exactly when the
+    // signed-in user is the one who actually won
+    const didIWin = !!currentUserId && winner?.userId === currentUserId
 
     return (
       <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
@@ -309,7 +316,9 @@ export default function GamePage() {
             </motion.div>
           )}
 
-          {isAuthenticated === true && (
+          {/* currentUserId arrives asynchronously; waiting for it avoids
+              flashing the wrong message at the actual winner */}
+          {isAuthenticated === true && currentUserId !== null && didIWin && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -321,6 +330,26 @@ export default function GamePage() {
                   <div className="flex items-center gap-3">
                     <Trophy className="h-5 w-5 text-emerald-500" />
                     <p className="text-sm font-medium">Your victory has been saved to the leaderboard!</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {isAuthenticated === true && currentUserId !== null && !didIWin && !isSpectatorMode && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="mb-6"
+            >
+              <Card className="border-border/60 bg-muted/30">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <Trophy className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {winner?.name} takes this one. The result is saved to your history.
+                    </p>
                   </div>
                 </CardContent>
               </Card>

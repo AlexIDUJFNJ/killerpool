@@ -9,6 +9,8 @@ import { Game } from './types'
 import { mapDbGameToGame } from './game-mapper'
 import {
   loadGameHistory,
+  saveGameHistory,
+  getDeletedGameIds,
   getGameFromHistory,
   getPendingSyncIds,
   markPendingSync,
@@ -167,21 +169,26 @@ export async function mergeGamesWithSupabase(): Promise<void> {
       gameMap.set(game.id, game)
     })
 
-    // Merge with Supabase games (Supabase takes priority if newer)
-    supabaseGames.forEach(game => {
-      const existingGame = gameMap.get(game.id)
-      if (!existingGame || new Date(game.updatedAt) > new Date(existingGame.updatedAt)) {
-        gameMap.set(game.id, game)
-      }
-    })
+    // Merge with Supabase games (Supabase takes priority if newer).
+    // Games deleted locally stay deleted: their row in Supabase is always
+    // "newer" (the updated_at trigger), so without this they would come back
+    // on every merge.
+    const deleted = getDeletedGameIds()
+    supabaseGames
+      .filter(game => !deleted.has(game.id))
+      .forEach(game => {
+        const existingGame = gameMap.get(game.id)
+        if (!existingGame || new Date(game.updatedAt) > new Date(existingGame.updatedAt)) {
+          gameMap.set(game.id, game)
+        }
+      })
 
     // Convert map back to array and sort by date (newest first)
     const mergedGames = Array.from(gameMap.values())
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 50) // Keep only last 50 games
 
     // Save merged games to localStorage
-    localStorage.setItem('killerpool_game_history', JSON.stringify(mergedGames))
+    saveGameHistory(mergedGames)
 
     console.log('Games successfully merged with Supabase')
   } catch (error) {

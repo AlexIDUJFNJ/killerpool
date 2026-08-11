@@ -67,6 +67,19 @@ export interface Game {
 }
 
 /**
+ * Player entry from the new-game form.
+ * `isOwner` marks the row belonging to the person creating the game. It
+ * travels with the object, so shuffling rows or dropping unnamed ones cannot
+ * move it onto somebody else — and only that player receives the userId that
+ * achievements, the leaderboard and /stats are keyed on.
+ */
+export interface NewGamePlayerInput {
+  name: string
+  avatar: string
+  isOwner?: boolean
+}
+
+/**
  * New game form data
  */
 export interface NewGameFormData {

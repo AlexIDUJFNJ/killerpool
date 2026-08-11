@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { shuffle } from '@/lib/utils'
 
 const PHRASES = [
   'CHYORNY!',
@@ -40,7 +41,7 @@ interface FlyingText {
 }
 
 function generateTexts(): FlyingText[] {
-  const shuffled = [...PHRASES].sort(() => Math.random() - 0.5)
+  const shuffled = shuffle(PHRASES)
   return shuffled.map((text, i) => ({
     id: i,
     text,
@@ -64,6 +65,7 @@ interface Spark {
   angle: number
   speed: number
   delay: number
+  duration: number
 }
 
 function generateSparks(count: number): Spark[] {
@@ -76,6 +78,9 @@ function generateSparks(count: number): Spark[] {
     angle: Math.random() * 360,
     speed: 80 + Math.random() * 200,
     delay: Math.random() * 0.2,
+    // Rolled here rather than in the markup: rendering has to stay pure, and
+    // a value rolled during render changes on every re-render mid-animation
+    duration: 0.8 + Math.random() * 0.4,
   }))
 }
 
@@ -140,7 +145,7 @@ export function BlackBallCelebration({
                   opacity: [1, 1, 0],
                 }}
                 transition={{
-                  duration: 0.8 + Math.random() * 0.4,
+                  duration: s.duration,
                   delay: s.delay,
                   ease: 'easeOut',
                 }}

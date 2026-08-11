@@ -17,7 +17,8 @@ import { RealtimeChannel } from '@supabase/supabase-js'
 export function subscribeToGame(
   gameId: string,
   onUpdate: (game: Partial<Game>) => void,
-  onAction: (action: GameHistoryEntry) => void
+  onAction: (action: GameHistoryEntry) => void,
+  onStatus?: (connected: boolean) => void
 ): RealtimeChannel | null {
   try {
     console.log('[subscribeToGame] Creating subscription for game:', gameId)
@@ -67,6 +68,9 @@ export function subscribeToGame(
         if (err) {
           console.error('[subscribeToGame] Subscription error:', err)
         }
+        // Report the real state: having a channel object is not the same as
+        // being subscribed, and the "live" indicator used to claim otherwise
+        onStatus?.(status === 'SUBSCRIBED')
         if (status === 'SUBSCRIBED') {
           console.log('[subscribeToGame] Successfully subscribed to game:', gameId)
         } else if (status === 'CHANNEL_ERROR') {
@@ -134,14 +138,6 @@ export async function updateGameStatus(
     console.error('Failed to update game status:', error)
     return false
   }
-}
-
-/**
- * Check if realtime is available
- * Realtime is always available - authentication is not required for spectators
- */
-export async function isRealtimeAvailable(): Promise<boolean> {
-  return true
 }
 
 /**

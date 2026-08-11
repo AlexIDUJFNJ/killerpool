@@ -4,7 +4,7 @@
  * Handles persistence of games and app state in browser localStorage.
  */
 
-import { Game } from './types'
+import { Game, NewGamePlayerInput } from './types'
 
 const STORAGE_KEYS = {
   CURRENT_GAME: 'killerpool_current_game',
@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
   GUEST_ID: 'killerpool_guest_id',
   REMATCH_PLAYERS: 'killerpool_rematch_players',
   PENDING_SYNC: 'killerpool_pending_sync',
+  DELETED_GAMES: 'killerpool_deleted_games',
 } as const
 
 /**
@@ -50,6 +51,24 @@ export function clearCurrentGame(): void {
   }
 }
 
+/** Games kept in local history */
+export const MAX_HISTORY_GAMES = 50
+
+/**
+ * Replace the stored game history. The only writer of the history key, so the
+ * cap lives in one place.
+ */
+export function saveGameHistory(games: Game[]): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.GAME_HISTORY,
+      JSON.stringify(games.slice(0, MAX_HISTORY_GAMES))
+    )
+  } catch (error) {
+    console.error('Failed to save game history:', error)
+  }
+}
+
 /**
  * Save completed game to history
  */
@@ -59,13 +78,15 @@ export function saveToHistory(game: Game): void {
   }
 
   try {
-    const history = loadGameHistory()
+    // Explicitly adding a game back outranks an older deletion of it
+    clearGameDeleted(game.id)
+
+    // The same game can finish twice (undo a win, then play on), so replace the
+    // earlier entry instead of stacking duplicates
+    const history = loadGameHistory().filter(g => g.id !== game.id)
     history.unshift(game) // Add to beginning
-    
-    // Keep only last 50 games
-    const trimmedHistory = history.slice(0, 50)
-    
-    localStorage.setItem(STORAGE_KEYS.GAME_HISTORY, JSON.stringify(trimmedHistory))
+
+    saveGameHistory(history)
   } catch (error) {
     console.error('Failed to save game to history:', error)
   }
@@ -109,8 +130,11 @@ export function getGameFromHistory(gameId: string): Game | null {
 export function deleteGameFromHistory(gameId: string): void {
   try {
     const history = loadGameHistory()
-    const filtered = history.filter(g => g.id !== gameId)
-    localStorage.setItem(STORAGE_KEYS.GAME_HISTORY, JSON.stringify(filtered))
+    saveGameHistory(history.filter(g => g.id !== gameId))
+    // Without a tombstone the next merge pulls the game straight back from
+    // Supabase, and it wins the comparison because its updated_at is newer
+    markGameDeleted(gameId)
+    unmarkPendingSync(gameId)
   } catch (error) {
     console.error('Failed to delete game from history:', error)
   }
@@ -218,10 +242,79 @@ export function unmarkPendingSync(gameId: string): void {
   }
 }
 
+const TOMBSTONE_TTL_MS = 365 * 24 * 60 * 60 * 1000
+const MAX_TOMBSTONES = 200
+
+interface Tombstone {
+  id: string
+  deletedAt: number
+}
+
+function readTombstones(): Tombstone[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.DELETED_GAMES)
+    const parsed = data ? JSON.parse(data) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(entry =>
+        typeof entry === 'string' ? { id: entry, deletedAt: Date.now() } : entry
+      )
+      .filter((entry): entry is Tombstone => typeof entry?.id === 'string')
+  } catch (error) {
+    console.error('Failed to load deleted game ids:', error)
+    return []
+  }
+}
+
+function writeTombstones(list: Tombstone[]): void {
+  try {
+    const now = Date.now()
+    const pruned = list
+      .filter(t => now - t.deletedAt < TOMBSTONE_TTL_MS)
+      .sort((a, b) => b.deletedAt - a.deletedAt)
+      .slice(0, MAX_TOMBSTONES)
+    localStorage.setItem(STORAGE_KEYS.DELETED_GAMES, JSON.stringify(pruned))
+  } catch (error) {
+    console.error('Failed to save deleted game ids:', error)
+  }
+}
+
+/**
+ * Ids of games the user deleted locally, so a later merge does not restore them
+ */
+export function getDeletedGameIds(): Set<string> {
+  const now = Date.now()
+  return new Set(
+    readTombstones()
+      .filter(t => now - t.deletedAt < TOMBSTONE_TTL_MS)
+      .map(t => t.id)
+  )
+}
+
+/**
+ * Remember that a game was deleted locally
+ */
+export function markGameDeleted(gameId: string): void {
+  const list = readTombstones().filter(t => t.id !== gameId)
+  list.push({ id: gameId, deletedAt: Date.now() })
+  writeTombstones(list)
+}
+
+/**
+ * Forget a deletion — the game was explicitly added back
+ */
+export function clearGameDeleted(gameId: string): void {
+  const list = readTombstones()
+  const filtered = list.filter(t => t.id !== gameId)
+  if (filtered.length !== list.length) {
+    writeTombstones(filtered)
+  }
+}
+
 /**
  * Save players for rematch (to reuse in next game)
  */
-export function saveRematchPlayers(players: Array<{ name: string; avatar: string }>): void {
+export function saveRematchPlayers(players: NewGamePlayerInput[]): void {
   try {
     sessionStorage.setItem(STORAGE_KEYS.REMATCH_PLAYERS, JSON.stringify(players))
   } catch (error) {
@@ -232,7 +325,7 @@ export function saveRematchPlayers(players: Array<{ name: string; avatar: string
 /**
  * Load players for rematch and clear the storage
  */
-export function loadRematchPlayers(): Array<{ name: string; avatar: string }> | null {
+export function loadRematchPlayers(): NewGamePlayerInput[] | null {
   try {
     const data = sessionStorage.getItem(STORAGE_KEYS.REMATCH_PLAYERS)
     if (data) {

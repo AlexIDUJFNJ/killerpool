@@ -4,7 +4,15 @@
  * Core game functions for managing Killer Pool games.
  */
 
-import { Game, Player, GameAction, GameHistoryEntry, Ruleset, DEFAULT_RULESET } from './types'
+import {
+  Game,
+  Player,
+  GameAction,
+  GameHistoryEntry,
+  NewGamePlayerInput,
+  Ruleset,
+  DEFAULT_RULESET,
+} from './types'
 
 /**
  * Create a new player
@@ -29,14 +37,18 @@ export function createPlayer(
  * Create a new game
  */
 export function createGame(
-  players: Array<{ name: string; avatar: string }>,
+  players: NewGamePlayerInput[],
   ruleset: Ruleset = DEFAULT_RULESET,
   userId?: string | null
 ): Game {
-  // Only assign userId to the first player (the authenticated user)
-  // Other players should have null userId so they're tracked by their unique player_id
+  // Only the marked player gets the userId; everyone else is tracked by their
+  // per-game player id. Position means nothing here — the form shuffles rows
+  // and drops unnamed ones. Falling back to index 0 keeps callers that pass no
+  // marker working.
+  const markedIndex = players.findIndex(p => p.isOwner === true)
+  const ownerIndex = markedIndex >= 0 ? markedIndex : 0
   const gamePlayers = players.map((p, index) =>
-    createPlayer(p.name, p.avatar, ruleset.params.starting_lives, index === 0 ? userId : null)
+    createPlayer(p.name, p.avatar, ruleset.params.starting_lives, index === ownerIndex ? userId : null)
   )
 
   return {
@@ -54,11 +66,19 @@ export function createGame(
 }
 
 /**
- * Apply a game action to the current player
+ * Apply a game action to the current player.
+ * Throws if the game is finished or the current player is already out.
  */
 export function applyAction(game: Game, action: GameAction): Game {
+  // A finished game is immutable. Without this, a 'miss' on the last survivor
+  // empties activePlayers, clears winnerId and flips the status back to
+  // 'active' with nobody left to play — a state the game never leaves.
+  if (game.status !== 'active') {
+    throw new Error('Game is not active')
+  }
+
   const currentPlayer = game.players[game.currentPlayerIndex]
-  
+
   if (!currentPlayer || currentPlayer.eliminated) {
     throw new Error('Invalid player state')
   }

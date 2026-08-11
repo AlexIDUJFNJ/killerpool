@@ -107,6 +107,48 @@ describe('Game Logic', () => {
       expect(game.players[0].lives).toBe(5);
       expect(game.ruleset.params.starting_lives).toBe(5);
     });
+
+    it('should give the userId to the player marked as owner, not the first one', () => {
+      const players = [
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+        { name: 'Player 3', avatar: '⚡', isOwner: true },
+      ];
+
+      const game = createGame(players, DEFAULT_RULESET, 'creator-id');
+
+      expect(game.players[2].userId).toBe('creator-id');
+      expect(game.players[0].userId).toBeNull();
+      expect(game.players[1].userId).toBeNull();
+      expect(game.createdBy).toBe('creator-id');
+    });
+
+    it('should fall back to the first player when no owner is marked', () => {
+      const players = [
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ];
+
+      const game = createGame(players, DEFAULT_RULESET, 'creator-id');
+
+      expect(game.players[0].userId).toBe('creator-id');
+      expect(game.players[1].userId).toBeNull();
+    });
+
+    it('should keep the owner attached after the players are shuffled', () => {
+      // Reproduces the bug where Shuffle handed the creator's identity — and
+      // with it their achievements and leaderboard entry — to a random player
+      const players = [
+        { name: 'Me', avatar: '🎱', isOwner: true },
+        { name: 'Other', avatar: '🎯' },
+      ];
+      const shuffled = [players[1], players[0]];
+
+      const game = createGame(shuffled, DEFAULT_RULESET, 'creator-id');
+
+      const owner = game.players.find(p => p.userId === 'creator-id');
+      expect(owner?.name).toBe('Me');
+    });
   });
 
   describe('applyAction', () => {
@@ -232,6 +274,32 @@ describe('Game Logic', () => {
 
       // Try to apply action to eliminated player
       expect(() => applyAction(updatedGame, 'miss')).toThrow('Invalid player state');
+    });
+
+    it('should refuse to act on a finished game', () => {
+      // Without this, a 'miss' on the last survivor empties the active list,
+      // clears the winner and flips the game back to 'active' with nobody left
+      let updatedGame = game;
+      updatedGame = { ...updatedGame, currentPlayerIndex: 1 };
+      for (let i = 0; i < 3; i++) {
+        updatedGame = applyAction(updatedGame, 'miss');
+        updatedGame = { ...updatedGame, currentPlayerIndex: 1 };
+      }
+      updatedGame = { ...updatedGame, currentPlayerIndex: 2 };
+      for (let i = 0; i < 3; i++) {
+        updatedGame = applyAction(updatedGame, 'miss');
+        updatedGame = { ...updatedGame, currentPlayerIndex: 2 };
+      }
+
+      expect(updatedGame.status).toBe('completed');
+      expect(() => applyAction(updatedGame, 'miss')).toThrow('Game is not active');
+      expect(updatedGame.winnerId).toBe(game.players[0].id);
+    });
+
+    it('should refuse to act on an abandoned game', () => {
+      const abandoned: Game = { ...game, status: 'abandoned' };
+
+      expect(() => applyAction(abandoned, 'miss')).toThrow('Game is not active');
     });
   });
 
@@ -449,7 +517,12 @@ describe('Game Logic', () => {
     });
 
     it('should handle multiple undos', () => {
-      const players = [{ name: 'Player 1', avatar: '🎱' }];
+      // Two players: a one-player game is already 'completed' after the first
+      // action (single survivor = winner), and finished games reject actions
+      const players = [
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ];
       let game = createGame(players);
 
       game = applyAction(game, 'miss'); // 2 lives
