@@ -137,8 +137,11 @@ module.exports = withSentryConfig(withPWA(nextConfig), {
   // must still succeed — stack traces are just minified until the token is set
   // in Vercel.
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
-  // Keeps the SDK's own debug logging out of the client bundle
-  disableLogger: true,
+  webpack: {
+    // Keeps the SDK's own debug logging out of the client bundle.
+    // Was the top-level `disableLogger`, deprecated in favour of this.
+    treeshake: { removeDebugLogging: true },
+  },
   telemetry: false,
   silent: true,
 })
