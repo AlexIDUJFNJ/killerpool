@@ -3,9 +3,10 @@ import './globals.css'
 import { GameProvider } from '@/contexts/game-context'
 import { ThemeProvider } from '@/components/theme-provider'
 import { PWAInit } from '@/components/pwa-init'
+import { getBaseUrl } from '@/lib/site'
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://killerpool.app'),
+  metadataBase: new URL(getBaseUrl()),
   title: {
     default: 'Killerpool - Modern Killer Pool Game',
     template: '%s | Killerpool',
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://killerpool.app',
+    url: getBaseUrl(),
     title: 'Killerpool - Modern Killer Pool Game',
     description: 'Modern PWA for tracking Killer Pool games. Play with friends, track lives, and compete with style.',
     siteName: 'Killerpool',

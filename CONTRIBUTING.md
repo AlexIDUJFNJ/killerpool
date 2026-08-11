@@ -21,7 +21,7 @@ We are committed to providing a welcoming and inclusive environment for everyone
 
 ### Prerequisites
 
-- Node.js 20.x or higher
+- Node.js 22.x (see `engines` in package.json)
 - npm or yarn
 - Git
 - A Supabase account (for database features)
@@ -210,12 +210,22 @@ Closes #(issue number)
 
 ### Automated Testing
 
-Currently, we don't have automated tests. Contributions to add testing infrastructure are welcome!
+The project uses Jest 30 with jsdom and Testing Library, wired through `next/jest`:
 
-**Potential testing tools:**
-- Vitest for unit tests
-- Playwright or Cypress for E2E tests
-- React Testing Library for component tests
+```bash
+npm test              # run once
+npm run test:watch    # watch mode
+npm run test:coverage # with coverage
+```
+
+Tests live next to the code they cover, in `__tests__/` directories, named
+`*.test.ts` / `*.test.tsx`. Setup lives in `jest.config.ts` and `jest.setup.ts`.
+
+New code under `lib/` is expected to come with tests. Pure logic is the priority
+— the game rules in `lib/__tests__/game-logic.test.ts` are, in practice, the
+specification of how Killer Pool behaves here.
+
+End-to-end tests are not set up. See the Planned section of ARCHITECTURE.md.
 
 ## Project Structure
 
@@ -243,34 +253,24 @@ killerpool/
 ├── supabase/               # Supabase configuration
 │   └── migrations/         # SQL migrations
 ├── public/                 # Static files
-└── docs/                   # Documentation
+├── contexts/               # React context (game state)
+├── hooks/                  # Shared hooks
+├── scripts/                # Build-time scripts (icon generation)
+└── proxy.ts                # Next.js middleware (auth session refresh)
 ```
 
 ## Areas for Contribution
 
-We welcome contributions in these areas:
-
-### High Priority
-- [ ] PWA offline functionality improvements
-- [ ] Game history export (CSV, PDF)
-- [ ] Realtime multiplayer features
-- [ ] Statistics and analytics
-- [ ] Accessibility improvements
-
-### Nice to Have
-- [ ] Unit and integration tests
-- [ ] Light mode theme
-- [ ] Additional social auth providers (Apple, GitHub)
-- [ ] Achievements and badges
-- [ ] Custom game rules/rulesets
-- [ ] Internationalization (i18n)
+The open items live in one place, the "Planned / Not implemented" section of
+[ARCHITECTURE.md](./ARCHITECTURE.md) — keeping a second list here is how the
+previous one ended up advertising features that had already shipped.
 
 ## Questions?
 
 If you have questions or need help:
 
-1. Check existing [Issues](https://github.com/yourusername/killerpool/issues)
-2. Read the documentation in `/docs` and `/supabase/README.md`
+1. Check existing [Issues](https://github.com/AlexIDUJFNJ/killerpool/issues)
+2. Read the documentation index in [README.md](./README.md)
 3. Open a new issue with the `question` label
 
 ## License

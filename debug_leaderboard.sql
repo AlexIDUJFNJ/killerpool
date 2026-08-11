@@ -51,15 +51,23 @@ FROM player_profiles
 LIMIT 10;
 
 -- 6. Manual leaderboard query (simplified)
+--
+-- Ids are compared as text, never cast. participants comes from clients —
+-- including anonymous ones — so a single non-UUID id would abort the whole
+-- query with 22P02, which is exactly the bug migration 00012 fixed in
+-- get_leaderboard itself. Do not "simplify" this back to ::uuid.
 WITH player_game_stats AS (
     SELECT
-        (participant->>'id')::uuid AS player_id,
-        participant->>'name' AS player_name,
-        (participant->>'userId')::uuid AS user_id,
-        g.id AS game_id,
-        g.winner_id,
+        lower(participant->>'id')   AS player_key,
+        participant->>'name'        AS player_name,
         CASE
-            WHEN (participant->>'id')::uuid = g.winner_id THEN 1
+            WHEN participant->>'userId' ~*
+                 '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            THEN lower(participant->>'userId')
+        END                         AS user_key,
+        g.id AS game_id,
+        CASE
+            WHEN lower(participant->>'id') = lower(g.winner_id::text) THEN 1
             ELSE 0
         END AS is_winner
     FROM games g,
@@ -67,13 +75,22 @@ WITH player_game_stats AS (
     WHERE g.status = 'completed'
 )
 SELECT
-    pgs.player_id,
+    COALESCE(pgs.user_key, pgs.player_key) AS stable_key,
     MAX(pgs.player_name) as player_name,
-    pgs.user_id,
+    pgs.user_key,
     COUNT(DISTINCT pgs.game_id)::BIGINT AS total_games,
-    SUM(pgs.is_winner)::BIGINT AS games_won,
+    COUNT(DISTINCT pgs.game_id) FILTER (WHERE pgs.is_winner = 1)::BIGINT AS games_won,
     COALESCE(pp.display_name, MAX(pgs.player_name)) as display_name
 FROM player_game_stats pgs
-LEFT JOIN player_profiles pp ON pgs.user_id = pp.user_id
-GROUP BY pgs.player_id, pgs.user_id, pp.display_name
+LEFT JOIN player_profiles pp ON pgs.user_key = pp.user_id::text
+GROUP BY COALESCE(pgs.user_key, pgs.player_key), pgs.user_key, pp.display_name
 ORDER BY games_won DESC, total_games DESC;
+
+-- 7. Participants whose id is not a UUID — these used to break get_leaderboard
+--    for everyone before 00012
+SELECT g.id AS game_id, participant->>'id' AS bad_id, participant->>'name' AS name
+FROM games g,
+LATERAL jsonb_array_elements(g.participants) AS participant
+WHERE g.status = 'completed'
+  AND (participant->>'id') !~*
+      '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';

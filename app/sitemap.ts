@@ -1,7 +1,13 @@
 import { MetadataRoute } from 'next'
+import { getBaseUrl } from '@/lib/site'
 
+/**
+ * Public, indexable pages only. /profile is behind auth, /history and /stats
+ * read localStorage so a crawler sees an empty screen, and /auth is a login
+ * form with nothing to index.
+ */
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://killerpool.app'
+  const baseUrl = getBaseUrl()
   const currentDate = new Date()
 
   return [
@@ -18,22 +24,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
-      url: `${baseUrl}/history`,
+      url: `${baseUrl}/leaderboard`,
       lastModified: currentDate,
-      changeFrequency: 'daily',
+      changeFrequency: 'weekly',
       priority: 0.8,
     },
     {
-      url: `${baseUrl}/profile`,
-      lastModified: currentDate,
-      changeFrequency: 'weekly',
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/auth`,
+      url: `${baseUrl}/help`,
       lastModified: currentDate,
       changeFrequency: 'monthly',
-      priority: 0.6,
+      priority: 0.7,
     },
   ]
 }
