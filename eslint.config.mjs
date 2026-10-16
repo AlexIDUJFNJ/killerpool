@@ -25,11 +25,6 @@ const config = [
     },
   },
   {
-    // The logger is the one place allowed to reach for console
-    files: ["lib/logger.ts"],
-    rules: { "no-console": "off" },
-  },
-  {
     // Tests mock browser APIs and strip animation props by destructuring them
     // into unused bindings; neither is worth a rule exemption in the code.
     files: [
