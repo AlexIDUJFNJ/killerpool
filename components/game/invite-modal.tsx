@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Copy, Download, Share2, Check, QrCode as QrCodeIcon, Loader2, AlertCircle } from 'lucide-react'
 import { generateInviteLink, generateInviteQRCode, downloadQRCode, shareInviteLink, copyInviteLink } from '@/lib/invite'
 import { useGame } from '@/contexts/game-context'
@@ -23,6 +24,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   const [isSyncing, setIsSyncing] = React.useState(false)
   const [syncError, setSyncError] = React.useState<string | null>(null)
   const inviteLink = generateInviteLink(gameId)
+  const linkInputId = React.useId()
 
   // Enable sharing when modal opens (syncs game to Supabase)
   // Skip for spectators - the game is already in Supabase
@@ -155,9 +157,10 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
 
           {/* Invite Link */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Invite Link</label>
+            <Label htmlFor={linkInputId}>Invite Link</Label>
             <div className="flex gap-2">
               <Input
+                id={linkInputId}
                 value={inviteLink}
                 readOnly
                 className="flex-1"
@@ -168,6 +171,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
                 size="icon"
                 onClick={handleCopy}
                 disabled={copied}
+                aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-green-500" />

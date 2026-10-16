@@ -141,21 +141,21 @@ export default function Home() {
             <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
               <Link href="/history">
                 <History className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">History</span>
+                <span className="sr-only sm:not-sr-only">History</span>
               </Link>
             </Button>
 
             <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
               <Link href="/stats">
                 <Trophy className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Stats</span>
+                <span className="sr-only sm:not-sr-only">Stats</span>
               </Link>
             </Button>
 
             <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
               <Link href="/leaderboard">
                 <Award className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Top</span>
+                <span className="sr-only sm:not-sr-only">Top</span>
               </Link>
             </Button>
           </div>

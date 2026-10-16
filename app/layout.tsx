@@ -50,10 +50,11 @@ export const metadata: Metadata = {
   },
 }
 
+// No maximumScale: capping zoom at 1 locks out anyone who needs to enlarge the
+// text (WCAG 1.4.4). Inputs use a 16px font, so iOS does not zoom on focus.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
   themeColor: '#10b981',
 }
 

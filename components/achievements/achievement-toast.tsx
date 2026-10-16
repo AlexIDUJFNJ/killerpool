@@ -32,28 +32,32 @@ function ToastCard({ achievementType, onClose }: ToastCardProps) {
       exit={{ opacity: 0, y: -20, scale: 0.9 }}
       className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2"
     >
-      <div
+      <button
+        type="button"
+        title="Dismiss"
         className={cn(
-          'flex items-center gap-3 rounded-xl border-2 bg-background px-4 py-3 shadow-lg',
+          'flex items-center gap-3 rounded-xl border-2 bg-background px-4 py-3 text-left shadow-lg',
+          'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
           getRarityColor(definition.rarity)
         )}
         onClick={onClose}
       >
-        <motion.div
+        <motion.span
           initial={{ rotate: -20, scale: 0 }}
           animate={{ rotate: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 500, damping: 20 }}
           className="text-3xl"
+          aria-hidden="true"
         >
           {definition.icon}
-        </motion.div>
-        <div>
-          <p className="text-xs font-medium uppercase text-muted-foreground">
+        </motion.span>
+        <span>
+          <span className="block text-xs font-medium uppercase text-muted-foreground">
             Achievement Unlocked!
-          </p>
-          <p className="font-semibold">{definition.name}</p>
-        </div>
-      </div>
+          </span>
+          <span className="block font-semibold">{definition.name}</span>
+        </span>
+      </button>
     </motion.div>
   )
 }
@@ -81,10 +85,15 @@ export function AchievementToasts({ achievements, onDismiss }: AchievementToasts
   const current = achievements[0]
 
   // AnimatePresence stays mounted across queue changes so the exit animation
-  // plays, and the key remounts the card between consecutive achievements
+  // plays, and the key remounts the card between consecutive achievements.
+  // The live region around it must exist before a toast is inserted — screen
+  // readers only announce changes inside a region they already know about —
+  // so it is rendered even while the queue is empty.
   return (
-    <AnimatePresence mode="wait">
-      {current && <ToastCard key={current} achievementType={current} onClose={onDismiss} />}
-    </AnimatePresence>
+    <div role="status" aria-live="polite" aria-atomic="true">
+      <AnimatePresence mode="wait">
+        {current && <ToastCard key={current} achievementType={current} onClose={onDismiss} />}
+      </AnimatePresence>
+    </div>
   )
 }

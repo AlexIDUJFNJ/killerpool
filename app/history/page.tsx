@@ -209,6 +209,7 @@ export default function HistoryPage() {
             <Input
               type="text"
               placeholder="Search by player name..."
+              aria-label="Search by player name"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -353,6 +354,7 @@ export default function HistoryPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDelete(game.id)}
+                        aria-label={`Delete game from ${formatDate(game.createdAt)}`}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
