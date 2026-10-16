@@ -255,57 +255,6 @@ function writeGameRow(game: Game): Promise<UpsertOutcome> {
 }
 
 /**
- * Sync all games from localStorage to Supabase
- */
-export async function syncAllGamesToSupabase(): Promise<{
-  success: number
-  skipped: number
-  refused: number
-  failed: number
-  /** Created under an account that is not signed in; kept for when it is */
-  otherAccount: number
-  total: number
-}> {
-  const games = loadGameHistory()
-  // Only completed games can be shared, so anything else is nothing to do —
-  // not a failure. Counting them as failures is why this page always reported
-  // "Failed: N" to anyone who had abandoned a game.
-  const syncable = games.filter(game => game.status === 'completed')
-
-  let success = 0
-  let refused = 0
-  let failed = 0
-  let otherAccount = 0
-
-  for (const game of syncable) {
-    // via syncFinishedGame so a failure here joins the retry queue like any
-    // other, and so a refusal is told apart from a retryable problem
-    const result = await syncFinishedGame(game)
-    if (result.ok) {
-      success++
-    } else if (result.failure === 'refused') {
-      // Typically a game played before signing in: its row in Supabase has no
-      // owner, and since nothing in the row proves who that owner is, the
-      // account cannot claim it. Retrying will never help.
-      refused++
-    } else if (result.failure === 'other-account') {
-      otherAccount++
-    } else {
-      failed++
-    }
-  }
-
-  return {
-    success,
-    skipped: games.length - syncable.length,
-    refused,
-    failed,
-    otherAccount,
-    total: games.length,
-  }
-}
-
-/**
  * Load games from Supabase and merge with localStorage
  */
 export async function loadGamesFromSupabase(): Promise<Game[]> {

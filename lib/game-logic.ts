@@ -15,6 +15,14 @@ import {
 } from './types'
 
 /**
+ * Most players one game can have, counting the eliminated ones. The database
+ * refuses a game with more participants (a CHECK constraint, migration 00015)
+ * and that refusal is final, so a bigger game would never upload: it is
+ * stopped here, before it is played.
+ */
+export const MAX_PLAYERS = 32
+
+/**
  * Create a new player
  */
 export function createPlayer(
@@ -44,6 +52,8 @@ export function createPlayer(
  * `userId`. They differ when nobody in the game is marked as "me": no player
  * carries the userId then, but the sync still has to know which account the
  * game belongs to (see rowOwner in lib/sync.ts).
+ *
+ * Throws above MAX_PLAYERS players.
  */
 export function createGame(
   players: NewGamePlayerInput[],
@@ -51,6 +61,10 @@ export function createGame(
   userId?: string | null,
   createdBy: string | null | undefined = userId
 ): Game {
+  if (players.length > MAX_PLAYERS) {
+    throw new Error(`A game can have at most ${MAX_PLAYERS} players`)
+  }
+
   // Only the marked player gets the userId; everyone else is tracked by their
   // per-game player id. Position means nothing here — the form shuffles rows
   // and drops unnamed ones. Falling back to index 0 keeps callers that pass no
@@ -270,7 +284,8 @@ export function abandonGame(game: Game): Game {
 
 /**
  * Add a new player to an active game
- * The new player gets the minimum lives among all active players
+ * The new player gets the minimum lives among all active players.
+ * Throws once the game has MAX_PLAYERS players, eliminated ones included.
  */
 export function addPlayerToGame(
   game: Game,
@@ -290,6 +305,11 @@ export function addPlayerToGame(
 
   if (playerId && game.players.some(p => p.id === playerId)) {
     throw new Error('Player is already in this game')
+  }
+
+  // Eliminated players stay in the game, and in the row the database checks
+  if (game.players.length >= MAX_PLAYERS) {
+    throw new Error(`A game can have at most ${MAX_PLAYERS} players`)
   }
 
   // Get minimum lives among active players

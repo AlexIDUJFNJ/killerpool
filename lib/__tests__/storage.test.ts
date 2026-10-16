@@ -29,6 +29,9 @@ import {
   MAX_SYNC_AGE_MS,
   BACKOFF_BASE_MS,
   BACKOFF_MAX_MS,
+  saveGameHistory,
+  readGameHistorySnapshot,
+  subscribeToGameHistory,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
@@ -286,6 +289,64 @@ describe('Storage', () => {
     it('should return null if game not found', () => {
       const retrieved = getGameFromHistory('non-existent-id');
       expect(retrieved).toBeNull();
+    });
+  });
+
+  describe('history as an external store', () => {
+    function finished(id: string): Game {
+      return { ...createGame([{ name: 'Player 1', avatar: '🎱' }]), id, status: 'completed' };
+    }
+
+    it('should hand out the same array until the stored history changes', () => {
+      // useSyncExternalStore re-renders whenever the snapshot is a new object,
+      // so a fresh parse on every read would loop forever
+      saveGameHistory([finished('game-1')]);
+      const first = readGameHistorySnapshot();
+
+      expect(readGameHistorySnapshot()).toBe(first);
+
+      saveGameHistory([finished('game-2'), finished('game-1')]);
+      const second = readGameHistorySnapshot();
+      expect(second).not.toBe(first);
+      expect(second.map(g => g.id)).toEqual(['game-2', 'game-1']);
+    });
+
+    it('should read nothing stored as an empty history', () => {
+      expect(readGameHistorySnapshot()).toEqual([]);
+      expect(readGameHistorySnapshot()).toBe(readGameHistorySnapshot());
+    });
+
+    it('should survive a corrupt value', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      localStorage.setItem('killerpool_game_history', '{not json');
+
+      expect(readGameHistorySnapshot()).toEqual([]);
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should tell subscribers about every write in this tab', () => {
+      const onChange = jest.fn();
+      const unsubscribe = subscribeToGameHistory(onChange);
+
+      saveToHistory(finished('game-1'));
+      deleteGameFromHistory('game-1');
+      expect(onChange).toHaveBeenCalledTimes(2);
+
+      unsubscribe();
+      saveToHistory(finished('game-2'));
+      expect(onChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('should tell subscribers about the history changing in another tab', () => {
+      const onChange = jest.fn();
+      const unsubscribe = subscribeToGameHistory(onChange);
+
+      window.dispatchEvent(new StorageEvent('storage', { key: 'killerpool_game_history' }));
+      window.dispatchEvent(new StorageEvent('storage', { key: null }));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'killerpool-theme' }));
+
+      expect(onChange).toHaveBeenCalledTimes(2);
+      unsubscribe();
     });
   });
 
