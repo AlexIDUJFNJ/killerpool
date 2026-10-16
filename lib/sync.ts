@@ -7,7 +7,8 @@
 import { isAuthSessionMissingError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { Game } from './types'
-import { mapDbGameToGame, mapGameToDbRow } from './game-mapper'
+import { mapDbGameToGame, mapGameToDbRow, type DbGameUpsertRow } from './game-mapper'
+import { getHostSecret, hashHostSecret, HOST_SECRET_HEADER } from './host-secret'
 import {
   loadGameHistory,
   saveGameHistory,
@@ -164,6 +165,23 @@ function rowOwner(game: Game, userId: string | null): { createdBy: string | null
 }
 
 /**
+ * The upsert itself. With the host secret on every request: since 00016 an
+ * anon write to a game whose row carries a hash is refused without it, and a
+ * header on a row without one is ignored. Per request, not on the client — the
+ * browser client is shared by everything else, and the secret belongs to one
+ * game.
+ */
+function sendGameRow(supabase: SupabaseClient, row: DbGameUpsertRow, secret: string | null) {
+  const request = supabase.from('games').upsert(row, { onConflict: 'id' })
+  return secret ? request.setHeader(HOST_SECRET_HEADER, secret) : request
+}
+
+/** PostgREST does not know the column: the schema predates 00016 */
+function isMissingHashColumn(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === 'PGRST204' && !!error.message?.includes('host_secret_hash')
+}
+
+/**
  * The only place that writes a row into `games`. Everything goes through
  * writeGameRow below, which keeps the writes for one game in order.
  */
@@ -187,10 +205,26 @@ async function upsertGameRow(game: Game): Promise<UpsertOutcome> {
 
     if (identity.user) await ensurePlayerProfile(supabase, identity.user)
 
-    const { error } = await supabase
-      .from('games')
-      .upsert(mapGameToDbRow(game, owner.createdBy), { onConflict: 'id' })
+    // Only a game this device started has a secret. One started by an older
+    // bundle, or a signed-in user's game merged in from another device, is
+    // written as it always was. (A spectator never gets here: GameProvider
+    // sends nothing in spectator mode.)
+    const secret = getHostSecret(game.id)
+    const row = mapGameToDbRow(game, owner.createdBy, secret ? await hashHostSecret(secret) : null)
 
+    let response = await sendGameRow(supabase, row, secret)
+    if (row.host_secret_hash && isMissingHashColumn(response.error)) {
+      // The database is older than 00016, or PostgREST has not reloaded its
+      // schema yet. Refused, a finished game would leave the retry queue;
+      // written without the hash it is merely unprotected, as every game was
+      // before.
+      console.warn('[sync] games has no host_secret_hash column yet, writing without it')
+      const legacyRow: DbGameUpsertRow = { ...row }
+      delete legacyRow.host_secret_hash
+      response = await sendGameRow(supabase, legacyRow, secret)
+    }
+
+    const { error } = response
     if (error) {
       const message = `${error.message}${error.details ? ` - ${error.details}` : ''}`
       console.error('Failed to sync game to Supabase:', message, error.code)

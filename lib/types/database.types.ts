@@ -1,6 +1,9 @@
 // Generated from the production schema — do not edit by hand. Regenerate after
 // every migration:
 //   npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts
+//
+// Exception: games.host_secret_hash was added by hand in the generated shape,
+// ahead of 00016 reaching production. Regenerate once it has.
 
 export type Json =
   | string
@@ -24,6 +27,7 @@ export type Database = {
           created_by: string | null
           current_player_index: number | null
           history: Json | null
+          host_secret_hash: string | null
           id: string
           participants: Json
           ruleset_id: string | null
@@ -36,6 +40,7 @@ export type Database = {
           created_by?: string | null
           current_player_index?: number | null
           history?: Json | null
+          host_secret_hash?: string | null
           id?: string
           participants: Json
           ruleset_id?: string | null
@@ -48,6 +53,7 @@ export type Database = {
           created_by?: string | null
           current_player_index?: number | null
           history?: Json | null
+          host_secret_hash?: string | null
           id?: string
           participants?: Json
           ruleset_id?: string | null
