@@ -1,6 +1,6 @@
 # 🚀 Deployment Guide - Killerpool
 
-> Обновлено: 2026-08-11.
+> Обновлено: 2026-10-16.
 
 Деплой Killerpool на Vercel — проект живёт там (`.vercel/project.json`,
 `vercel.json` с регионом `fra1`), а деплой запускается push'ем в GitHub.
@@ -28,6 +28,7 @@ build обязан идти через webpack (`next build --webpack`, уже �
 
 - [Vercel (рекомендуется)](#vercel-рекомендуется)
 - [Environment Variables](#environment-variables)
+- [Supabase CLI](#supabase-cli)
 - [Post-deployment проверки](#post-deployment-проверки)
 
 ---
@@ -76,8 +77,9 @@ Install Command: npm install
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 
-# App URL (обновите после первого деплоя)
-NEXT_PUBLIC_APP_URL=https://killerpool.vercel.app
+# App URL — только для Production (см. ниже); до подключения своего домена
+# можно не задавать или указать https://<project>.vercel.app
+NEXT_PUBLIC_APP_URL=https://killerpool.app
 
 # Sentry (необязательно)
 NEXT_PUBLIC_SENTRY_DSN=https://<key>@<org>.ingest.de.sentry.io/<project>
@@ -85,9 +87,10 @@ SENTRY_AUTH_TOKEN=<token>   # только для сборки, карты ис�
 ```
 
 2. Выберите для каких окружений применить:
-   - ✅ **Production**
-   - ✅ **Preview**
-   - ✅ **Development**
+   - Supabase и Sentry — ✅ **Production**, ✅ **Preview**, ✅ **Development**
+   - `NEXT_PUBLIC_APP_URL` — **только Production**. Превью без неё берут собственный домен из `NEXT_PUBLIC_VERCEL_URL` (`lib/site.ts`); продовый URL в превью направил бы `robots.txt` на продовый sitemap, а метаданные — на продовое приложение
+
+3. Оставьте включённым **Automatically expose System Environment Variables** (Settings → Environment Variables). Без него сборка не видит `NEXT_PUBLIC_VERCEL_URL` и `NEXT_PUBLIC_VERCEL_ENV`: первый нужен `lib/site.ts`, второй — гейту Sentry в браузере
 
 ### Шаг 4: Deploy
 
@@ -176,9 +179,17 @@ https://killerpool.vercel.app/**
 
 | Переменная | Описание | Что будет без неё |
 |------------|----------|-------------------|
-| `NEXT_PUBLIC_APP_URL` | Абсолютный URL приложения: метаданные, OG-картинки, `sitemap.xml` | `lib/site.ts` возьмёт домен из окружения Vercel, локально — `http://localhost:3000` |
-| `NEXT_PUBLIC_SENTRY_DSN` | Public DSN проекта Sentry | Sentry просто молчит — сборка и приложение работают как обычно |
+| `NEXT_PUBLIC_APP_URL` | Абсолютный URL приложения: метаданные, OG-картинки, `robots.txt`, `sitemap.xml` | `lib/site.ts` возьмёт `NEXT_PUBLIC_VERCEL_URL` (домен деплоя), а вне Vercel — `https://killerpool.app`. Ссылки-приглашения от неё не зависят: они строятся от `window.location.origin` |
+| `NEXT_PUBLIC_SENTRY_DSN` | Public DSN проекта Sentry | Sentry просто молчит — сборка и приложение работают как обычно. С DSN события шлют только деплои Vercel (см. [Мониторинг](#мониторинг)) |
 | `SENTRY_AUTH_TOKEN` | Токен для загрузки карт исходников **во время сборки** | Билд проходит, загрузка карт пропускается (`sourcemaps.disable` в `next.config.js`), стек-трейсы в Sentry остаются минифицированными |
+
+Системные переменные Vercel, которые читает код (вручную не заводятся):
+
+| Переменная | Где | Зачем |
+|------------|-----|-------|
+| `NEXT_PUBLIC_VERCEL_URL` | `lib/site.ts` | Домен деплоя, когда `NEXT_PUBLIC_APP_URL` не задана |
+| `NEXT_PUBLIC_VERCEL_ENV` | `instrumentation-client.ts` | Гейт Sentry в браузере и тег environment; вшивается при сборке |
+| `VERCEL_ENV` | `instrumentation.ts` | То же на сервере и edge, читается в рантайме |
 
 `SUPABASE_SERVICE_ROLE_KEY` в проекте **не используется**: приложение ходит в
 Supabase только из браузера под `anon`/`authenticated`, и ни одна строка кода
@@ -199,6 +210,46 @@ Supabase только из браузера под `anon`/`authenticated`, и н
 
 ```bash
 npx vercel@latest env ls    # колонка type: Encrypted / Sensitive
+```
+
+---
+
+## Supabase CLI
+
+База — отдельный managed-проект Supabase. Код на Vercel и схема в Supabase
+деплоятся независимо: push в `main` миграции **не** применяет.
+
+**Привязка.** Репозиторий слинкован с продовым проектом
+(`supabase link --project-ref <ref>`); состояние привязки лежит в
+`supabase/.temp/` и в git не попадает (`.gitignore`). CLI авторизуется
+**личным** токеном доступа — через `supabase login` или переменную
+`SUPABASE_ACCESS_TOKEN` в окружении своего терминала. В репозиторий, в
+`.env.local` и в переменные Vercel он не кладётся: приложению он не нужен, а
+даёт полный доступ ко всем проектам владельца.
+
+**Журнал миграций.** 00001–00014 катали руками через SQL Editor, поэтому
+журнала миграций на проде нет, и `supabase db push` считает, что не применено
+ничего. Перед первым push журнал заводят один раз, помечая уже применённое без
+выполнения:
+
+```bash
+supabase migration repair --linked --status applied 00001 00002 00003 00004 00005 00006 00007 00008 00009 00010 00011 00012 00013 00014
+supabase migration list --linked     # проверить: 00001–00014 применены
+supabase db push --linked --dry-run  # должны остаться только новые миграции
+supabase db push --linked
+```
+
+Дальше любая миграция идёт только через `supabase db push`: применённое в SQL
+Editor в журнал не попадает, и следующий push попробует накатить его снова.
+Перед отправкой в прод миграцию прогоняют локально (`supabase/test/setup-local.sh`
+и `supabase/test/rls-policies.sql`). Полный порядок, включая снятие текущих
+политик для отката, — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду).
+
+**Типы.** После каждой миграции `lib/types/database.types.ts` перегенерируется
+из продовой схемы и коммитится вместе с кодом, который на неё опирается:
+
+```bash
+npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts
 ```
 
 ---
@@ -237,23 +288,12 @@ curl -s https://killerpool.app/help | sed 's/<script[^>]*>.*<\/script>//g' | wc 
 
 ### ✅ Sentry (если DSN задан)
 
-- [ ] В Sentry приходят события из production (в dev и локальном билде Sentry молчит намеренно)
+- [ ] В Sentry приходят события с деплоев Vercel: production и preview, различаются тегом `environment`. `npm run dev` и локальная `npm run build && npm run start` молчат намеренно — гейт по `VERCEL_ENV`, а не только по `NODE_ENV`
 - [ ] Стек-трейсы читаемы. Если минифицированы — в сборке не было `SENTRY_AUTH_TOKEN`. Проверять загрузку карт по `/projects/{org}/{project}/files/artifact-bundles/`; легаси-страница релизов для debug-id формата всегда показывает 0 файлов
 
 ### ✅ Performance
 
-Проверьте через [Lighthouse](https://web.dev/measure/):
-
-```bash
-npx lighthouse https://killerpool.app --view
-```
-
-**Целевые метрики:**
-- Performance: ≥90
-- Accessibility: ≥95
-- Best Practices: ≥95
-- SEO: ≥95
-- PWA: Installable
+По желанию — [Lighthouse](https://developer.chrome.com/docs/lighthouse) (`npx lighthouse https://killerpool.app --view`). Целевые цифры не зафиксированы и замеры не автоматизированы; устанавливаемость PWA проверяется в DevTools → Application → Manifest. Размер бандла — `npm run size` локально.
 
 ### ✅ SEO
 
@@ -265,13 +305,18 @@ npx lighthouse https://killerpool.app --view
 
 - [ ] HTTPS работает
 - [ ] SSL сертификат действителен
-- [ ] Security headers отдаются: X-Content-Type-Options, X-Frame-Options, Referrer-Policy (см. `vercel.json`). CSP не настроен — это осознанно, см. Planned в ARCHITECTURE.md
+- [ ] Security headers отдаются: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` (см. `vercel.json`); `X-XSS-Protection` намеренно не шлётся. CSP не настроен — см. Planned в ARCHITECTURE.md
 - [ ] Environment variables не попадают в клиентский код
 
 **Проверить security headers:**
 ```bash
 curl -I https://killerpool.app
 ```
+
+### ✅ База
+
+- [ ] `supabase migration list --linked` показывает все миграции из `supabase/migrations/` в обеих колонках
+- [ ] `lib/types/database.types.ts` перегенерирован после последней миграции
 
 ### ✅ Мобильные устройства
 
@@ -312,7 +357,6 @@ curl -I https://killerpool.app
 1. Проверьте Google Cloud Console → Authorized redirect URIs
 2. Добавьте: `https://your-project.supabase.co/auth/v1/callback`
 3. Добавьте: `https://killerpool.app` в Authorized JavaScript origins
-4. Убедитесь что Google+ API включен
 
 ---
 
@@ -322,7 +366,8 @@ curl -I https://killerpool.app
 `instrumentation.ts` (сервер и edge), `app/global-error.tsx` (падение самого
 layout). Настройки, о которых стоит знать:
 
-- инициализация обёрнута в `!!DSN && NODE_ENV === 'production'` — локальная разработка не засоряет боевой проект;
+- клиент включается только при DSN, `NODE_ENV === 'production'` и окружении Vercel `production` или `preview` (`NEXT_PUBLIC_VERCEL_ENV` в браузере, `VERCEL_ENV` на сервере). Одного `NODE_ENV` было мало: локальная `next build && next start` тоже production, и с DSN из `.env.local` она писала в боевой проект;
+- то же окружение уходит тегом `environment`, поэтому ошибки превью не смешиваются с продовыми;
 - `tracesSampleRate: 0` — собираются только ошибки, не производительность;
 - `ignoreErrors` отсекает офлайн-шум (обрывы сети, отменённые запросы), которого у PWA много и который ничего не значит.
 
