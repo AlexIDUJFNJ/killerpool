@@ -3,6 +3,8 @@ const { withSentryConfig } = require('@sentry/nextjs')
 const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
+  // The only place the service worker gets registered (the plugin injects the
+  // call into the client entry); components/pwa-init.tsx must not repeat it
   register: true,
   scope: '/',
   sw: 'sw.js',
@@ -115,7 +117,8 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: [],
+    // No remotePatterns: nothing renders next/image from another origin
+    // (avatars are emoji, the QR code is a data URL in a plain <img>)
     formats: ['image/avif', 'image/webp'],
   },
   experimental: {
