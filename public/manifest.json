@@ -1,7 +1,7 @@
 {
   "name": "Killerpool - Modern Killer Pool Game",
   "short_name": "Killerpool",
-  "description": "PWA приложение для управления игрой в Killer Pool (бильярд)",
+  "description": "Track Killer Pool games with friends: lives, turns, history and stats. Works offline.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0f0d",
@@ -9,7 +9,7 @@
   "orientation": "portrait",
   "scope": "/",
   "categories": ["games", "entertainment", "sports"],
-  "lang": "ru",
+  "lang": "en",
   "dir": "ltr",
   "icons": [
     {

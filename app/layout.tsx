@@ -78,7 +78,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" suppressHydrationWarning className="overflow-x-hidden">
+    <html lang="en" suppressHydrationWarning className="overflow-x-hidden">
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
