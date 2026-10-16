@@ -13,7 +13,7 @@
     "format:check": "prettier --check .",
     "generate-icons": "node scripts/generate-icons.js",
     "prebuild": "npm run generate-icons",
-    "analyze": "node scripts/analyze-bundle.js",
+    "size": "node scripts/bundle-size.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
