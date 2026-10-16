@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Game, GameAction } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { ACTION_STYLES } from '@/components/game/action-styles'
+import { formatDuration, getGameWinner } from '../history-utils'
 import { mapDbGameToGame } from '@/lib/game-mapper'
 import { motion } from 'motion/react'
 import {
@@ -174,7 +175,7 @@ export default function GameDetailsPage() {
     )
   }
 
-  const winner = game.players.find(p => p.id === game.winnerId)
+  const winner = getGameWinner(game)
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -185,13 +186,6 @@ export default function GameDetailsPage() {
       hour: '2-digit',
       minute: '2-digit',
     }).format(date)
-  }
-
-  const formatDuration = (start: string, end: string) => {
-    const duration = new Date(end).getTime() - new Date(start).getTime()
-    const minutes = Math.floor(duration / 60000)
-    const seconds = Math.floor((duration % 60000) / 1000)
-    return `${minutes}m ${seconds}s`
   }
 
   // Calculate player statistics
@@ -236,6 +230,29 @@ export default function GameDetailsPage() {
                     </div>
                     <p className="text-sm font-normal text-muted-foreground mt-1">
                       Winner
+                    </p>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Ended early with "End Game": there is no winner to crown */}
+        {game.status === 'abandoned' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="border-2 border-border bg-muted/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3">
+                  <span className="text-3xl" aria-hidden="true">⏸️</span>
+                  <div>
+                    <div className="text-2xl">Game Abandoned</div>
+                    <p className="text-sm font-normal text-muted-foreground mt-1">
+                      Ended before a winner was decided
                     </p>
                   </div>
                 </CardTitle>
@@ -305,7 +322,7 @@ export default function GameDetailsPage() {
                     <div
                       key={player.id}
                       className={`p-4 rounded-lg border-2 transition-all ${
-                        player.id === game.winnerId
+                        player.id === winner?.id
                           ? 'border-green-500/50 bg-green-500/5'
                           : 'border-border bg-muted/50'
                       }`}
@@ -316,7 +333,7 @@ export default function GameDetailsPage() {
                           <div>
                             <div className="font-semibold flex items-center gap-2">
                               {player.name}
-                              {player.id === game.winnerId && (
+                              {player.id === winner?.id && (
                                 <Trophy className="h-4 w-4 text-yellow-500" />
                               )}
                               {player.eliminated && (
@@ -373,9 +390,9 @@ export default function GameDetailsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <ol className="space-y-2 max-h-96 overflow-y-auto" aria-label="Action timeline">
                 {game.history.map((entry, index) => (
-                  <motion.div
+                  <motion.li
                     key={entry.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -395,16 +412,17 @@ export default function GameDetailsPage() {
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {entry.livesBefore} → {entry.livesAfter} lives
-                        <span className="mx-2">•</span>
+                        <span className="mx-2" aria-hidden="true">•</span>
                         {new Date(entry.timestamp).toLocaleTimeString()}
                       </div>
                     </div>
-                    <div className="shrink-0 text-sm text-muted-foreground">
-                      #{game.history.length - index}
+                    {/* history is stored oldest first, so the first row is shot #1 */}
+                    <div className="shrink-0 text-sm text-muted-foreground" aria-hidden="true">
+                      #{index + 1}
                     </div>
-                  </motion.div>
+                  </motion.li>
                 ))}
-              </div>
+              </ol>
             </CardContent>
           </Card>
         </motion.div>
