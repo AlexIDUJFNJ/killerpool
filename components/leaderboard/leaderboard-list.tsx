@@ -15,16 +15,43 @@ interface LeaderboardListProps {
   className?: string
 }
 
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; entries: LeaderboardEntry[] }
+
+async function fetchLeaderboard(limit: number): Promise<LoadState> {
+  try {
+    const { data, error } = await createClient().rpc('get_leaderboard', { limit_count: limit })
+    if (error) {
+      console.error('Error loading leaderboard:', error)
+      return { status: 'error' }
+    }
+    return { status: 'ready', entries: data ?? [] }
+  } catch (err) {
+    console.error('Failed to load leaderboard:', err)
+    return { status: 'error' }
+  }
+}
+
 export function LeaderboardList({ limit = 15, className }: LeaderboardListProps) {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState] = useState<LoadState>({ status: 'loading' })
+  // "Try Again" bumps this to run the loading effect once more
+  const [attempt, setAttempt] = useState(0)
   const [user, setUser] = useState<User | null>(null)
 
+  // State is only set once the request settles, never synchronously in the
+  // effect, and a response that lands after a newer request (or unmount) is
+  // dropped
   useEffect(() => {
-    loadLeaderboard()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit])
+    let cancelled = false
+    fetchLeaderboard(limit).then((next) => {
+      if (!cancelled) setState(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [limit, attempt])
 
   useEffect(() => {
     const supabase = createClient()
@@ -42,33 +69,12 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
     return () => subscription.unsubscribe()
   }, [])
 
-  async function loadLeaderboard() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const supabase = createClient()
-
-      // Call the leaderboard function
-      const { data, error: queryError } = await supabase
-        .rpc('get_leaderboard', { limit_count: limit })
-
-      if (queryError) {
-        console.error('Error loading leaderboard:', queryError)
-        setError(queryError.message)
-        return
-      }
-
-      setEntries(data || [])
-    } catch (err) {
-      console.error('Failed to load leaderboard:', err)
-      setError('Failed to load leaderboard')
-    } finally {
-      setLoading(false)
-    }
+  const retry = () => {
+    setState({ status: 'loading' })
+    setAttempt((n) => n + 1)
   }
 
-  if (loading) {
+  if (state.status === 'loading') {
     return (
       <div className={className}>
         <div className="flex justify-center items-center py-12">
@@ -80,34 +86,35 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
             >
               <Trophy className="h-12 w-12 text-primary" />
             </motion.div>
-            <div className="text-muted-foreground">Loading leaderboard...</div>
+            <div className="text-muted-foreground" role="status">Loading leaderboard...</div>
           </div>
         </div>
       </div>
     )
   }
 
-  if (error) {
+  if (state.status === 'error') {
     return (
       <div className={className}>
         <Card>
           <CardContent className="pt-6">
             <div className="text-center py-12">
               <TrendingUp className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-xl font-semibold mb-2">Error Loading Leaderboard</h3>
-              <p className="text-muted-foreground mb-4">{error}</p>
-              <button
-                onClick={loadLeaderboard}
-                className="text-primary hover:underline"
-              >
+              <h3 className="text-xl font-semibold mb-2">Couldn&apos;t load the leaderboard</h3>
+              <p className="text-muted-foreground mb-4">
+                Check your connection and try again.
+              </p>
+              <Button variant="outline" onClick={retry}>
                 Try Again
-              </button>
+              </Button>
             </div>
           </CardContent>
         </Card>
       </div>
     )
   }
+
+  const { entries } = state
 
   if (entries.length === 0) {
     return (
@@ -233,32 +240,15 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
 
   return (
     <div className={className}>
-      {/* Top 3 Podium (optional - can be expanded later) */}
-      {entries.length >= 3 && (
-        <div className="mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="text-center mb-6"
-          >
-            <h2 className="text-2xl font-bold mb-2">Top Players</h2>
-            <p className="text-muted-foreground">
-              Champions of Killer Pool
-            </p>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Leaderboard List */}
-      <div className="space-y-3">
+      {/* The top three are told apart inside their cards (trophy, ring,
+          colour bar); a separate podium would show the same people twice */}
+      <ol className="space-y-3" aria-label="Leaderboard">
         {entries.map((entry) => (
-          <LeaderboardCard
-            key={entry.player_id}
-            entry={entry}
-          />
+          <li key={entry.player_id}>
+            <LeaderboardCard entry={entry} />
+          </li>
         ))}
-      </div>
+      </ol>
 
       {/* Footer Info */}
       {entries.length > 0 && (

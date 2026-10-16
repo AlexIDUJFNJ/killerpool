@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button'
 import { LeaderboardList } from '@/components/leaderboard/leaderboard-list'
 
 export const metadata: Metadata = {
-  title: 'Leaderboard | Killerpool',
+  // The root layout's '%s | Killerpool' template adds the suffix; spelling it
+  // out here rendered "Leaderboard | Killerpool | Killerpool"
+  title: 'Leaderboard',
   description: 'Top players in Killer Pool - See who dominates the table',
   openGraph: {
     title: 'Leaderboard | Killerpool',
