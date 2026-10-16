@@ -65,6 +65,36 @@ describe('BlackBallCelebration', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
+  it('should count down only for the overlay on screen', () => {
+    // A black potted while the last overlay fades out: the fading one must not
+    // end the new one early
+    const onComplete = jest.fn();
+    const { rerender } = render(<BlackBallCelebration show onComplete={onComplete} />);
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    rerender(<BlackBallCelebration show={false} onComplete={onComplete} />);
+    rerender(<BlackBallCelebration show onComplete={onComplete} />);
+    act(() => {
+      jest.advanceTimersByTime(1999);
+    });
+    expect(onComplete).not.toHaveBeenCalled();
+
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('should show the overlay with the render that turns it on', () => {
+    const { rerender } = render(<BlackBallCelebration show={false} onComplete={() => {}} />);
+
+    rerender(<BlackBallCelebration show onComplete={() => {}} />);
+
+    expect(screen.getAllByText('CHYORNY!')).toHaveLength(3);
+  });
+
   it('should play a single overlay again on the next black', async () => {
     jest.useRealTimers();
     const { rerender } = render(<BlackBallCelebration show onComplete={() => {}} />);
