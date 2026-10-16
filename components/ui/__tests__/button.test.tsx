@@ -5,6 +5,7 @@
 import * as React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import Link from 'next/link';
 import { Button } from '../button';
 
 describe('Button', () => {
@@ -160,7 +161,7 @@ describe('Button', () => {
     it('should render the child element with button styles instead of a button', () => {
       render(
         <Button asChild variant="outline" size="lg">
-          <a href="/history">History</a>
+          <Link href="/history">History</Link>
         </Button>
       );
 
@@ -173,7 +174,7 @@ describe('Button', () => {
     it('should not nest a button inside the link', () => {
       const { container } = render(
         <Button asChild>
-          <a href="/">Home</a>
+          <Link href="/">Home</Link>
         </Button>
       );
 
@@ -184,7 +185,7 @@ describe('Button', () => {
     it('should merge the child className after the button classes', () => {
       render(
         <Button asChild className="w-full">
-          <a href="/" className="custom-link">Home</a>
+          <Link href="/" className="custom-link">Home</Link>
         </Button>
       );
 
@@ -195,7 +196,7 @@ describe('Button', () => {
     it('should pass aria-label through to the child', () => {
       render(
         <Button asChild size="icon" aria-label="Back to home">
-          <a href="/">←</a>
+          <Link href="/">←</Link>
         </Button>
       );
 
@@ -209,7 +210,7 @@ describe('Button', () => {
 
       render(
         <Button asChild onClick={onSlotClick}>
-          <a href="/" onClick={onChildClick}>Home</a>
+          <Link href="/" onClick={onChildClick}>Home</Link>
         </Button>
       );
 
@@ -224,7 +225,7 @@ describe('Button', () => {
 
       render(
         <Button asChild ref={ref}>
-          <a href="/">Home</a>
+          <Link href="/">Home</Link>
         </Button>
       );
 
