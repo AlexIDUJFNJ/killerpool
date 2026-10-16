@@ -7,6 +7,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import GamePage from '../[id]/page';
 import { createGame, applyAction, MAX_PLAYERS } from '@/lib/game-logic';
 import { Game } from '@/lib/types';
+import { haptics } from '@/lib/haptic';
 
 const mockPush = jest.fn();
 let mockParams: { id: string } = { id: '' };
@@ -51,7 +52,9 @@ jest.mock('motion/react', () => {
 });
 
 jest.mock('@/components/game/invite-modal', () => ({ InviteModal: () => null }));
-jest.mock('@/components/game/black-ball-celebration', () => ({ BlackBallCelebration: () => null }));
+jest.mock('@/components/game/black-ball-celebration', () => ({
+  BlackBallCelebration: ({ show }: { show: boolean }) => (show ? <div>Black ball celebration</div> : null),
+}));
 jest.mock('@/components/game/swipeable-player-card', () => ({
   SwipeablePlayerCard: ({ name }: { name: string }) => <div>{name}</div>,
 }));
@@ -147,6 +150,129 @@ describe('winner screen', () => {
 
     expect(await screen.findByText(/uploads automatically/i)).toBeInTheDocument();
     expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('winner screen lifecycle', () => {
+  it('should take the winner screen down when the deciding shot is undone', async () => {
+    const won = wonBy(myGame(), 0);
+    setUp(won);
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/wins!/i);
+
+    // What undoAction leaves in the provider
+    mockContext = { ...mockContext, game: { ...won, status: 'active', winnerId: undefined }, resultSync: null };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText(/wins!/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'End Game' })).toBeInTheDocument();
+  });
+
+  it('should buzz once when the game is won on screen', async () => {
+    const game = myGame();
+    setUp(applyAction({ ...game, currentPlayerIndex: 1 }, 'miss'));
+    const { rerender } = render(<GamePage />);
+    await screen.findByRole('button', { name: 'End Game' });
+    expect(haptics.victory).not.toHaveBeenCalled();
+
+    mockContext = { ...mockContext, game: wonBy(game, 0), resultSync: 'saved' };
+    rerender(<GamePage />);
+    rerender(<GamePage />);
+
+    expect(await screen.findByText(/wins!/i)).toBeInTheDocument();
+    expect(haptics.victory).toHaveBeenCalledTimes(1);
+  });
+
+  it('should buzz once when the host reopens a game they won', async () => {
+    // It used to buzz twice: the load and the completion check both fired
+    setUp(wonBy(myGame(), 0));
+    render(<GamePage />);
+
+    await screen.findByText(/wins!/i);
+    expect(haptics.victory).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not buzz for a spectator opening a game that was already won', async () => {
+    const won = wonBy(myGame(), 0);
+    const ctx = setUp(won, {
+      game: null,
+      loadGameFromSupabase: jest.fn().mockResolvedValue(won),
+    });
+    const { rerender } = render(<GamePage />);
+    await waitFor(() => expect(ctx.setSpectatorGame).toHaveBeenCalledWith(won));
+
+    // What setSpectatorGame leaves in the provider
+    mockContext = { ...ctx, game: won, isSpectatorMode: true, resultSync: null };
+    rerender(<GamePage />);
+
+    expect(await screen.findByText(/wins!/i)).toBeInTheDocument();
+    expect(haptics.victory).not.toHaveBeenCalled();
+  });
+
+  it('should buzz for a spectator watching the win happen', async () => {
+    const start = myGame();
+    setUp(applyAction({ ...start, currentPlayerIndex: 1 }, 'miss'), { isSpectatorMode: true });
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/you are watching/i);
+
+    mockContext = { ...mockContext, game: wonBy(start, 0) };
+    rerender(<GamePage />);
+
+    expect(await screen.findByText(/wins!/i)).toBeInTheDocument();
+    expect(haptics.victory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('black ball for spectators', () => {
+  function onTheTable(): Game {
+    return applyAction(myGame(), 'miss');
+  }
+
+  it('should celebrate a black that arrives as one new shot', async () => {
+    const game = onTheTable();
+    setUp(game, { isSpectatorMode: true });
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/you are watching/i);
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+
+    mockContext = { ...mockContext, game: applyAction(game, 'pot_black') };
+    rerender(<GamePage />);
+
+    expect(screen.getByText('Black ball celebration')).toBeInTheDocument();
+  });
+
+  it('should not celebrate an ordinary pot', async () => {
+    const game = onTheTable();
+    setUp(game, { isSpectatorMode: true });
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/you are watching/i);
+
+    mockContext = { ...mockContext, game: applyAction(game, 'pot') };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+  });
+
+  it('should not celebrate the blacks already in a game being opened', async () => {
+    // Loading a game is not a shot, even when its history ends in a black
+    const opened = applyAction(myGame(), 'pot_black');
+    setUp(opened, { isSpectatorMode: true });
+    render(<GamePage />);
+
+    await screen.findByText(/you are watching/i);
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+  });
+
+  it('should leave the host\'s own blacks to the swipe that potted them', async () => {
+    const game = onTheTable();
+    setUp(game);
+    const { rerender } = render(<GamePage />);
+    await screen.findByRole('button', { name: 'End Game' });
+
+    mockContext = { ...mockContext, game: applyAction(game, 'pot_black') };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
   });
 });
 

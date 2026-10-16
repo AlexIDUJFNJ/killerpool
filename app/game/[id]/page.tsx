@@ -56,7 +56,6 @@ export default function GamePage() {
     clearSpectatorGame,
     addPlayer
   } = useGame()
-  const [showWinner, setShowWinner] = React.useState(false)
   const [showAllPlayers, setShowAllPlayers] = React.useState(false)
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
@@ -70,7 +69,9 @@ export default function GamePage() {
   // The game id the load below has run for. A plain boolean meant moving from
   // one game link to another never loaded the second game.
   const initializedForRef = React.useRef<string | null>(null)
-  const lastHistoryLengthRef = React.useRef(0)
+  // Set when this page loads a game somebody had already won, see the
+  // victory haptic below
+  const openedWonGameRef = React.useRef<string | null>(null)
 
   // Load game from Supabase if not in context (only once on mount)
   // IMPORTANT: Wait for context to finish loading from localStorage before
@@ -89,10 +90,6 @@ export default function GamePage() {
     // If we already have a game with correct ID (local game), no need to load
     if (game && game.id === gameId) {
       initializedForRef.current = gameId
-      if (game.status === 'completed') {
-        setShowWinner(true)
-        haptics.victory()
-      }
       return
     }
 
@@ -108,12 +105,11 @@ export default function GamePage() {
         const loadedGame = await loadGameFromSupabase(gameId)
 
         if (loadedGame) {
+          if (loadedGame.status === 'completed') {
+            openedWonGameRef.current = loadedGame.id
+          }
           // Set as spectator game (will subscribe to realtime)
           setSpectatorGame(loadedGame)
-
-          if (loadedGame.status === 'completed') {
-            setShowWinner(true)
-          }
         } else {
           setLoadError('Game not found')
           // Redirect to home after a delay
@@ -151,28 +147,36 @@ export default function GamePage() {
     }
   }, [clearSpectatorGame])
 
-  // Watch for pot_black actions (spectator mode — detect from realtime updates)
-  // Only trigger when history grows by exactly 1 (a single new realtime action),
-  // not on initial load where history jumps from 0 to N all at once.
-  React.useEffect(() => {
-    if (!game) return
-    const historyLen = game.history.length
-    if (historyLen === lastHistoryLengthRef.current + 1) {
-      const lastAction = game.history[historyLen - 1]
-      if (lastAction?.action === 'pot_black' && isSpectatorMode) {
-        setShowBlackCelebration(true)
-      }
+  // A black potted on the host's device reaches a spectator as an update with
+  // one new action on the same game. Loading a game, where history goes from
+  // nothing to N at once, is not a shot. Compared during render with what the
+  // last render saw (state, not an effect), so the celebration starts with
+  // the render that shows the shot rather than one render after it.
+  const historyLength = game?.history.length ?? 0
+  const [seenShots, setSeenShots] = React.useState({ gameId: game?.id ?? null, length: historyLength })
+  if (game && (game.id !== seenShots.gameId || historyLength !== seenShots.length)) {
+    const oneNewShot = game.id === seenShots.gameId && historyLength === seenShots.length + 1
+    setSeenShots({ gameId: game.id, length: historyLength })
+    if (oneNewShot && isSpectatorMode && game.history[historyLength - 1].action === 'pot_black') {
+      setShowBlackCelebration(true)
     }
-    lastHistoryLengthRef.current = historyLen
-  }, [game?.history.length, game, isSpectatorMode])
+  }
 
-  // Watch for game completion and show winner screen
+  // The winner screen is up exactly while the game is won (see the render
+  // below), so undoing the deciding shot takes it down and the next win
+  // brings it back. The win buzzes on the devices that see it happen: the
+  // host's, also when reopening the finished game, and those of spectators
+  // watching live. Not for a spectator who opens a game already won.
+  const wonGameId = game?.id === gameId && game.status === 'completed' ? game.id : null
   React.useEffect(() => {
-    if (game && game.status === 'completed' && !showWinner) {
-      setShowWinner(true)
+    if (!wonGameId) {
+      openedWonGameRef.current = null
+      return
+    }
+    if (openedWonGameRef.current !== wonGameId) {
       haptics.victory()
     }
-  }, [game, showWinner])
+  }, [wonGameId])
 
   // Show loading state
   if (isLoading || isLoadingFromSupabase) {
@@ -261,7 +265,6 @@ export default function GamePage() {
   const handleUndoWin = () => {
     undoAction()
     haptics.tap()
-    setShowWinner(false)
     setCurrentPlayerKey((prev) => prev + 1)
   }
 
@@ -290,7 +293,7 @@ export default function GamePage() {
   }
 
   // Winner Screen
-  if (showWinner && game.status === 'completed') {
+  if (game.status === 'completed') {
     const winner = game.players.find((p) => p.id === game.winnerId)
     // Only the creator carries a userId, so this is true exactly when the
     // signed-in user is the one who actually won
