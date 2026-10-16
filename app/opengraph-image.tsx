@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og'
 
-export const runtime = 'edge'
+// Default Node.js runtime: the Edge Runtime is deprecated in Next 16, and on
+// Node the image has no request-time input, so it is rendered once at build.
 
 export const alt = 'Killerpool - Modern Killer Pool Game'
 export const size = {
