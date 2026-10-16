@@ -107,4 +107,29 @@ describe('NewGamePage', () => {
     expect(game.createdBy).toBe(getGuestId());
     expect(mockPush).toHaveBeenCalledWith(`/game/${game.id}`);
   });
+
+  describe('accessibility', () => {
+    it('should give every name field a label of its own', async () => {
+      render(<NewGamePage />);
+
+      // Placeholders vanish while typing; the accessible name has to stay
+      expect(await screen.findByRole('textbox', { name: 'Player 1 name' })).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: 'Player 2 name' })).toBeInTheDocument();
+    });
+
+    it('should name the avatar and remove buttons after their row', async () => {
+      render(<NewGamePage />);
+      fireEvent.click(await screen.findByRole('button', { name: /add player/i }));
+
+      expect(screen.getByRole('button', { name: 'Choose avatar for player 3' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Remove player 3' })).toBeInTheDocument();
+    });
+
+    it('should go back with a plain link, not a button inside one', async () => {
+      const { container } = render(<NewGamePage />);
+
+      expect(await screen.findByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/');
+      expect(container.querySelector('a button, button a')).toBeNull();
+    });
+  });
 });

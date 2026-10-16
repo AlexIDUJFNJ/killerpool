@@ -336,12 +336,17 @@ export default function GamePage() {
                       <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                         Sign in to save your wins and climb the global rankings.
                       </p>
-                      <Link href="/auth" className="inline-block mt-2">
-                        <Button size="sm" variant="outline" className="border-amber-500/50 hover:bg-amber-500/10 text-xs sm:text-sm">
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 border-amber-500/50 hover:bg-amber-500/10 text-xs sm:text-sm"
+                      >
+                        <Link href="/auth">
                           <LogIn className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           Sign In
-                        </Button>
-                      </Link>
+                        </Link>
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -447,11 +452,11 @@ export default function GamePage() {
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/60 border-b">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <div>
               <h1 className="text-lg font-bold">Killer Pool</h1>
               <p className="text-xs text-muted-foreground">
@@ -466,7 +471,7 @@ export default function GamePage() {
               variant="ghost"
               size="icon"
               onClick={() => setShowInviteModal(true)}
-              title="Share game"
+              aria-label="Share game"
             >
               <QrCode className="h-5 w-5" />
             </Button>
@@ -477,7 +482,7 @@ export default function GamePage() {
                 size="icon"
                 onClick={handleUndo}
                 disabled={game.history.length === 0}
-                title="Undo last action"
+                aria-label="Undo last action"
               >
                 <RotateCcw className="h-5 w-5" />
               </Button>
@@ -486,7 +491,7 @@ export default function GamePage() {
               variant="ghost"
               size="icon"
               onClick={() => setShowAllPlayers(true)}
-              title="View all players"
+              aria-label="View all players"
             >
               <UsersRound className="h-5 w-5" />
             </Button>
@@ -632,6 +637,7 @@ export default function GamePage() {
               {showAddPlayer ? (
                 <div className="flex gap-2">
                   <Input
+                    aria-label="New player name"
                     placeholder="Player name"
                     value={newPlayerName}
                     onChange={(e) => setNewPlayerName(e.target.value)}

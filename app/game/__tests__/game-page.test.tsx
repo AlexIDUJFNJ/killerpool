@@ -261,3 +261,32 @@ describe('leaving the page', () => {
     return applyAction(myGame(), 'pot');
   }
 });
+
+describe('accessibility', () => {
+  it('should name the icon-only header buttons', async () => {
+    setUp(applyAction(myGame(), 'pot'));
+    render(<GamePage />);
+
+    expect(await screen.findByRole('button', { name: 'Share game' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo last action' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View all players' })).toBeInTheDocument();
+  });
+
+  it('should not put a button inside a link', async () => {
+    // The winner screen's sign-in prompt, shown to guests
+    mockUser = null;
+    setUp(wonBy(myGame(), 0), { currentUserId: null });
+    const { container } = render(<GamePage />);
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/auth');
+    expect(container.querySelector('a button, button a')).toBeNull();
+  });
+
+  it('should go back from the game screen with a plain link', async () => {
+    setUp(applyAction(myGame(), 'pot'));
+    const { container } = render(<GamePage />);
+
+    expect(await screen.findByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/');
+    expect(container.querySelector('a button, button a')).toBeNull();
+  });
+});

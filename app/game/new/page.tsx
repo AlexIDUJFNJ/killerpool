@@ -206,11 +206,11 @@ export default function NewGamePage() {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <h1 className="text-2xl sm:text-3xl font-bold">New Game</h1>
         </div>
 
@@ -227,7 +227,9 @@ export default function NewGamePage() {
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center gap-3 sm:gap-4">
                     <button
+                      type="button"
                       onClick={() => setSelectedRowId(player.rowId)}
+                      aria-label={`Choose avatar for player ${index + 1}`}
                       className="shrink-0"
                     >
                       <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-primary/20 cursor-pointer hover:border-primary transition-colors">
@@ -238,8 +240,11 @@ export default function NewGamePage() {
                     </button>
 
                     <div className="flex-1 min-w-0 relative">
+                      {/* The placeholder disappears as soon as someone types,
+                          so it cannot be the field's only name */}
                       <input
                         type="text"
+                        aria-label={`Player ${index + 1} name`}
                         placeholder={`Player ${index + 1} name`}
                         value={player.name}
                         onChange={(e) => handleNameChange(player.rowId, e.target.value)}
@@ -299,6 +304,7 @@ export default function NewGamePage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleRemovePlayer(player.rowId)}
+                        aria-label={`Remove player ${index + 1}`}
                       >
                         <Trash2 className="h-5 w-5 text-destructive" />
                       </Button>
