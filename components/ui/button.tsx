@@ -73,8 +73,16 @@ const Slot = React.forwardRef<HTMLElement, React.HTMLAttributes<HTMLElement>>(
       }
     }
 
-    // React 19 passes ref as an ordinary prop
-    merged.ref = composeRefs(forwardedRef, childProps.ref as React.Ref<HTMLElement> | undefined)
+    // React 19 passes ref as an ordinary prop. Only attach one when there is
+    // one: Button is also rendered by server components (help, leaderboard,
+    // 404), and a ref handed to a client component like Link from there
+    // fails the render ("Refs cannot be used in Server Components").
+    const childRef = childProps.ref as React.Ref<HTMLElement> | undefined
+    if (forwardedRef && childRef) {
+      merged.ref = composeRefs(forwardedRef, childRef)
+    } else if (forwardedRef) {
+      merged.ref = forwardedRef
+    }
 
     return React.cloneElement(children, merged)
   }

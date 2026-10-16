@@ -220,6 +220,25 @@ describe('Button', () => {
       expect(onSlotClick).toHaveBeenCalledTimes(1);
     });
 
+    it('should not hand the child a ref nobody asked for', () => {
+      // Server components render Button too, and a ref passed from there to a
+      // client component such as Link fails the whole render
+      let receivedRef: unknown = 'not rendered';
+      function Probe(props: { href: string; className?: string; ref?: unknown; children?: React.ReactNode }) {
+        receivedRef = props.ref;
+        return <a href={props.href} className={props.className}>{props.children}</a>;
+      }
+
+      render(
+        <Button asChild>
+          <Probe href="https://example.com">Home</Probe>
+        </Button>
+      );
+
+      expect(receivedRef).toBeUndefined();
+      expect(screen.getByRole('link', { name: 'Home' })).toHaveClass('bg-primary');
+    });
+
     it('should forward the ref to the child element', () => {
       const ref = React.createRef<HTMLButtonElement>();
 
