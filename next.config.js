@@ -3,6 +3,8 @@ const { withSentryConfig } = require('@sentry/nextjs')
 const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
+  // The only place the service worker gets registered (the plugin injects the
+  // call into the client entry); components/pwa-init.tsx must not repeat it
   register: true,
   scope: '/',
   sw: 'sw.js',
