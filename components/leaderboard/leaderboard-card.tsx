@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { motion } from 'motion/react'
@@ -24,6 +24,54 @@ export interface LeaderboardEntry {
 export interface LeaderboardCardProps {
   entry: LeaderboardEntry
   className?: string
+}
+
+/** Only http(s) URLs are treated as images; anything else falls back to initials */
+export function getAvatarImageUrl(avatarUrl: string | null): string | null {
+  if (!avatarUrl) return null
+  try {
+    const url = new URL(avatarUrl.trim())
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+/** "Jane Doe" → "JD", "jane.doe" → "JD", "alex" → "A" */
+export function getInitials(name: string): string {
+  const words = name.trim().split(/[\s._-]+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  return words
+    .slice(0, 2)
+    .map((word) => Array.from(word)[0])
+    .join('')
+    .toUpperCase()
+}
+
+function PlayerAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  const imageUrl = getAvatarImageUrl(avatarUrl)
+  // A broken or blocked image falls back to initials rather than an empty circle
+  const [failedUrl, setFailedUrl] = React.useState<string | null>(null)
+  const showImage = imageUrl !== null && failedUrl !== imageUrl
+
+  return (
+    <Avatar className="h-14 w-14 border-2 border-primary/20">
+      {showImage ? (
+        <AvatarImage
+          src={imageUrl}
+          // The name is right next to it, so the picture is decorative
+          alt=""
+          className="object-cover"
+          referrerPolicy="no-referrer"
+          onError={() => setFailedUrl(imageUrl)}
+        />
+      ) : (
+        <AvatarFallback className="text-lg font-bold bg-primary/10 text-primary" aria-hidden="true">
+          {getInitials(name)}
+        </AvatarFallback>
+      )}
+    </Avatar>
+  )
 }
 
 export function LeaderboardCard({ entry, className }: LeaderboardCardProps) {
@@ -62,21 +110,18 @@ export function LeaderboardCard({ entry, className }: LeaderboardCardProps) {
           <div className="flex items-center gap-4">
             {/* Rank Number / Medal */}
             <div className="shrink-0 w-12 flex items-center justify-center">
+              <span className="sr-only">Rank {rank}</span>
               {isTopThree ? (
                 <Trophy className={cn('h-8 w-8', getMedalColor(rank))} />
               ) : (
-                <span className="text-2xl font-bold text-muted-foreground">
+                <span className="text-2xl font-bold text-muted-foreground" aria-hidden="true">
                   {rank}
                 </span>
               )}
             </div>
 
             {/* Avatar */}
-            <Avatar className="h-14 w-14 border-2 border-primary/20">
-              <AvatarFallback className="text-3xl bg-primary/10">
-                {avatar_url || '🎱'}
-              </AvatarFallback>
-            </Avatar>
+            <PlayerAvatar name={display_name} avatarUrl={avatar_url} />
 
             {/* Player Info */}
             <div className="flex-1 min-w-0">
@@ -84,6 +129,7 @@ export function LeaderboardCard({ entry, className }: LeaderboardCardProps) {
                 <h3 className="font-bold text-lg truncate">{display_name}</h3>
                 {isTopThree && (
                   <Badge
+                    aria-hidden="true"
                     variant="default"
                     className={cn(
                       'text-xs px-2 py-0',

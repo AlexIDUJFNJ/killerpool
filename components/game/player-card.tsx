@@ -16,7 +16,7 @@ export interface PlayerCardProps {
   isActive?: boolean
   maxLives?: number
   className?: string
-  variant?: 'default' | 'compact' | 'mini' | 'inline'
+  variant?: 'default' | 'compact'
   showPosition?: number
 }
 
@@ -40,45 +40,6 @@ export function PlayerCard({
   showPosition,
 }: PlayerCardProps) {
   const lifeColor = getLifeColor(lives)
-  // Inline variant - ultra compact for sticky header
-  if (variant === 'inline') {
-    return (
-      <div className={cn('flex items-center gap-3', className)}>
-        <span className="text-2xl">{avatar}</span>
-        <span className="font-bold text-lg">{name}&apos;s Turn</span>
-        <div className="flex gap-0.5 ml-auto">
-          {Array.from({ length: Math.min(lives, 5) }).map((_, i) => (
-            <div key={i} className={cn('h-2 w-2 rounded-full', lifeColor.bg)} />
-          ))}
-          {lives > 5 && <span className="text-xs ml-1">+{lives - 5}</span>}
-        </div>
-      </div>
-    )
-  }
-
-  // Mini variant - for "Next Up" preview
-  if (variant === 'mini') {
-    return (
-      <motion.div
-        initial={{ opacity: 0, x: -10 }}
-        animate={{ opacity: 1, x: 0 }}
-        className={cn(
-          'flex items-center gap-3 py-2 px-3 rounded-lg bg-muted/30',
-          className
-        )}
-      >
-        <span className="text-muted-foreground text-sm">→</span>
-        <span className="text-xl">{avatar}</span>
-        <span className="font-medium flex-1">{name}</span>
-        <div className="flex gap-0.5">
-          {Array.from({ length: Math.min(lives, 5) }).map((_, i) => (
-            <div key={i} className={cn('h-2 w-2 rounded-full', lifeColor.bg)} />
-          ))}
-          {lives > 5 && <span className="text-xs ml-1">+{lives - 5}</span>}
-        </div>
-      </motion.div>
-    )
-  }
 
   // Compact variant - for all players list
   if (variant === 'compact') {

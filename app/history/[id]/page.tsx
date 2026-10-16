@@ -8,7 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
 import { createClient } from '@/lib/supabase/client'
-import { Game } from '@/lib/types'
+import { Game, GameAction } from '@/lib/types'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
+import { formatDuration, getGameWinner } from '../history-utils'
 import { mapDbGameToGame } from '@/lib/game-mapper'
 import { motion } from 'motion/react'
 import {
@@ -16,9 +19,6 @@ import {
   Trophy,
   Users,
   Clock,
-  TrendingDown,
-  TrendingUp,
-  Minus,
   Share2,
   Calendar,
   FileText,
@@ -26,6 +26,11 @@ import {
   Check
 } from 'lucide-react'
 import { exportGameToCSV, exportScreenshot, shareGame, copyGameSummary } from '@/lib/export'
+
+function ActionIcon({ action }: { action: GameAction }) {
+  const { icon: Icon, text } = ACTION_STYLES[action]
+  return <Icon className={cn('h-4 w-4', text)} />
+}
 
 export default function GameDetailsPage() {
   const params = useParams()
@@ -158,19 +163,19 @@ export default function GameDetailsPage() {
             <p className="text-muted-foreground mb-6">
               This game history could not be found. It may have been deleted or the link is incorrect.
             </p>
-            <Link href="/history">
-              <Button>
+            <Button asChild>
+              <Link href="/history">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to History
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </div>
       </main>
     )
   }
 
-  const winner = game.players.find(p => p.id === game.winnerId)
+  const winner = getGameWinner(game)
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -181,52 +186,6 @@ export default function GameDetailsPage() {
       hour: '2-digit',
       minute: '2-digit',
     }).format(date)
-  }
-
-  const formatDuration = (start: string, end: string) => {
-    const duration = new Date(end).getTime() - new Date(start).getTime()
-    const minutes = Math.floor(duration / 60000)
-    const seconds = Math.floor((duration % 60000) / 1000)
-    return `${minutes}m ${seconds}s`
-  }
-
-  const getActionIcon = (action: string) => {
-    switch (action) {
-      case 'miss':
-        return <TrendingDown className="h-4 w-4 text-red-500" />
-      case 'pot':
-        return <Minus className="h-4 w-4 text-yellow-500" />
-      case 'pot_black':
-        return <TrendingUp className="h-4 w-4 text-green-500" />
-      default:
-        return null
-    }
-  }
-
-  const getActionLabel = (action: string) => {
-    switch (action) {
-      case 'miss':
-        return 'MISS'
-      case 'pot':
-        return 'POT'
-      case 'pot_black':
-        return 'BLACK POT'
-      default:
-        return action
-    }
-  }
-
-  const getActionColor = (action: string) => {
-    switch (action) {
-      case 'miss':
-        return 'bg-red-500/10 text-red-500 border-red-500/20'
-      case 'pot':
-        return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-      case 'pot_black':
-        return 'bg-green-500/10 text-green-500 border-green-500/20'
-      default:
-        return 'bg-muted'
-    }
   }
 
   // Calculate player statistics
@@ -245,11 +204,11 @@ export default function GameDetailsPage() {
       <div className="max-w-4xl mx-auto" id="game-details-content">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/history">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/history" aria-label="Back to history">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <h1 className="text-3xl font-bold">Game Details</h1>
         </div>
 
@@ -271,6 +230,29 @@ export default function GameDetailsPage() {
                     </div>
                     <p className="text-sm font-normal text-muted-foreground mt-1">
                       Winner
+                    </p>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Ended early with "End Game": there is no winner to crown */}
+        {game.status === 'abandoned' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="border-2 border-border bg-muted/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3">
+                  <span className="text-3xl" aria-hidden="true">⏸️</span>
+                  <div>
+                    <div className="text-2xl">Game Abandoned</div>
+                    <p className="text-sm font-normal text-muted-foreground mt-1">
+                      Ended before a winner was decided
                     </p>
                   </div>
                 </CardTitle>
@@ -340,7 +322,7 @@ export default function GameDetailsPage() {
                     <div
                       key={player.id}
                       className={`p-4 rounded-lg border-2 transition-all ${
-                        player.id === game.winnerId
+                        player.id === winner?.id
                           ? 'border-green-500/50 bg-green-500/5'
                           : 'border-border bg-muted/50'
                       }`}
@@ -351,7 +333,7 @@ export default function GameDetailsPage() {
                           <div>
                             <div className="font-semibold flex items-center gap-2">
                               {player.name}
-                              {player.id === game.winnerId && (
+                              {player.id === winner?.id && (
                                 <Trophy className="h-4 w-4 text-yellow-500" />
                               )}
                               {player.eliminated && (
@@ -372,16 +354,16 @@ export default function GameDetailsPage() {
                           <div className="font-bold">{stats.totalActions}</div>
                           <div className="text-xs text-muted-foreground">Actions</div>
                         </div>
-                        <div className="bg-red-500/10 rounded-md p-2">
-                          <div className="font-bold text-red-500">{stats.misses}</div>
+                        <div className={cn('rounded-md border p-2', ACTION_STYLES.miss.surface)}>
+                          <div className={cn('font-bold', ACTION_STYLES.miss.text)}>{stats.misses}</div>
                           <div className="text-xs text-muted-foreground">Misses</div>
                         </div>
-                        <div className="bg-yellow-500/10 rounded-md p-2">
-                          <div className="font-bold text-yellow-500">{stats.pots}</div>
+                        <div className={cn('rounded-md border p-2', ACTION_STYLES.pot.surface)}>
+                          <div className={cn('font-bold', ACTION_STYLES.pot.text)}>{stats.pots}</div>
                           <div className="text-xs text-muted-foreground">Pots</div>
                         </div>
-                        <div className="bg-green-500/10 rounded-md p-2">
-                          <div className="font-bold text-green-500">{stats.blackPots}</div>
+                        <div className={cn('rounded-md border p-2', ACTION_STYLES.pot_black.surface)}>
+                          <div className={cn('font-bold', ACTION_STYLES.pot_black.text)}>{stats.blackPots}</div>
                           <div className="text-xs text-muted-foreground">Blacks</div>
                         </div>
                       </div>
@@ -408,36 +390,39 @@ export default function GameDetailsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <ol className="space-y-2 max-h-96 overflow-y-auto" aria-label="Action timeline">
                 {game.history.map((entry, index) => (
-                  <motion.div
+                  <motion.li
                     key={entry.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: Math.min(index * 0.02, 0.5) }}
-                    className={`flex items-center gap-3 p-3 rounded-lg border ${getActionColor(entry.action)}`}
+                    className={cn('flex items-center gap-3 p-3 rounded-lg border', ACTION_STYLES[entry.action].surface)}
                   >
                     <div className="shrink-0">
-                      {getActionIcon(entry.action)}
+                      <ActionIcon action={entry.action} />
                     </div>
                     <div className="grow">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{entry.playerName}</span>
-                        <span className="text-sm text-muted-foreground">•</span>
-                        <span className="text-sm font-medium">{getActionLabel(entry.action)}</span>
+                        <span className="text-sm text-muted-foreground" aria-hidden="true">•</span>
+                        <span className={cn('text-sm font-medium', ACTION_STYLES[entry.action].text)}>
+                          {ACTION_STYLES[entry.action].name}
+                        </span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {entry.livesBefore} → {entry.livesAfter} lives
-                        <span className="mx-2">•</span>
+                        <span className="mx-2" aria-hidden="true">•</span>
                         {new Date(entry.timestamp).toLocaleTimeString()}
                       </div>
                     </div>
-                    <div className="shrink-0 text-sm text-muted-foreground">
-                      #{game.history.length - index}
+                    {/* history is stored oldest first, so the first row is shot #1 */}
+                    <div className="shrink-0 text-sm text-muted-foreground" aria-hidden="true">
+                      #{index + 1}
                     </div>
-                  </motion.div>
+                  </motion.li>
                 ))}
-              </div>
+              </ol>
             </CardContent>
           </Card>
         </motion.div>

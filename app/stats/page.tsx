@@ -9,145 +9,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { loadGameHistory, getGuestId } from '@/lib/storage'
-
-interface PlayerStats {
-  totalGames: number
-  gamesWon: number
-  gamesLost: number
-  winRate: number
-  totalActions: number
-  totalMisses: number
-  totalPots: number
-  totalBlackPots: number
-  averageLivesRemaining: number
-  longestWinStreak: number
-  currentStreak: number
-  bestGame: {
-    id: string
-    date: string
-    livesRemaining: number
-  } | null
-}
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
+import { computeStats, getMyIds, type PlayerStats } from './compute-stats'
 
 export default function StatsPage() {
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function loadStats() {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+  useEffect(() => {
+    let cancelled = false
 
-      // Get all completed games from localStorage
-      const allGames = loadGameHistory().filter(game => game.status === 'completed')
-
-      if (allGames.length === 0) {
-        setStats(null)
-        setLoading(false)
-        return
-      }
-
-      // Games are created with players[0].userId set to the creator's auth id,
-      // or to the stable guest id for anonymous users (see app/game/new)
-      const myId = user?.id ?? getGuestId()
-
-      // Calculate stats
-      const playerGames = allGames.filter(game =>
-        game.players.some(p => p.userId === myId)
-      )
-
-      if (playerGames.length === 0) {
-        setStats(null)
-        setLoading(false)
-        return
-      }
-
-      const gamesWon = playerGames.filter(game => game.winnerId &&
-        game.players.find(p => p.id === game.winnerId)?.userId === myId
-      ).length
-
-      const gamesLost = playerGames.length - gamesWon
-
-      // Calculate streaks
-      let currentStreak = 0
-      let longestWinStreak = 0
-      let tempStreak = 0
-
-      const sortedGames = [...playerGames].sort((a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      )
-
-      sortedGames.forEach((game, index) => {
-        const isWin = game.winnerId &&
-          game.players.find(p => p.id === game.winnerId)?.userId === myId
-
-        if (isWin) {
-          tempStreak++
-          if (tempStreak > longestWinStreak) {
-            longestWinStreak = tempStreak
-          }
-          if (index === sortedGames.length - 1) {
-            currentStreak = tempStreak
-          }
-        } else {
-          tempStreak = 0
-        }
-      })
-
-      // Calculate action stats
-      let totalMisses = 0
-      let totalPots = 0
-      let totalBlackPots = 0
-      let totalLivesRemaining = 0
-      let bestGame: PlayerStats['bestGame'] = null
-
-      playerGames.forEach(game => {
-        const player = game.players.find(p => p.userId === myId)
-
-        if (!player) return
-
-        const playerHistory = game.history.filter(h => h.playerId === player.id)
-
-        totalMisses += playerHistory.filter(h => h.action === 'miss').length
-        totalPots += playerHistory.filter(h => h.action === 'pot').length
-        totalBlackPots += playerHistory.filter(h => h.action === 'pot_black').length
-        totalLivesRemaining += player.lives
-
-        // Track best game
-        if (!bestGame || player.lives > bestGame.livesRemaining) {
-          bestGame = {
-            id: game.id,
-            date: game.createdAt,
-            livesRemaining: player.lives,
-          }
-        }
-      })
-
-      const totalActions = totalMisses + totalPots + totalBlackPots
-
-      setStats({
-        totalGames: playerGames.length,
-        gamesWon,
-        gamesLost,
-        winRate: gamesWon / playerGames.length * 100,
-        totalActions,
-        totalMisses,
-        totalPots,
-        totalBlackPots,
-        averageLivesRemaining: totalLivesRemaining / playerGames.length,
-        longestWinStreak,
-        currentStreak,
-        bestGame,
-      })
-    } catch (error) {
-      console.error('Failed to load stats:', error)
-    } finally {
+    const show = (userId: string | null) => {
+      if (cancelled) return
+      setStats(computeStats(loadGameHistory(), getMyIds(userId, getGuestId())))
       setLoading(false)
     }
-  }
 
-  useEffect(() => {
-    loadStats()
+    // Signed out, or Supabase unreachable: the guest id alone still finds
+    // every game played on this device
+    Promise.resolve()
+      .then(() => createClient().auth.getUser())
+      .then(({ data: { user } }) => show(user?.id ?? null))
+      .catch((error) => {
+        console.error('Failed to load stats:', error)
+        show(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (loading) {
@@ -155,11 +46,11 @@ export default function StatsPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <h1 className="text-2xl sm:text-3xl font-bold">Statistics</h1>
           </div>
           <div className="flex justify-center items-center h-64">
@@ -175,11 +66,11 @@ export default function StatsPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <h1 className="text-2xl sm:text-3xl font-bold">Statistics</h1>
           </div>
           <Card>
@@ -190,9 +81,9 @@ export default function StatsPage() {
                 <p className="text-sm sm:text-base text-muted-foreground mb-6">
                   Play some games to see your statistics here!
                 </p>
-                <Link href="/game/new">
-                  <Button>Start New Game</Button>
-                </Link>
+                <Button asChild>
+                  <Link href="/game/new">Start New Game</Link>
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -206,11 +97,11 @@ export default function StatsPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold">Your Statistics</h1>
             <p className="text-xs sm:text-sm text-muted-foreground">Track your performance and progress</p>
@@ -273,15 +164,15 @@ export default function StatsPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Misses</span>
-                  <Badge variant="destructive">{stats.totalMisses}</Badge>
+                  <Badge variant="outline" className={cn(ACTION_STYLES.miss.surface, ACTION_STYLES.miss.text)}>{stats.totalMisses}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Pots</span>
-                  <Badge>{stats.totalPots}</Badge>
+                  <Badge variant="outline" className={cn(ACTION_STYLES.pot.surface, ACTION_STYLES.pot.text)}>{stats.totalPots}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Black Pots</span>
-                  <Badge className="bg-green-500">{stats.totalBlackPots}</Badge>
+                  <Badge variant="outline" className={cn(ACTION_STYLES.pot_black.surface, ACTION_STYLES.pot_black.text)}>{stats.totalBlackPots}</Badge>
                 </div>
               </CardContent>
             </Card>
@@ -354,12 +245,12 @@ export default function StatsPage() {
                       {new Date(stats.bestGame.date).toLocaleDateString()}
                     </div>
                   </div>
-                  <Link href={`/history/${stats.bestGame.id}`}>
-                    <Button variant="outline">
+                  <Button asChild variant="outline">
+                    <Link href={`/history/${stats.bestGame.id}`}>
                       View Game
                       <Zap className="ml-2 h-4 w-4" />
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>

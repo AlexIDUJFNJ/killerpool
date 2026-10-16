@@ -6,10 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useGame } from '@/contexts/game-context'
 import { motion } from 'motion/react'
-import { Play, History, Trophy, Users, CircleUser, LogIn, Award } from 'lucide-react'
+import { Play, History, Trophy, Users, CircleUser, LogIn, Award, CircleHelp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { PWAInstallButton } from '@/components/pwa-install-button'
+import { ThemeToggle } from '@/components/theme-toggle'
 import type { User } from '@supabase/supabase-js'
+import { ACTION_STYLES, formatLivesDelta } from '@/components/game/action-styles'
+import { DEFAULT_RULESET, type GameAction } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+const RULE_ACTIONS: GameAction[] = ['miss', 'pot', 'pot_black']
 
 export default function Home() {
   const { game, isLoading } = useGame()
@@ -61,19 +67,19 @@ export default function Home() {
         >
           {!authLoading && (
             user ? (
-              <Link href="/profile">
-                <Button variant="outline" size="lg">
+              <Button asChild variant="outline" size="lg">
+                <Link href="/profile">
                   <CircleUser className="mr-2 h-5 w-5" />
                   Profile
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             ) : (
-              <Link href="/auth">
-                <Button variant="outline" size="lg">
+              <Button asChild variant="outline" size="lg">
+                <Link href="/auth">
                   <LogIn className="mr-2 h-5 w-5" />
                   Sign In
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           )}
         </motion.div>
@@ -114,11 +120,9 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
-                  <Link href={`/game/${game.id}`}>
-                    <Button size="default" className="sm:size-lg shrink-0">
-                      Resume
-                    </Button>
-                  </Link>
+                  <Button asChild className="shrink-0 sm:h-10 sm:px-8">
+                    <Link href={`/game/${game.id}`}>Resume</Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -132,34 +136,34 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="grid gap-4 mb-8"
         >
-          <Link href="/game/new" className="w-full">
-            <Button size="xl" className="w-full h-20 text-lg shadow-lg shadow-primary/20">
+          <Button asChild size="xl" className="w-full h-20 text-lg shadow-lg shadow-primary/20">
+            <Link href="/game/new">
               <Users className="mr-3 h-6 w-6" />
               Start New Game
-            </Button>
-          </Link>
+            </Link>
+          </Button>
 
           <div className="grid grid-cols-3 gap-2 sm:gap-4">
-            <Link href="/history" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+            <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+              <Link href="/history">
                 <History className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">History</span>
-              </Button>
-            </Link>
+                <span className="sr-only sm:not-sr-only">History</span>
+              </Link>
+            </Button>
 
-            <Link href="/stats" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+            <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+              <Link href="/stats">
                 <Trophy className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Stats</span>
-              </Button>
-            </Link>
+                <span className="sr-only sm:not-sr-only">Stats</span>
+              </Link>
+            </Button>
 
-            <Link href="/leaderboard" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+            <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+              <Link href="/leaderboard">
                 <Award className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Top</span>
-              </Button>
-            </Link>
+                <span className="sr-only sm:not-sr-only">Top</span>
+              </Link>
+            </Button>
           </div>
         </motion.div>
 
@@ -172,22 +176,18 @@ export default function Home() {
           <Card>
             <CardContent className="p-4 sm:p-6">
               <h3 className="font-semibold mb-3 text-sm sm:text-base">Classic Rules</h3>
-              <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-red-500">-1</div>
-                  <div className="text-xs text-muted-foreground">MISS</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-slate-400">0</div>
-                  <div className="text-xs text-muted-foreground">POT</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-emerald-500">+1</div>
-                  <div className="text-xs text-muted-foreground">POT BLACK</div>
-                </div>
-              </div>
+              <dl className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                {RULE_ACTIONS.map((action) => (
+                  <div key={action} className="flex flex-col-reverse">
+                    <dt className="text-xs text-muted-foreground">{ACTION_STYLES[action].name}</dt>
+                    <dd className={cn('text-xl sm:text-2xl font-bold', ACTION_STYLES[action].text)}>
+                      {formatLivesDelta(DEFAULT_RULESET.params[action])}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
               <p className="text-xs sm:text-sm text-muted-foreground mt-4 text-center">
-                3 starting lives • Last player standing wins
+                {DEFAULT_RULESET.params.starting_lives} starting lives • Last player standing wins
               </p>
             </CardContent>
           </Card>
@@ -202,6 +202,22 @@ export default function Home() {
         >
           <PWAInstallButton className="w-full h-14" />
         </motion.div>
+
+        <motion.footer
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+          className="mt-8 flex flex-col-reverse items-center gap-4 sm:flex-row sm:justify-between"
+        >
+          <Link
+            href="/help"
+            className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <CircleHelp className="h-4 w-4" />
+            Help &amp; rules
+          </Link>
+          <ThemeToggle />
+        </motion.footer>
       </div>
     </main>
   )
