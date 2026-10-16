@@ -1,7 +1,7 @@
 /**
  * Export utilities for Killerpool
  *
- * Handles exporting game data to various formats (CSV, Screenshot, Share)
+ * Handles exporting game data to various formats (CSV, Screenshot, Share, Clipboard)
  */
 
 import { Game } from './types'
@@ -135,37 +135,19 @@ export function exportGameToCSV(game: Game): void {
 }
 
 /**
- * Export game data as JSON
- */
-export function exportGameToJSON(game: Game): void {
-  if (!game) {
-    console.error('No game data to export')
-    return
-  }
-
-  const jsonContent = JSON.stringify(game, null, 2)
-  const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' })
-  const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-
-  link.setAttribute('href', url)
-  link.setAttribute('download', `killerpool-game-${game.id.slice(0, 8)}-${Date.now()}.json`)
-  link.style.visibility = 'hidden'
-
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-
-}
-
-/**
  * Take a screenshot of the current page
- * Note: This requires html2canvas library to be installed
+ *
+ * html2canvas-pro, not html2canvas: Tailwind 4 emits its palette as oklch()
+ * and opacity modifiers as color-mix(), which the browser reports back as
+ * oklch()/oklab() in computed styles. html2canvas 1.4.1 parses only rgb() and
+ * hsl() and throws "unsupported color function" on the first of them, so the
+ * export never produced an image. html2canvas-pro is a fork with the same API
+ * that parses oklch, oklab, lab, lch and color().
  */
 export async function exportScreenshot(elementId: string, filename?: string): Promise<void> {
   try {
-    // Dynamically import html2canvas only when needed
-    const html2canvas = (await import('html2canvas')).default
+    // Dynamically imported: only this button needs it
+    const html2canvas = (await import('html2canvas-pro')).default
 
     const element = document.getElementById(elementId) || document.body
     const canvas = await html2canvas(element, {
