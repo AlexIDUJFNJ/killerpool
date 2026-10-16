@@ -117,14 +117,14 @@
 --  * Inserting is still open: anyone may INSERT a new game with any id they
 --    pick, and with any participants (00015, "a GUEST identity is still
 --    forgeable"). That includes the id of a game whose first write has not
---    landed yet. The id is minted on the host's device, but the invite modal
---    shows the link while that write is in flight, and still shows it when
---    it failed (offline). Whoever INSERTs the id first decides its hash: with
---    their own, the host's writes are refused from then on (one game lost to
---    the server, not a running game taken over); with none, the game is
---    unprotected as before 00016. It takes a deliberate request in that
---    window. Closing it is client work: show the link only once sharing
---    succeeded.
+--    landed yet. Whoever INSERTs the id first decides its hash: with their
+--    own, the host's writes are refused from then on (one game lost to the
+--    server, not a running game taken over); with none, the game is
+--    unprotected as before 00016. The id is minted on the host's device, and
+--    the invite modal (components/game/invite-modal.tsx) shows the link only
+--    once the host's first write has landed, so the id is not handed out
+--    before its row exists. What remains is an id leaking some other way
+--    before that first write, which takes guessing a random UUID.
 --  * The secret is a bearer token: whoever reads the host's localStorage, or
 --    a log that records request headers, can write the game until its
 --    24 hours are up.
