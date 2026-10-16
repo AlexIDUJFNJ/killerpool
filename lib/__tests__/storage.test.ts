@@ -8,10 +8,10 @@ import {
   clearCurrentGame,
   saveToHistory,
   loadGameHistory,
-  clearGameHistory,
   getGameFromHistory,
   deleteGameFromHistory,
-  hasCurrentGame,
+  markCurrentGameShared,
+  isCurrentGameShared,
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
@@ -23,6 +23,12 @@ import {
   resolveRosterPlayerId,
   rememberRosterPlayers,
   getPlayerNamesSuggestions,
+  recordSyncFailure,
+  isSyncExhausted,
+  isSyncBackedOff,
+  MAX_SYNC_AGE_MS,
+  BACKOFF_BASE_MS,
+  BACKOFF_MAX_MS,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
@@ -87,6 +93,38 @@ describe('Storage', () => {
     });
   });
 
+  describe('current game sharing', () => {
+    it('should remember which game is being shared', () => {
+      markCurrentGameShared('game-1');
+
+      expect(isCurrentGameShared('game-1')).toBe(true);
+    });
+
+    it('should not apply the marker to a different game', () => {
+      markCurrentGameShared('game-1');
+
+      expect(isCurrentGameShared('game-2')).toBe(false);
+    });
+
+    it('should forget sharing together with the current game', () => {
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      saveCurrentGame(game);
+      markCurrentGameShared(game.id);
+
+      clearCurrentGame();
+
+      expect(isCurrentGameShared(game.id)).toBe(false);
+    });
+
+    it('should leave the stored game in the shape older bundles read', () => {
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      saveCurrentGame(game);
+      markCurrentGameShared(game.id);
+
+      expect(JSON.parse(localStorage.getItem('killerpool_current_game')!)).toEqual(game);
+    });
+  });
+
   describe('clearCurrentGame', () => {
     it('should clear the current game', () => {
       const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
@@ -116,19 +154,6 @@ describe('Storage', () => {
     });
   });
 
-  describe('hasCurrentGame', () => {
-    it('should return true when a game exists', () => {
-      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
-      saveCurrentGame(game);
-
-      expect(hasCurrentGame()).toBe(true);
-    });
-
-    it('should return false when no game exists', () => {
-      expect(hasCurrentGame()).toBe(false);
-    });
-  });
-
   describe('saveToHistory and loadGameHistory', () => {
     it('should save completed game to history', () => {
       const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
@@ -141,7 +166,7 @@ describe('Storage', () => {
       expect(history[0]).toEqual(game);
     });
 
-    it('should not save non-completed games', () => {
+    it('should not save a game that is still being played', () => {
       const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
       game.status = 'active';
 
@@ -149,6 +174,25 @@ describe('Storage', () => {
       const history = loadGameHistory();
 
       expect(history).toHaveLength(0);
+    });
+
+    it('should save an abandoned game', () => {
+      // Ending a game early used to erase it: only 'completed' got through
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      game.status = 'abandoned';
+
+      saveToHistory(game);
+
+      expect(loadGameHistory()).toEqual([game]);
+    });
+
+    it('should replace a completed entry when the same game is abandoned after an undo', () => {
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      saveToHistory({ ...game, status: 'completed' });
+
+      saveToHistory({ ...game, status: 'abandoned' });
+
+      expect(loadGameHistory().map(g => g.status)).toEqual(['abandoned']);
     });
 
     it('should add new games to the beginning of history', () => {
@@ -217,40 +261,6 @@ describe('Storage', () => {
       const history = loadGameHistory();
       expect(history).toEqual([]);
       expect(consoleErrorSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-    });
-  });
-
-  describe('clearGameHistory', () => {
-    it('should clear all game history', () => {
-      const game1 = createGame([{ name: 'Player 1', avatar: '🎱' }]);
-      game1.status = 'completed';
-      const game2 = createGame([{ name: 'Player 2', avatar: '🎯' }]);
-      game2.status = 'completed';
-
-      saveToHistory(game1);
-      saveToHistory(game2);
-
-      expect(loadGameHistory()).toHaveLength(2);
-
-      clearGameHistory();
-      expect(loadGameHistory()).toHaveLength(0);
-    });
-
-    it('should handle errors gracefully', () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
-      jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-        throw new Error('Failed to remove');
-      });
-
-      clearGameHistory();
-
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to clear game history:',
-        expect.any(Error)
-      );
 
       consoleErrorSpy.mockRestore();
     });
@@ -489,6 +499,73 @@ describe('Storage', () => {
       expect(getPendingSyncIds()).toEqual([]);
 
       consoleErrorSpy.mockRestore();
+    });
+
+    it('should keep the queue a plain array of ids', () => {
+      // Older bundles from the service worker cache read this key directly
+      markPendingSync('game-1');
+      recordSyncFailure('game-1');
+
+      expect(JSON.parse(localStorage.getItem('killerpool_pending_sync')!)).toEqual(['game-1']);
+    });
+  });
+
+  describe('retry backoff', () => {
+    const now = Date.now();
+
+    it('should not give up after a handful of failures', () => {
+      // A cap of five attempts used to end retries after about 15 minutes
+      for (let i = 0; i < 20; i++) recordSyncFailure('game-1', now - 3 * 24 * 3600_000);
+
+      expect(isSyncExhausted('game-1', now)).toBe(false);
+    });
+
+    it('should keep retrying for two weeks after the first failure', () => {
+      recordSyncFailure('game-1', now - MAX_SYNC_AGE_MS + 60_000);
+
+      expect(isSyncExhausted('game-1', now)).toBe(false);
+    });
+
+    it('should give up once two weeks have passed since the first failure', () => {
+      recordSyncFailure('game-1', now - MAX_SYNC_AGE_MS - 1);
+      recordSyncFailure('game-1', now);
+
+      expect(isSyncExhausted('game-1', now)).toBe(true);
+    });
+
+    it('should honour a refusal recorded by an older bundle', () => {
+      localStorage.setItem(
+        'killerpool_pending_sync_meta',
+        JSON.stringify({ 'game-1': { attempts: 1, firstFailedAt: now, lastAttemptAt: now, permanent: true } })
+      );
+
+      expect(isSyncExhausted('game-1', now)).toBe(true);
+
+      // and a later failure does not clear it
+      recordSyncFailure('game-1', now);
+      expect(isSyncExhausted('game-1', now)).toBe(true);
+    });
+
+    it('should double the wait after each failure', () => {
+      recordSyncFailure('game-1', now);
+      expect(isSyncBackedOff('game-1', now + BACKOFF_BASE_MS - 1)).toBe(true);
+      expect(isSyncBackedOff('game-1', now + BACKOFF_BASE_MS)).toBe(false);
+
+      recordSyncFailure('game-1', now);
+      expect(isSyncBackedOff('game-1', now + 2 * BACKOFF_BASE_MS - 1)).toBe(true);
+      expect(isSyncBackedOff('game-1', now + 2 * BACKOFF_BASE_MS)).toBe(false);
+    });
+
+    it('should never wait longer than the cap between attempts', () => {
+      for (let i = 0; i < 40; i++) recordSyncFailure('game-1', now);
+
+      expect(isSyncBackedOff('game-1', now + BACKOFF_MAX_MS - 1)).toBe(true);
+      expect(isSyncBackedOff('game-1', now + BACKOFF_MAX_MS)).toBe(false);
+    });
+
+    it('should never back off a game it has no record of', () => {
+      expect(isSyncBackedOff('queued-by-an-older-bundle', now)).toBe(false);
+      expect(isSyncExhausted('queued-by-an-older-bundle', now)).toBe(false);
     });
   });
 });

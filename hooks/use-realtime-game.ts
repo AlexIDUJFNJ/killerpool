@@ -1,114 +1,52 @@
 /**
- * React hook for realtime game synchronization
+ * React hook for following a game live
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { Game, GameHistoryEntry } from '@/lib/types'
+import { useEffect, useRef } from 'react'
+import { Game } from '@/lib/types'
 import { subscribeToGame, unsubscribeFromGame } from '@/lib/realtime'
-import { syncActiveGameToSupabase } from '@/lib/sync'
-import { RealtimeChannel } from '@supabase/supabase-js'
 
 interface UseRealtimeGameOptions {
-  enabled?: boolean
-  onGameUpdate?: (game: Partial<Game>) => void
-  onNewAction?: (action: GameHistoryEntry) => void
-}
-
-export function useRealtimeGame(
-  gameId: string | null,
-  options: UseRealtimeGameOptions = {}
-) {
-  const {
-    enabled = true,
-    onGameUpdate,
-    onNewAction,
-  } = options
-
-  const [isConnected, setIsConnected] = useState(false)
-  const channelRef = useRef<RealtimeChannel | null>(null)
-
-  // Use refs for callbacks to avoid re-subscribing on every render
-  const onGameUpdateRef = useRef(onGameUpdate)
-  const onNewActionRef = useRef(onNewAction)
-
-  // Keep refs up to date
-  useEffect(() => {
-    onGameUpdateRef.current = onGameUpdate
-    onNewActionRef.current = onNewAction
-  }, [onGameUpdate, onNewAction])
-
-  useEffect(() => {
-    if (!gameId || !enabled) {
-      return
-    }
-
-    // Don't re-subscribe if we already have a channel for this game
-    if (channelRef.current) {
-      return
-    }
-
-
-    const channel = subscribeToGame(
-      gameId,
-      (gameUpdate) => {
-        onGameUpdateRef.current?.(gameUpdate)
-      },
-      (action) => {
-        onNewActionRef.current?.(action)
-      },
-      // Driven by the channel's own status, so "live" means subscribed rather
-      // than merely "a channel object exists"
-      setIsConnected
-    )
-
-    if (channel) {
-      channelRef.current = channel
-    }
-
-    // Cleanup on unmount or when gameId/enabled changes
-    return () => {
-      if (channelRef.current) {
-        unsubscribeFromGame(channelRef.current)
-        channelRef.current = null
-        setIsConnected(false)
-      }
-    }
-  }, [gameId, enabled]) // Removed callback dependencies
-
-  return {
-    isConnected,
-  }
+  onGameUpdate: (game: Game) => void
+  /** true once the channel is subscribed, false whenever it is not */
+  onStatus?: (connected: boolean) => void
 }
 
 /**
- * Hook to sync a game for realtime when it's created
+ * Follow the row of a game somebody else is hosting. Pass null to stop.
+ *
+ * The subscription belongs to the effect: it is opened and closed with it, so
+ * StrictMode's double run and a change of game each get a channel of their own.
  */
-export function useSyncGameForRealtime(game: Game | null) {
-  // Keyed by game id rather than a plain boolean: a second shared game in the
-  // same session used to be left unsynced, because the flag never reset
-  const [syncedGameId, setSyncedGameId] = useState<string | null>(null)
-  const inFlightRef = useRef(false)
-
-  const isSynced = syncedGameId !== null && syncedGameId === (game?.id ?? null)
+export function useRealtimeGame(gameId: string | null, options: UseRealtimeGameOptions): void {
+  // Refs, so a new callback identity does not tear down the subscription
+  const onGameUpdateRef = useRef(options.onGameUpdate)
+  const onStatusRef = useRef(options.onStatus)
 
   useEffect(() => {
-    if (!game || game.status !== 'active' || isSynced || inFlightRef.current) return
+    onGameUpdateRef.current = options.onGameUpdate
+    onStatusRef.current = options.onStatus
+  })
 
-    inFlightRef.current = true
+  useEffect(() => {
+    if (!gameId) return
 
-    syncActiveGameToSupabase(game)
-      .then(({ success }) => {
-        if (success) setSyncedGameId(game.id)
-      })
-      .catch((error) => {
-        console.error('Failed to sync game:', error)
-      })
-      .finally(() => {
-        inFlightRef.current = false
-      })
-  }, [game, isSynced])
+    // A channel being removed can still deliver; nothing it says applies any
+    // more once its effect has been cleaned up
+    let active = true
+    const channel = subscribeToGame(
+      gameId,
+      (game) => {
+        if (active) onGameUpdateRef.current(game)
+      },
+      (connected) => {
+        if (active) onStatusRef.current?.(connected)
+      }
+    )
 
-  return {
-    isSynced,
-  }
+    return () => {
+      active = false
+      void unsubscribeFromGame(channel)
+    }
+  }, [gameId])
 }

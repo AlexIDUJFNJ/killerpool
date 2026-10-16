@@ -15,6 +15,7 @@ const STORAGE_KEYS = {
   DELETED_GAMES: 'killerpool_deleted_games',
   ROSTER: 'killerpool_roster',
   PENDING_SYNC_META: 'killerpool_pending_sync_meta',
+  SHARED_GAME: 'killerpool_shared_game',
 } as const
 
 /**
@@ -47,8 +48,37 @@ export function loadCurrentGame(): Game | null {
 export function clearCurrentGame(): void {
   try {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_GAME)
+    localStorage.removeItem(STORAGE_KEYS.SHARED_GAME)
   } catch (error) {
     console.error('Failed to clear game from localStorage:', error)
+  }
+}
+
+/**
+ * Remember that the current game is being broadcast to spectators.
+ *
+ * Without this a reload silently stopped the broadcast: the host kept playing,
+ * nothing reached Supabase any more, and every spectator's screen froze on the
+ * last move before the reload. Kept under its own key, holding the game id,
+ * so the stored game keeps the exact shape an older bundle still reads.
+ */
+export function markCurrentGameShared(gameId: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SHARED_GAME, gameId)
+  } catch (error) {
+    console.error('Failed to remember game sharing:', error)
+  }
+}
+
+/**
+ * Whether this game was being shared when the page last saw it. Keyed by id,
+ * so a marker left behind by an earlier game never applies to a new one.
+ */
+export function isCurrentGameShared(gameId: string): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.SHARED_GAME) === gameId
+  } catch {
+    return false
   }
 }
 
@@ -71,10 +101,13 @@ export function saveGameHistory(games: Game[]): void {
 }
 
 /**
- * Save completed game to history
+ * Save a finished game to history: completed, or abandoned by its host.
+ * Abandoned games used to be dropped here, so ending a game early erased it
+ * without a trace. They have no winner, and achievements and the leaderboard
+ * still count completed games only.
  */
 export function saveToHistory(game: Game): void {
-  if (game.status !== 'completed') {
+  if (game.status !== 'completed' && game.status !== 'abandoned') {
     return
   }
 
@@ -107,17 +140,6 @@ export function loadGameHistory(): Game[] {
 }
 
 /**
- * Clear all game history
- */
-export function clearGameHistory(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEYS.GAME_HISTORY)
-  } catch (error) {
-    console.error('Failed to clear game history:', error)
-  }
-}
-
-/**
  * Get a specific game from history by ID
  */
 export function getGameFromHistory(gameId: string): Game | null {
@@ -139,13 +161,6 @@ export function deleteGameFromHistory(gameId: string): void {
   } catch (error) {
     console.error('Failed to delete game from history:', error)
   }
-}
-
-/**
- * Check if there's a current game in progress
- */
-export function hasCurrentGame(): boolean {
-  return loadCurrentGame() !== null
 }
 
 /**
@@ -290,7 +305,7 @@ export function getPlayerNamesSuggestions(): string[] {
 }
 
 /**
- * Get IDs of completed games that failed to sync to Supabase
+ * Ids of finished games whose upload has not been confirmed yet
  */
 export function getPendingSyncIds(): string[] {
   try {
@@ -304,7 +319,8 @@ export function getPendingSyncIds(): string[] {
 }
 
 /**
- * Mark a game as pending sync (will be retried when back online)
+ * Queue a game for upload. Callers do this before the attempt, not after it
+ * fails, so a tab closed mid-request still leaves the game in the queue.
  */
 export function markPendingSync(gameId: string): void {
   try {
@@ -409,16 +425,26 @@ export function clearGameDeleted(gameId: string): void {
  * Kept in its own key so `killerpool_pending_sync` stays a plain array of ids:
  * this is a PWA, and a client running an older bundle from the service worker
  * cache would stop draining a queue whose shape changed under it.
+ *
+ * A game is retried until MAX_SYNC_AGE_MS after its first failure, with the
+ * wait between attempts doubling up to BACKOFF_MAX_MS. There used to be a cap
+ * of five attempts on top of that, which at a one-minute base meant giving up
+ * after about a quarter of an hour — a phone that spent an evening offline
+ * lost every game played that evening, and the two longer limits were never
+ * reached.
  */
-export const MAX_SYNC_ATTEMPTS = 5
-const MAX_SYNC_AGE_MS = 14 * 24 * 60 * 60 * 1000
-const BACKOFF_BASE_MS = 60_000
-const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
+export const MAX_SYNC_AGE_MS = 14 * 24 * 60 * 60 * 1000
+export const BACKOFF_BASE_MS = 60_000
+export const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
 
 export interface PendingSyncMeta {
   attempts: number
   firstFailedAt: number
   lastAttemptAt: number
+  /**
+   * Set by older bundles on a refusal. A refused game now leaves the queue at
+   * once (lib/sync.ts), but entries they wrote are still honoured.
+   */
   permanent?: boolean
 }
 
@@ -442,36 +468,30 @@ function writeSyncMeta(meta: Record<string, PendingSyncMeta>): void {
 }
 
 /**
- * Note a failed attempt. A permanent failure — one the server will refuse
- * again, like an RLS rejection — is marked so it is never retried.
+ * Note a failed attempt that is worth repeating
  */
-export function recordSyncFailure(gameId: string, options?: { permanent?: boolean }): void {
+export function recordSyncFailure(gameId: string, now = Date.now()): void {
   const meta = readSyncMeta()
-  const now = Date.now()
   const existing = meta[gameId]
 
   meta[gameId] = {
     attempts: (existing?.attempts ?? 0) + 1,
     firstFailedAt: existing?.firstFailedAt ?? now,
     lastAttemptAt: now,
-    permanent: options?.permanent || existing?.permanent,
+    permanent: existing?.permanent,
   }
 
   writeSyncMeta(meta)
 }
 
 /**
- * Whether to stop trying: refused outright, tried too often, or too old.
+ * Whether to stop trying: refused outright, or failing for too long.
  * An id with no record (an older bundle queued it) is never exhausted.
  */
 export function isSyncExhausted(gameId: string, now = Date.now()): boolean {
   const entry = readSyncMeta()[gameId]
   if (!entry) return false
-  return (
-    entry.permanent === true ||
-    entry.attempts >= MAX_SYNC_ATTEMPTS ||
-    now - entry.firstFailedAt > MAX_SYNC_AGE_MS
-  )
+  return entry.permanent === true || now - entry.firstFailedAt > MAX_SYNC_AGE_MS
 }
 
 /**

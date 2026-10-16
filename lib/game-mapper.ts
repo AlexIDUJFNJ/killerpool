@@ -51,7 +51,12 @@ export function mapGameToDbRow(game: Game, createdBy: string | null): DbGameUpse
   }
 }
 
-interface DbGameRow {
+/**
+ * A `games` row as it comes back from a select or a realtime payload. The
+ * generated Row type types participants/history as Json; they hold the
+ * client's own shapes.
+ */
+export interface DbGameRow {
   id: string
   created_at: string
   updated_at: string

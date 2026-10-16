@@ -4,51 +4,132 @@
  * Handles synchronization between localStorage and Supabase
  */
 
+import { isAuthSessionMissingError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { Game } from './types'
 import { mapDbGameToGame, mapGameToDbRow } from './game-mapper'
 import {
   loadGameHistory,
   saveGameHistory,
+  loadCurrentGame,
   getDeletedGameIds,
   getGameFromHistory,
+  getGuestId,
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
   recordSyncFailure,
+  clearSyncMeta,
   isSyncExhausted,
   isSyncBackedOff,
 } from './storage'
 
 /**
- * Postgres error codes that will never succeed on a retry: the request is
- * malformed or forbidden, not unlucky. Anything else — network failure, an
- * expired token, a 5xx — is worth trying again, so it stays out of this list.
+ * Error codes that will never succeed on a retry: the request is malformed or
+ * forbidden, not unlucky. Anything else — network failure, an expired token, a
+ * 5xx — is worth trying again, so it stays out of this list.
  */
-const PERMANENT_PG_CODES = new Set([
+const PERMANENT_ERROR_CODES = new Set([
+  // Postgres
   '42501', // insufficient_privilege — refused by RLS
+  '42703', // undefined_column — from a trigger or function
   '22P02', // invalid_text_representation
+  '22001', // string_data_right_truncation
+  '22003', // numeric_value_out_of_range
   '22007', // invalid_datetime_format
+  '22008', // datetime_field_overflow
   '23502', // not_null_violation
   '23503', // foreign_key_violation
+  '23505', // unique_violation
   '23514', // check_violation
-  '42703', // undefined_column — client is newer than the schema
+  // PostgREST. A payload key with no matching column is rejected here, before
+  // Postgres sees it — so an unknown column arrives as PGRST204, never as
+  // 42703, and used to be retried as if it were a network blip.
+  'PGRST204', // column not found — client is newer than the schema
+  'PGRST102', // invalid request body
 ])
+
+/**
+ * Why a write did not land:
+ *  - 'retry': worth trying again later (offline, 5xx, auth lookup failed)
+ *  - 'refused': the server will refuse it again; stop trying
+ *  - 'other-account': the game belongs to an account that is not signed in.
+ *    Writing it anonymously would disown it and dropping it would lose it, so
+ *    it waits until that account is back.
+ */
+export type SyncFailure = 'retry' | 'refused' | 'other-account'
 
 export type UpsertOutcome =
   | { ok: true }
-  | { ok: false; permanent: boolean; message: string }
+  | { ok: false; failure: SyncFailure; message: string }
+
+type SupabaseClient = ReturnType<typeof createClient>
+type AuthUser = { id: string; email?: string }
+type IdentityLookup = { ok: true; user: AuthUser | null } | { ok: false; message: string }
+
+/*
+ * Who is signed in, asked once per session instead of before every write.
+ * During a shared game the host writes on every shot, and each write used to
+ * pay for a getUser round trip and a profile upsert first. Keyed by client so
+ * that a different client (in tests, every test) starts from scratch.
+ */
+const identityCache = new WeakMap<SupabaseClient, Promise<IdentityLookup>>()
+const watchedClients = new WeakSet<SupabaseClient>()
+const ensuredProfiles = new WeakMap<SupabaseClient, Set<string>>()
+
+async function lookUpIdentity(supabase: SupabaseClient): Promise<IdentityLookup> {
+  try {
+    const { data, error } = await supabase.auth.getUser()
+    // No session is a real answer — a guest. Anything else (offline, a 5xx
+    // from auth) says nothing about who is signed in, and must not be taken
+    // for "nobody": the game would go out unowned, RLS would refuse it with
+    // 42501, and that refusal counts as permanent.
+    if (error && !isAuthSessionMissingError(error)) {
+      return { ok: false, message: error.message }
+    }
+    return { ok: true, user: data.user ?? null }
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Auth lookup failed' }
+  }
+}
+
+async function currentIdentity(supabase: SupabaseClient): Promise<IdentityLookup> {
+  if (!watchedClients.has(supabase)) {
+    watchedClients.add(supabase)
+    // The cached answer is only good until somebody signs in or out
+    supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'TOKEN_REFRESHED' && event !== 'INITIAL_SESSION') {
+        identityCache.delete(supabase)
+      }
+    })
+  }
+
+  let lookup = identityCache.get(supabase)
+  if (!lookup) {
+    lookup = lookUpIdentity(supabase)
+    identityCache.set(supabase, lookup)
+  }
+
+  const result = await lookup
+  // Only a definite answer is worth keeping
+  if (!result.ok && identityCache.get(supabase) === lookup) {
+    identityCache.delete(supabase)
+  }
+  return result
+}
 
 /**
  * The leaderboard reads display_name from here, so a profile has to exist
  * before the first game lands. Written with ignoreDuplicates so a custom name
- * is never overwritten.
+ * is never overwritten, and once per account per session.
  */
-async function ensurePlayerProfile(
-  supabase: ReturnType<typeof createClient>,
-  user: { id: string; email?: string } | null
-): Promise<void> {
-  if (!user) return
+async function ensurePlayerProfile(supabase: SupabaseClient, user: AuthUser): Promise<void> {
+  let ensured = ensuredProfiles.get(supabase)
+  if (!ensured) {
+    ensured = new Set()
+    ensuredProfiles.set(supabase, ensured)
+  }
+  if (ensured.has(user.id)) return
 
   const { error } = await supabase.from('player_profiles').upsert(
     { user_id: user.id, display_name: user.email?.split('@')[0] || 'Player' },
@@ -57,47 +138,120 @@ async function ensurePlayerProfile(
 
   if (error) {
     console.warn('Failed to ensure player profile:', error.message)
+    return
   }
+  ensured.add(user.id)
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The created_by to write, decided by who created the game rather than by who
+ * happens to be signed in when the write goes out. null when the game belongs
+ * to an account that is not signed in.
+ *
+ * A game created as a guest on this device carries this device's guest id
+ * (or, from older bundles, nothing at all, or the pre-UUID "guest_…" id) and
+ * follows whoever is signed in now: anonymously it is written unowned, and its
+ * first INSERT after signing in legitimately adopts it. Any other creator is an
+ * auth uid, and only that account may write the game.
+ */
+function rowOwner(game: Game, userId: string | null): { createdBy: string | null } | null {
+  const creator = game.createdBy ?? null
+  const isGuestGame = creator === null || !UUID_RE.test(creator) || creator === getGuestId()
+  if (isGuestGame || creator === userId) return { createdBy: userId }
+  return null
 }
 
 /**
- * The only place that writes a row into `games`.
+ * The only place that writes a row into `games`. Everything goes through
+ * writeGameRow below, which keeps the writes for one game in order.
  */
 async function upsertGameRow(game: Game): Promise<UpsertOutcome> {
   try {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const identity = await currentIdentity(supabase)
+    if (!identity.ok) {
+      console.error('Could not tell who is signed in, will retry:', identity.message)
+      return { ok: false, failure: 'retry', message: identity.message }
+    }
 
-    await ensurePlayerProfile(supabase, user)
+    const owner = rowOwner(game, identity.user?.id ?? null)
+    if (!owner) {
+      return {
+        ok: false,
+        failure: 'other-account',
+        message: 'This game belongs to an account that is not signed in',
+      }
+    }
+
+    if (identity.user) await ensurePlayerProfile(supabase, identity.user)
 
     const { error } = await supabase
       .from('games')
-      .upsert(mapGameToDbRow(game, user?.id ?? null), { onConflict: 'id' })
+      .upsert(mapGameToDbRow(game, owner.createdBy), { onConflict: 'id' })
 
     if (error) {
       const message = `${error.message}${error.details ? ` - ${error.details}` : ''}`
       console.error('Failed to sync game to Supabase:', message, error.code)
-      return { ok: false, permanent: PERMANENT_PG_CODES.has(error.code ?? ''), message }
+      return {
+        ok: false,
+        failure: PERMANENT_ERROR_CODES.has(error.code ?? '') ? 'refused' : 'retry',
+        message,
+      }
     }
 
     return { ok: true }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     console.error('Error syncing game to Supabase:', message)
-    return { ok: false, permanent: false, message }
+    return { ok: false, failure: 'retry', message }
   }
 }
 
-/**
- * Sync a completed game to Supabase
+/*
+ * One write per game in flight at a time; anything sent meanwhile waits, and
+ * only the newest waiting state goes out — every write is the whole row, so
+ * the ones in between carry nothing the last one does not.
+ *
+ * Unordered writes were how a stale state could end up in the database: during
+ * a shared game every shot fired its own upsert, and nothing stopped the one
+ * for shot N from landing after the one for shot N+1. The same applies to the
+ * completion pipeline and the retry queue writing the same game.
  */
-export async function syncGameToSupabase(game: Game): Promise<boolean> {
-  if (game.status !== 'completed') {
-    console.warn('Only completed games can be synced to Supabase')
-    return false
-  }
+interface WriteSlot {
+  next: Game | null
+  waiters: Array<(outcome: UpsertOutcome) => void>
+}
 
-  return (await upsertGameRow(game)).ok
+const writeSlots = new Map<string, WriteSlot>()
+
+async function drainWrites(gameId: string, slot: WriteSlot): Promise<void> {
+  while (slot.next) {
+    const game = slot.next
+    const waiters = slot.waiters
+    slot.next = null
+    slot.waiters = []
+    const outcome = await upsertGameRow(game)
+    // A coalesced caller learns the fate of the newer state that replaced its
+    // own, which is the one that matters
+    waiters.forEach(resolve => resolve(outcome))
+  }
+  writeSlots.delete(gameId)
+}
+
+function writeGameRow(game: Game): Promise<UpsertOutcome> {
+  return new Promise(resolve => {
+    const busy = writeSlots.get(game.id)
+    if (busy) {
+      busy.next = game
+      busy.waiters.push(resolve)
+      return
+    }
+    const slot: WriteSlot = { next: game, waiters: [resolve] }
+    writeSlots.set(game.id, slot)
+    void drainWrites(game.id, slot)
+  })
 }
 
 /**
@@ -108,6 +262,8 @@ export async function syncAllGamesToSupabase(): Promise<{
   skipped: number
   refused: number
   failed: number
+  /** Created under an account that is not signed in; kept for when it is */
+  otherAccount: number
   total: number
 }> {
   const games = loadGameHistory()
@@ -119,18 +275,21 @@ export async function syncAllGamesToSupabase(): Promise<{
   let success = 0
   let refused = 0
   let failed = 0
+  let otherAccount = 0
 
   for (const game of syncable) {
-    // via autoSyncGameOutcome so a failure here joins the retry queue like any
+    // via syncFinishedGame so a failure here joins the retry queue like any
     // other, and so a refusal is told apart from a retryable problem
-    const result = await autoSyncGameOutcome(game)
+    const result = await syncFinishedGame(game)
     if (result.ok) {
       success++
-    } else if (result.permanent) {
+    } else if (result.failure === 'refused') {
       // Typically a game played before signing in: its row in Supabase has no
       // owner, and since nothing in the row proves who that owner is, the
       // account cannot claim it. Retrying will never help.
       refused++
+    } else if (result.failure === 'other-account') {
+      otherAccount++
     } else {
       failed++
     }
@@ -141,6 +300,7 @@ export async function syncAllGamesToSupabase(): Promise<{
     skipped: games.length - syncable.length,
     refused,
     failed,
+    otherAccount,
     total: games.length,
   }
 }
@@ -236,34 +396,40 @@ export async function isSupabaseAvailable(): Promise<boolean> {
 }
 
 /**
- * Auto-sync completed game to Supabase (for both authenticated and guest users)
- * Games that fail to sync (e.g. offline) are marked pending and retried later
- * by retryPendingSyncs(). Returns whether the sync succeeded.
+ * Upload a finished game — completed, or abandoned by its host — for both
+ * signed-in users and guests. The game is queued before the attempt and leaves
+ * the queue only once the write is confirmed, so a tab closed mid-request
+ * still has it retried by retryPendingSyncs().
  */
-async function autoSyncGameOutcome(game: Game): Promise<UpsertOutcome> {
-  if (game.status !== 'completed') {
-    return { ok: false, permanent: true, message: 'Only completed games can be synced' }
+export async function syncFinishedGame(game: Game): Promise<UpsertOutcome> {
+  if (game.status !== 'completed' && game.status !== 'abandoned') {
+    return { ok: false, failure: 'refused', message: 'Only finished games can be synced' }
   }
 
-  // Always try to sync to Supabase (for sharing game links)
-  const result = await upsertGameRow(game)
-  if (result.ok) {
-    unmarkPendingSync(game.id)
-  } else {
-    markPendingSync(game.id)
-    recordSyncFailure(game.id, { permanent: result.permanent })
-  }
+  markPendingSync(game.id)
+  const result = await writeGameRow(game)
+  settlePendingSync(game.id, result)
   return result
 }
 
-export async function autoSyncGame(game: Game): Promise<boolean> {
-  return (await autoSyncGameOutcome(game)).ok
+function settlePendingSync(gameId: string, result: UpsertOutcome): void {
+  if (result.ok || result.failure === 'refused') {
+    // Done, or never going to be: either way the queue has nothing left to do
+    unmarkPendingSync(gameId)
+  } else if (result.failure === 'other-account') {
+    // Not an attempt — nothing was sent. The retry clock starts over once the
+    // owner is back, instead of running out while they are away.
+    clearSyncMeta(gameId)
+  } else {
+    recordSyncFailure(gameId)
+  }
 }
 
 let retryInFlight = false
 
 /**
- * Retry syncing completed games that previously failed (e.g. finished offline).
+ * Retry uploading finished games whose upload was never confirmed (finished
+ * offline, tab closed mid-request, owner signed out).
  * Called on 'online' / 'visibilitychange' events, see components/pwa-init.tsx.
  * Achievements earned by a late sync are announced through an event, because
  * PWAInit is a sibling of GameProvider and has no access to its state.
@@ -278,13 +444,15 @@ export async function retryPendingSyncs(): Promise<void> {
     const ids = getPendingSyncIds()
     for (const id of ids) {
       if (isSyncExhausted(id)) {
-        // Refused outright, or tried long enough. Leaving it queued would mean
-        // a request on every tab switch, forever, that can never succeed.
+        // Refused outright, or failing for two weeks. Leaving it queued would
+        // mean a request on every tab switch, forever, that can never succeed.
         console.warn('[sync] giving up on game after repeated failures:', id)
         unmarkPendingSync(id)
         continue
       }
       if (isSyncBackedOff(id)) continue
+      // Its first attempt is still running
+      if (writeSlots.has(id)) continue
 
       const game = getGameFromHistory(id)
       if (!game) {
@@ -293,13 +461,17 @@ export async function retryPendingSyncs(): Promise<void> {
         continue
       }
 
-      const result = await upsertGameRow(game)
+      // A win that was taken back: the game is being played again, and the
+      // finished copy in history is no longer what happened. Whatever it ends
+      // as replaces that copy and is synced then.
+      const current = loadCurrentGame()
+      if (current?.id === id && current.status === 'active') continue
+
+      const result = await writeGameRow(game)
+      settlePendingSync(id, result)
       if (result.ok) {
-        unmarkPendingSync(id)
         const { checkAchievementsForGame, emitUnlockedAchievements } = await import('./achievements')
         emitUnlockedAchievements(await checkAchievementsForGame(game))
-      } else {
-        recordSyncFailure(id, { permanent: result.permanent })
       }
     }
   } finally {
@@ -308,10 +480,11 @@ export async function retryPendingSyncs(): Promise<void> {
 }
 
 /**
- * Sync an active game to Supabase for sharing/spectator mode
- * Unlike syncGameToSupabase, this works for games of any status
+ * Write the current state of a game that is still being played — for live
+ * sharing, where spectators follow the row. Works for games of any status,
+ * and is never queued: a later state replaces it anyway, and the final one
+ * goes through syncFinishedGame.
  */
-export async function syncActiveGameToSupabase(game: Game): Promise<{ success: boolean; error?: string }> {
-  const result = await upsertGameRow(game)
-  return result.ok ? { success: true } : { success: false, error: result.message }
+export function syncActiveGameToSupabase(game: Game): Promise<UpsertOutcome> {
+  return writeGameRow(game)
 }

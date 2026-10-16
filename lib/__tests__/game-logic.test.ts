@@ -8,11 +8,10 @@ import {
   applyAction,
   getCurrentPlayer,
   getActivePlayers,
-  getEliminatedPlayers,
   getNextPlayers,
   getWinner,
   undoLastAction,
-  calculateStats,
+  abandonGame,
 } from '../game-logic';
 import { DEFAULT_RULESET, Game, Player } from '../types';
 
@@ -120,6 +119,19 @@ describe('Game Logic', () => {
       expect(game.players[2].userId).toBe('creator-id');
       expect(game.players[0].userId).toBeNull();
       expect(game.players[1].userId).toBeNull();
+      expect(game.createdBy).toBe('creator-id');
+    });
+
+    it('should record the creator even when no player is marked as them', () => {
+      // Nobody gets the userId, but the sync still needs to know whose game it is
+      const players = [
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ];
+
+      const game = createGame(players, DEFAULT_RULESET, null, 'creator-id');
+
+      expect(game.players.every(p => !p.userId)).toBe(true);
       expect(game.createdBy).toBe('creator-id');
     });
 
@@ -359,26 +371,6 @@ describe('Game Logic', () => {
     });
   });
 
-  describe('getEliminatedPlayers', () => {
-    it('should return all eliminated players', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
-
-      // Eliminate player 1
-      for (let i = 0; i < 3; i++) {
-        game = applyAction(game, 'miss');
-        game = { ...game, currentPlayerIndex: 0 };
-      }
-
-      const eliminatedPlayers = getEliminatedPlayers(game);
-      expect(eliminatedPlayers).toHaveLength(1);
-      expect(eliminatedPlayers[0].name).toBe('Player 1');
-    });
-  });
-
   describe('getNextPlayers', () => {
     it('should return the next N active players', () => {
       const players = [
@@ -554,68 +546,37 @@ describe('Game Logic', () => {
     });
   });
 
-  describe('calculateStats', () => {
-    it('should calculate correct game statistics', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
+  describe('abandonGame', () => {
+    it('should end an active game with nobody winning', () => {
+      const game = applyAction(
+        createGame([
+          { name: 'Player 1', avatar: '🎱' },
+          { name: 'Player 2', avatar: '🎯' },
+        ]),
+        'miss'
+      );
 
-      game = applyAction(game, 'miss');
-      game = applyAction(game, 'pot');
-      game = applyAction(game, 'pot_black');
-      game = applyAction(game, 'miss');
+      const abandoned = abandonGame(game);
 
-      const stats = calculateStats(game);
-      expect(stats.totalActions).toBe(4);
-      expect(stats.totalMisses).toBe(2);
-      expect(stats.totalPots).toBe(1);
-      expect(stats.totalBlackPots).toBe(1);
+      expect(abandoned.status).toBe('abandoned');
+      expect(abandoned.winnerId).toBeUndefined();
+      expect(abandoned.history).toEqual(game.history);
+      expect(abandoned.players).toEqual(game.players);
     });
 
-    it('should include winner in stats for completed game', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
+    it('should stamp the abandoned state as the newest version', () => {
+      const game = {
+        ...createGame([{ name: 'Player 1', avatar: '🎱' }]),
+        updatedAt: '2020-01-01T00:00:00.000Z',
+      };
 
-      // Eliminate player 2
-      game = { ...game, currentPlayerIndex: 1 };
-      for (let i = 0; i < 3; i++) {
-        game = applyAction(game, 'miss');
-        game = { ...game, currentPlayerIndex: 1 };
-      }
-
-      const stats = calculateStats(game);
-      expect(stats.winner?.name).toBe('Player 1');
+      expect(abandonGame(game).updatedAt > game.updatedAt).toBe(true);
     });
 
-    it('should calculate duration for completed game', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
+    it('should refuse a game that is already over', () => {
+      const game = { ...createGame([{ name: 'Player 1', avatar: '🎱' }]), status: 'completed' as const };
 
-      // Eliminate player 2
-      game = { ...game, currentPlayerIndex: 1 };
-      for (let i = 0; i < 3; i++) {
-        game = applyAction(game, 'miss');
-        game = { ...game, currentPlayerIndex: 1 };
-      }
-
-      const stats = calculateStats(game);
-      expect(stats.duration).toBeGreaterThanOrEqual(0);
-    });
-
-    it('should not include duration for active game', () => {
-      const players = [{ name: 'Player 1', avatar: '🎱' }];
-      const game = createGame(players);
-
-      const stats = calculateStats(game);
-      expect(stats.duration).toBeUndefined();
+      expect(() => abandonGame(game)).toThrow('Only an active game can be abandoned');
     });
   });
 });

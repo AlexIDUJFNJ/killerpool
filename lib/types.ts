@@ -63,6 +63,11 @@ export interface Game {
   rulesetId?: string
   ruleset: Ruleset
   history: GameHistoryEntry[]
+  /**
+   * Who created the game: an auth uid, or this device's guest id (getGuestId).
+   * Decides which account may upload it — see rowOwner in lib/sync.ts. For a
+   * game loaded from Supabase it is the row's created_by.
+   */
   createdBy?: string | null
 }
 
@@ -83,29 +88,6 @@ export interface NewGamePlayerInput {
    * players, who then get a fresh id.
    */
   id?: string
-}
-
-/**
- * New game form data
- */
-export interface NewGameFormData {
-  players: Array<{
-    name: string
-    avatar: string
-  }>
-  rulesetId?: string
-}
-
-/**
- * Game stats
- */
-export interface GameStats {
-  totalActions: number
-  totalMisses: number
-  totalPots: number
-  totalBlackPots: number
-  duration?: number
-  winner?: Player
 }
 
 /**
@@ -157,17 +139,6 @@ export interface AchievementDefinition {
   description: string
   icon: string
   rarity: 'common' | 'rare' | 'epic' | 'legendary'
-}
-
-/**
- * User achievement (earned)
- */
-export interface UserAchievement {
-  id: string
-  userhId: string
-  achievementType: AchievementType
-  unlockedAt: string
-  gameId?: string
 }
 
 /**

@@ -20,6 +20,21 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Eye } from 'lucide-react'
 import { BlackBallCelebration } from '@/components/game/black-ball-celebration'
+import type { ResultSyncState } from '@/contexts/game-context'
+
+/** get_leaderboard's min_games default (supabase/migrations/00013) */
+const LEADERBOARD_MIN_GAMES = 3
+
+/** What the winner screen says while the result is not (yet) in Supabase */
+const RESULT_SYNC_NOTES: Record<Exclude<ResultSyncState, 'saved'>, string> = {
+  saving: 'Saving the result…',
+  retrying:
+    'The result could not be uploaded yet. It is kept on this device and uploads automatically when you are back online.',
+  'other-account':
+    'This game was started on another account. Sign in to that account to upload the result.',
+  refused:
+    'The server did not accept this result, so it will not count on the leaderboard. It is still in your history.',
+}
 
 export default function GamePage() {
   const router = useRouter()
@@ -32,7 +47,9 @@ export default function GamePage() {
     undoAction,
     endGame,
     isSpectatorMode,
+    isSharingEnabled,
     currentUserId,
+    resultSync,
     loadGameFromSupabase,
     setSpectatorGame,
     clearSpectatorGame,
@@ -48,8 +65,11 @@ export default function GamePage() {
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [showBlackCelebration, setShowBlackCelebration] = React.useState(false)
+  const [confirmEndGame, setConfirmEndGame] = React.useState(false)
   const dismissCelebration = React.useCallback(() => setShowBlackCelebration(false), [])
-  const hasInitializedRef = React.useRef(false)
+  // The game id the load below has run for. A plain boolean meant moving from
+  // one game link to another never loaded the second game.
+  const initializedForRef = React.useRef<string | null>(null)
   const lastHistoryLengthRef = React.useRef(0)
 
   // Load game from Supabase if not in context (only once on mount)
@@ -57,7 +77,7 @@ export default function GamePage() {
   // attempting Supabase load, to prevent the host from entering spectator mode.
   React.useEffect(() => {
     // Skip if already initialized for this gameId
-    if (hasInitializedRef.current) {
+    if (initializedForRef.current === gameId) {
       return
     }
 
@@ -68,7 +88,7 @@ export default function GamePage() {
 
     // If we already have a game with correct ID (local game), no need to load
     if (game && game.id === gameId) {
-      hasInitializedRef.current = true
+      initializedForRef.current = gameId
       if (game.status === 'completed') {
         setShowWinner(true)
         haptics.victory()
@@ -78,7 +98,7 @@ export default function GamePage() {
 
     const loadGame = async () => {
       // Mark as initialized to prevent duplicate loads
-      hasInitializedRef.current = true
+      initializedForRef.current = gameId
 
       // Try to load from Supabase (this path is for spectators only)
       setIsLoadingFromSupabase(true)
@@ -115,14 +135,21 @@ export default function GamePage() {
     loadGame()
   }, [gameId, game, isLoading, loadGameFromSupabase, setSpectatorGame, router])
 
-  // Cleanup on unmount
+  // Leave spectator mode on unmount. Read through a ref: as a dependency,
+  // isSpectatorMode made the cleanup run whenever it changed rather than on
+  // unmount, each time with the value from the render before.
+  const isSpectatorModeRef = React.useRef(isSpectatorMode)
+  React.useEffect(() => {
+    isSpectatorModeRef.current = isSpectatorMode
+  }, [isSpectatorMode])
+
   React.useEffect(() => {
     return () => {
-      if (isSpectatorMode) {
+      if (isSpectatorModeRef.current) {
         clearSpectatorGame()
       }
     }
-  }, [isSpectatorMode, clearSpectatorGame])
+  }, [clearSpectatorGame])
 
   // Check authentication status
   React.useEffect(() => {
@@ -220,10 +247,18 @@ export default function GamePage() {
   }
 
   const handleEndGame = () => {
-    if (confirm('Are you sure you want to end this game?')) {
-      endGame()
-      router.push('/')
-    }
+    setConfirmEndGame(false)
+    endGame()
+    router.push('/')
+  }
+
+  // Taking back the shot that decided the game. The winner screen goes away
+  // with it, and comes back (with its haptics) when the game is won again.
+  const handleUndoWin = () => {
+    undoAction()
+    haptics.tap()
+    setShowWinner(false)
+    setCurrentPlayerKey((prev) => prev + 1)
   }
 
   const handleNewGame = () => {
@@ -233,8 +268,10 @@ export default function GamePage() {
         name: p.name,
         avatar: p.avatar,
         // Carry over who the creator is, so the rematch does not have to
-        // guess it again from row order
-        isOwner: !!p.userId,
+        // guess it again from row order. Not on a spectator's device: the
+        // userId there is the host's, and marking that row "you" would hand
+        // the spectator's own account to somebody else's name.
+        isOwner: !isSpectatorMode && !!p.userId,
       }))
       saveRematchPlayers(players)
     }
@@ -313,8 +350,10 @@ export default function GamePage() {
           )}
 
           {/* currentUserId arrives asynchronously; waiting for it avoids
-              flashing the wrong message at the actual winner */}
-          {isAuthenticated === true && currentUserId !== null && didIWin && (
+              flashing the wrong message at the actual winner. Claimed only once
+              the upload is confirmed: this used to say "saved" the moment the
+              screen appeared, whatever the network did. */}
+          {isAuthenticated === true && currentUserId !== null && didIWin && !isSpectatorMode && resultSync === 'saved' && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -323,9 +362,14 @@ export default function GamePage() {
             >
               <Card className="border-emerald-500/50 bg-linear-to-br from-emerald-500/10 to-emerald-600/5">
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <Trophy className="h-5 w-5 text-emerald-500" />
-                    <p className="text-sm font-medium">Your victory has been saved to the leaderboard!</p>
+                  <div className="flex items-start gap-3 text-left">
+                    <Trophy className="h-5 w-5 shrink-0 text-emerald-500" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Your win is saved to your stats.</p>
+                      <p className="text-xs text-muted-foreground">
+                        The leaderboard ranks players once they have played {LEADERBOARD_MIN_GAMES} games.
+                      </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -352,6 +396,12 @@ export default function GamePage() {
             </motion.div>
           )}
 
+          {isAuthenticated === true && !isSpectatorMode && resultSync && resultSync !== 'saved' && (
+            <p className="mb-6 text-xs sm:text-sm text-muted-foreground" role="status">
+              {RESULT_SYNC_NOTES[resultSync]}
+            </p>
+          )}
+
           <motion.div
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -366,6 +416,12 @@ export default function GamePage() {
               <Play className="mr-2 h-5 w-5" />
               New Game
             </Button>
+            {!isSpectatorMode && game.history.length > 0 && (
+              <Button variant="ghost" size="lg" className="w-full" onClick={handleUndoWin}>
+                <RotateCcw className="mr-2 h-5 w-5" />
+                Undo last shot
+              </Button>
+            )}
             <Button variant="outline" size="lg" className="w-full" onClick={handleGoHome}>
               <Home className="mr-2 h-5 w-5" />
               Home
@@ -437,8 +493,15 @@ export default function GamePage() {
           </div>
         </div>
 
+        {/* The host ended the game early: nobody won, and no more moves come */}
+        {isSpectatorMode && game.status === 'abandoned' && (
+          <div className="bg-muted border-t px-4 py-2 text-center text-sm text-muted-foreground">
+            The host ended this game before anyone won.
+          </div>
+        )}
+
         {/* Spectator Banner */}
-        {isSpectatorMode && (
+        {isSpectatorMode && game.status !== 'abandoned' && (
           <div className="bg-amber-500/10 border-t border-amber-500/20 px-4 py-2">
             <div className="flex items-center justify-center gap-2 text-sm text-amber-600 dark:text-amber-400">
               <Eye className="h-4 w-4" />
@@ -543,7 +606,7 @@ export default function GamePage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleEndGame}
+              onClick={() => setConfirmEndGame(true)}
               className="text-muted-foreground hover:text-destructive"
             >
               End Game
@@ -634,6 +697,28 @@ export default function GamePage() {
               />
             </div>
           ))}
+        </div>
+      </BottomSheet>
+
+      {/* End Game confirmation */}
+      <BottomSheet
+        isOpen={confirmEndGame}
+        onClose={() => setConfirmEndGame(false)}
+        title="End this game?"
+      >
+        <div className="p-4 sm:p-6 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Nobody wins. The game is kept in your history as unfinished
+            {isSharingEnabled ? ', and spectators see that it has ended' : ''}.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button variant="destructive" className="w-full sm:flex-1" onClick={handleEndGame}>
+              End game
+            </Button>
+            <Button variant="outline" className="w-full sm:flex-1" onClick={() => setConfirmEndGame(false)}>
+              Keep playing
+            </Button>
+          </div>
         </div>
       </BottomSheet>
 
