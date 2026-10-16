@@ -7,7 +7,7 @@
 import * as React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { GameProvider, useGame } from '../game-context';
-import { createGame, applyAction } from '@/lib/game-logic';
+import { createGame, applyAction, MAX_PLAYERS } from '@/lib/game-logic';
 import {
   loadGameHistory,
   saveCurrentGame,
@@ -586,6 +586,23 @@ describe('GameProvider', () => {
     act(() => result.current.endGame());
 
     expect(mockedSyncFinished.mock.calls[0][0].status).toBe('abandoned');
+  });
+
+  it('should leave a full game as it is when another player is added', async () => {
+    // The database refuses a game above the limit for good, so the game must
+    // never get there, whatever the screen offers
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const full = createGame(
+      Array.from({ length: MAX_PLAYERS }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' }))
+    );
+    const { result } = await renderProvider();
+    act(() => result.current.startGame(full));
+
+    act(() => result.current.addPlayer('One more', '🎲'));
+
+    expect(result.current.game?.players).toHaveLength(MAX_PLAYERS);
+    expect(loadCurrentGame()?.players).toHaveLength(MAX_PLAYERS);
+    consoleErrorSpy.mockRestore();
   });
 
   it('should throw when used outside the provider', () => {

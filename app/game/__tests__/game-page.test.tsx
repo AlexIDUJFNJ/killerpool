@@ -5,7 +5,7 @@
 import * as React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import GamePage from '../[id]/page';
-import { createGame, applyAction } from '@/lib/game-logic';
+import { createGame, applyAction, MAX_PLAYERS } from '@/lib/game-logic';
 import { Game } from '@/lib/types';
 
 const mockPush = jest.fn();
@@ -260,6 +260,57 @@ describe('leaving the page', () => {
   function inPlayGame() {
     return applyAction(myGame(), 'pot');
   }
+});
+
+describe('adding a player mid-game', () => {
+  function gameWith(count: number): Game {
+    return createGame(
+      Array.from({ length: count }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' })),
+      undefined,
+      ME
+    );
+  }
+
+  it('should add a player by name', async () => {
+    const ctx = setUp(gameWith(2));
+    render(<GamePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View all players' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Player' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'New player name' }), {
+      target: { value: '  Late  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(ctx.addPlayer).toHaveBeenCalledWith('Late', expect.any(String));
+  });
+
+  it('should not offer to add a player to a full game', async () => {
+    const ctx = setUp(gameWith(MAX_PLAYERS));
+    render(<GamePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View all players' }));
+    const add = screen.getByRole('button', { name: 'Add Player' });
+
+    expect(add).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('up to 32 players');
+    fireEvent.click(add);
+    expect(screen.queryByRole('textbox', { name: 'New player name' })).not.toBeInTheDocument();
+    expect(ctx.addPlayer).not.toHaveBeenCalled();
+  });
+
+  it('should count eliminated players towards the limit', async () => {
+    const full = gameWith(MAX_PLAYERS);
+    setUp({
+      ...full,
+      players: full.players.map((p, i) => (i > 1 ? { ...p, lives: 0, eliminated: true } : p)),
+    });
+    render(<GamePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View all players' }));
+
+    expect(screen.getByRole('button', { name: 'Add Player' })).toBeDisabled();
+  });
 });
 
 describe('accessibility', () => {

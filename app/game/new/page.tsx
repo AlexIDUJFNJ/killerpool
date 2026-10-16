@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useGame } from '@/contexts/game-context'
-import { createGame } from '@/lib/game-logic'
+import { createGame, MAX_PLAYERS } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -56,6 +56,9 @@ export default function NewGamePage() {
   // the next edit, so it never describes a form that has since changed.
   const [formError, setFormError] = React.useState<string | null>(null)
   const nextRowId = React.useRef(2)
+  const limitNoteId = React.useId()
+  // The database refuses a bigger game outright, see MAX_PLAYERS
+  const isFull = players.length >= MAX_PLAYERS
 
   React.useEffect(() => {
     const supabase = createClient()
@@ -104,6 +107,7 @@ export default function NewGamePage() {
   }, [])
 
   const handleAddPlayer = () => {
+    if (isFull) return
     setFormError(null)
     const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
     setPlayers([...players, { rowId: `p${nextRowId.current++}`, name: '', avatar: nextAvatar }])
@@ -160,6 +164,13 @@ export default function NewGamePage() {
     const validPlayers = players.filter(p => p.name.trim().length > 0)
     if (validPlayers.length < 2) {
       setFormError('Add at least 2 players with names')
+      return
+    }
+
+    // Only reachable through a rematch of an older, bigger game: the form
+    // itself stops adding rows at the limit
+    if (validPlayers.length > MAX_PLAYERS) {
+      setFormError(`A game can have up to ${MAX_PLAYERS} players. Remove ${validPlayers.length - MAX_PLAYERS} to start.`)
       return
     }
 
@@ -316,14 +327,23 @@ export default function NewGamePage() {
           ))}
         </div>
 
-        <Button
-          variant="outline"
-          className="w-full h-14 mb-8"
-          onClick={handleAddPlayer}
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Add Player ({players.length})
-        </Button>
+        <div className="mb-8">
+          <Button
+            variant="outline"
+            className="w-full h-14"
+            onClick={handleAddPlayer}
+            disabled={isFull}
+            aria-describedby={isFull ? limitNoteId : undefined}
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Add Player ({players.length})
+          </Button>
+          {isFull && (
+            <p id={limitNoteId} role="status" className="mt-2 text-center text-sm text-muted-foreground">
+              A game can have up to {MAX_PLAYERS} players.
+            </p>
+          )}
+        </div>
 
         {selectedRowId !== null && (
           <motion.div

@@ -8,7 +8,7 @@ import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
-import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers } from '@/lib/game-logic'
+import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers, MAX_PLAYERS } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, RotateCcw, Home, Play, UsersRound, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
@@ -24,6 +24,8 @@ import type { ResultSyncState } from '@/contexts/game-context'
 
 /** get_leaderboard's min_games default (supabase/migrations/00013) */
 const LEADERBOARD_MIN_GAMES = 3
+
+const JOINING_AVATARS = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
 
 /** What the winner screen says while the result is not (yet) in Supabase */
 const RESULT_SYNC_NOTES: Record<Exclude<ResultSyncState, 'saved'>, string> = {
@@ -214,6 +216,8 @@ export default function GamePage() {
   const activePlayers = getActivePlayers(game)
   const nextPlayers = getNextPlayers(game, 1)
   const nextPlayer = nextPlayers[0]
+  // Eliminated players count too: they stay in the row the database checks
+  const isFull = game.players.length >= MAX_PLAYERS
 
   const handleSwipe = (action: 'miss' | 'pot' | 'pot_black') => {
     // Map swipe action to GameAction
@@ -238,6 +242,16 @@ export default function GamePage() {
     // it only opened a window where a second swipe ran against the state
     // captured before the first one landed, silently dropping an action.
     performAction(gameAction)
+  }
+
+  const handleAddPlayer = () => {
+    const name = newPlayerName.trim()
+    if (!name || isFull) return
+    const avatar = JOINING_AVATARS[Math.floor(Math.random() * JOINING_AVATARS.length)]
+    addPlayer(name, avatar)
+    setNewPlayerName('')
+    setShowAddPlayer(false)
+    haptics.tap()
   }
 
   const handleUndo = () => {
@@ -642,30 +656,11 @@ export default function GamePage() {
                     value={newPlayerName}
                     onChange={(e) => setNewPlayerName(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newPlayerName.trim()) {
-                        const avatars = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
-                        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
-                        addPlayer(newPlayerName.trim(), randomAvatar)
-                        setNewPlayerName('')
-                        setShowAddPlayer(false)
-                        haptics.tap()
-                      }
+                      if (e.key === 'Enter') handleAddPlayer()
                     }}
                     autoFocus
                   />
-                  <Button
-                    onClick={() => {
-                      if (newPlayerName.trim()) {
-                        const avatars = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
-                        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
-                        addPlayer(newPlayerName.trim(), randomAvatar)
-                        setNewPlayerName('')
-                        setShowAddPlayer(false)
-                        haptics.tap()
-                      }
-                    }}
-                    disabled={!newPlayerName.trim()}
-                  >
+                  <Button onClick={handleAddPlayer} disabled={!newPlayerName.trim() || isFull}>
                     Add
                   </Button>
                   <Button
@@ -679,14 +674,23 @@ export default function GamePage() {
                   </Button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setShowAddPlayer(true)}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Player
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowAddPlayer(true)}
+                    disabled={isFull}
+                    aria-describedby={isFull ? 'player-limit-note' : undefined}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Add Player
+                  </Button>
+                  {isFull && (
+                    <p id="player-limit-note" role="status" className="mt-2 text-center text-sm text-muted-foreground">
+                      A game can have up to {MAX_PLAYERS} players.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

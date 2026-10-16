@@ -12,6 +12,8 @@ import {
   getWinner,
   undoLastAction,
   abandonGame,
+  addPlayerToGame,
+  MAX_PLAYERS,
 } from '../game-logic';
 import { DEFAULT_RULESET, Game, Player } from '../types';
 
@@ -175,6 +177,19 @@ describe('Game Logic', () => {
 
       const owner = game.players.find(p => p.userId === 'creator-id');
       expect(owner?.name).toBe('Me');
+    });
+
+    it('should take as many players as the database allows', () => {
+      expect(MAX_PLAYERS).toBe(32);
+      const game = createGame(roster(MAX_PLAYERS));
+
+      expect(game.players).toHaveLength(MAX_PLAYERS);
+    });
+
+    it('should refuse more players than the database allows', () => {
+      // The row would be refused with check_violation, which is final: the
+      // game could be played to the end and never upload
+      expect(() => createGame(roster(MAX_PLAYERS + 1))).toThrow('at most 32 players');
     });
   });
 
@@ -579,4 +594,42 @@ describe('Game Logic', () => {
       expect(() => abandonGame(game)).toThrow('Only an active game can be abandoned');
     });
   });
+
+  describe('addPlayerToGame', () => {
+    it('should add a player with the fewest lives anyone still has', () => {
+      let game = createGame(roster(2));
+      game = applyAction(game, 'miss');
+
+      const updated = addPlayerToGame(game, 'Late', '🎲', 'roster-id');
+
+      expect(updated.players).toHaveLength(3);
+      expect(updated.players[2]).toMatchObject({ id: 'roster-id', name: 'Late', lives: 2, eliminated: false });
+    });
+
+    it('should refuse a player who is already in the game', () => {
+      const game = createGame([{ name: 'Anna', avatar: '🎱', id: 'anna' }, { name: 'Boris', avatar: '🎯' }]);
+
+      expect(() => addPlayerToGame(game, 'Anna', '🎱', 'anna')).toThrow('already in this game');
+    });
+
+    it('should fill a game up to the limit', () => {
+      const game = createGame(roster(MAX_PLAYERS - 1));
+
+      expect(addPlayerToGame(game, 'Last', '🎲').players).toHaveLength(MAX_PLAYERS);
+    });
+
+    it('should refuse a player beyond the limit, counting the eliminated', () => {
+      const full = createGame(roster(MAX_PLAYERS));
+      const withEliminated = {
+        ...full,
+        players: full.players.map((p, i) => (i > 1 ? { ...p, lives: 0, eliminated: true } : p)),
+      };
+
+      expect(() => addPlayerToGame(withEliminated, 'One more', '🎲')).toThrow('at most 32 players');
+    });
+  });
 });
+
+function roster(count: number) {
+  return Array.from({ length: count }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' }));
+}

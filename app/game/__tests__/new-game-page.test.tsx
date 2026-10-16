@@ -5,7 +5,8 @@
 import * as React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import NewGamePage from '../new/page';
-import { getGuestId } from '@/lib/storage';
+import { getGuestId, saveRematchPlayers } from '@/lib/storage';
+import { MAX_PLAYERS } from '@/lib/game-logic';
 import { Game } from '@/lib/types';
 
 const mockPush = jest.fn();
@@ -106,6 +107,52 @@ describe('NewGamePage', () => {
     expect(game.players.every(p => !p.userId)).toBe(true);
     expect(game.createdBy).toBe(getGuestId());
     expect(mockPush).toHaveBeenCalledWith(`/game/${game.id}`);
+  });
+
+  describe('player limit', () => {
+    it('should stop adding rows at the limit and say why', async () => {
+      render(<NewGamePage />);
+      const add = await screen.findByRole('button', { name: /add player/i });
+
+      for (let rows = 2; rows < MAX_PLAYERS; rows++) {
+        expect(add).toBeEnabled();
+        fireEvent.click(add);
+      }
+
+      expect(screen.getAllByRole('textbox')).toHaveLength(MAX_PLAYERS);
+      expect(add).toBeDisabled();
+      expect(screen.getByRole('status')).toHaveTextContent('up to 32 players');
+      expect(add).toHaveAccessibleDescription(/up to 32 players/);
+
+      fireEvent.click(add);
+      expect(screen.getAllByRole('textbox')).toHaveLength(MAX_PLAYERS);
+    });
+
+    it('should allow adding again once a row is removed', async () => {
+      render(<NewGamePage />);
+      const add = await screen.findByRole('button', { name: /add player/i });
+      for (let rows = 2; rows < MAX_PLAYERS; rows++) fireEvent.click(add);
+
+      fireEvent.click(screen.getByRole('button', { name: `Remove player ${MAX_PLAYERS}` }));
+
+      expect(add).toBeEnabled();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('should refuse to start a rematch of a game bigger than the limit', async () => {
+      // A rematch carries the players over as they were, and the database
+      // would refuse the game for good
+      saveRematchPlayers(
+        Array.from({ length: MAX_PLAYERS + 1 }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' }))
+      );
+      render(<NewGamePage />);
+      await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(MAX_PLAYERS + 1));
+
+      fireEvent.click(screen.getByRole('button', { name: /start game/i }));
+
+      expect(screen.getByRole('alert')).toHaveTextContent('up to 32 players. Remove 1 to start.');
+      expect(mockStartGame).not.toHaveBeenCalled();
+    });
   });
 
   describe('accessibility', () => {
