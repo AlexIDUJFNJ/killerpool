@@ -96,8 +96,8 @@ export default function OfflinePage() {
         <div className="bg-muted/30 backdrop-blur-xs border border-border rounded-xl p-6 space-y-3">
           <h2 className="font-semibold">Offline mode</h2>
           <p className="text-muted-foreground text-sm">
-            You can keep playing on this device. Finished games are saved here
-            and upload automatically once you are back online.
+            You can keep playing on this device. Games are saved here, and
+            completed ones upload automatically once you are back online.
           </p>
         </div>
 
