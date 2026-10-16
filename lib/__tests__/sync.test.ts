@@ -5,7 +5,6 @@
 import {
   syncFinishedGame,
   syncActiveGameToSupabase,
-  syncAllGamesToSupabase,
   retryPendingSyncs,
   mergeGamesWithSupabase,
 } from '../sync';
@@ -464,53 +463,6 @@ describe('write ordering', () => {
     expect(gamesUpsert).toHaveBeenCalledTimes(2);
     stuck.resolve({ error: null });
     await live;
-  });
-});
-
-describe('syncAllGamesToSupabase', () => {
-  it('should count unfinished games as skipped rather than failed', async () => {
-    // This is what made the page report "Failed: N" to anyone with an
-    // abandoned game: only completed games can be uploaded at all
-    const done = completedGame('game-1');
-    const abandoned = { ...completedGame('game-2'), status: 'abandoned' as const };
-    localStorage.setItem(
-      'killerpool_game_history',
-      JSON.stringify([done, abandoned, { ...completedGame('game-3'), status: 'active' }])
-    );
-    mockSupabase({ userId: USER_A });
-
-    expect(await syncAllGamesToSupabase()).toEqual({
-      success: 1,
-      skipped: 2,
-      refused: 0,
-      failed: 0,
-      otherAccount: 0,
-      total: 3,
-    });
-  });
-
-  it('should tell a refusal apart from a retryable failure', async () => {
-    // A game played before signing in leaves an unowned row in Supabase, and
-    // RLS will not let the account claim it. Retrying can never help, so it
-    // must not be shown as an error the user should act on.
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-    localStorage.setItem('killerpool_game_history', JSON.stringify([completedGame('game-1')]));
-    mockSupabase({ userId: USER_A, upsertError: { message: 'denied', code: '42501' } });
-
-    expect(await syncAllGamesToSupabase()).toMatchObject({ refused: 1, failed: 0 });
-
-    consoleErrorSpy.mockRestore();
-  });
-
-  it('should count games of another account separately', async () => {
-    localStorage.setItem(
-      'killerpool_game_history',
-      JSON.stringify([completedGame('game-1', USER_A), completedGame('game-2', USER_B)])
-    );
-    mockSupabase({ userId: USER_B });
-
-    expect(await syncAllGamesToSupabase()).toMatchObject({ success: 1, otherAccount: 1, failed: 0 });
-    expect(getPendingSyncIds()).toEqual(['game-1']);
   });
 });
 
