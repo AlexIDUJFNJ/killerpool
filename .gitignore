@@ -54,3 +54,6 @@ next-env.d.ts
 
 # PWA offline fallback bundle (generated at build)
 **/public/fallback-*.js
+
+# Claude Code agent worktrees (full checkouts, removed when the agent ends)
+/.claude/worktrees/
