@@ -1,16 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useGame } from '@/contexts/game-context'
 import { motion } from 'motion/react'
 import { Play, History, Trophy, Users, CircleUser, LogIn, Award, CircleHelp } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { PWAInstallButton } from '@/components/pwa-install-button'
 import { ThemeToggle } from '@/components/theme-toggle'
-import type { User } from '@supabase/supabase-js'
 import { ACTION_STYLES, formatLivesDelta } from '@/components/game/action-styles'
 import { DEFAULT_RULESET, type GameAction } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -18,38 +15,12 @@ import { cn } from '@/lib/utils'
 const RULE_ACTIONS: GameAction[] = ['miss', 'pot', 'pot_black']
 
 export default function Home() {
-  const { game, isLoading } = useGame()
-  const hasActiveGame = game && game.status === 'active'
-  const [user, setUser] = useState<User | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
-
-  useEffect(() => {
-    const supabase = createClient()
-
-    // Get initial user
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
-      setAuthLoading(false)
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  if (isLoading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </main>
-    )
-  }
+  // Everything on this page but the resume banner is static, so it renders on
+  // the server; only the banner waits for the saved game, which lives in
+  // localStorage and so is known only after hydration. currentUserId is
+  // undefined until GameProvider has read the session, null for a guest.
+  const { game, isLoading, currentUserId } = useGame()
+  const hasActiveGame = !isLoading && game?.status === 'active'
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
@@ -65,8 +36,8 @@ export default function Home() {
           transition={{ duration: 0.5 }}
           className="absolute top-0 right-0 -mt-16 sm:-mt-12"
         >
-          {!authLoading && (
-            user ? (
+          {currentUserId !== undefined && (
+            currentUserId ? (
               <Button asChild variant="outline" size="lg">
                 <Link href="/profile">
                   <CircleUser className="mr-2 h-5 w-5" />
@@ -100,7 +71,7 @@ export default function Home() {
         </motion.div>
 
         {/* Resume game banner */}
-        {hasActiveGame && (
+        {hasActiveGame && game && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
