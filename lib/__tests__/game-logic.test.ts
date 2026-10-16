@@ -11,6 +11,7 @@ import {
   getNextPlayers,
   getWinner,
   undoLastAction,
+  abandonGame,
 } from '../game-logic';
 import { DEFAULT_RULESET, Game, Player } from '../types';
 
@@ -542,6 +543,40 @@ describe('Game Logic', () => {
 
       undoneGame = undoLastAction(undoneGame); // Back to 3 lives
       expect(undoneGame.players[0].lives).toBe(3);
+    });
+  });
+
+  describe('abandonGame', () => {
+    it('should end an active game with nobody winning', () => {
+      const game = applyAction(
+        createGame([
+          { name: 'Player 1', avatar: '🎱' },
+          { name: 'Player 2', avatar: '🎯' },
+        ]),
+        'miss'
+      );
+
+      const abandoned = abandonGame(game);
+
+      expect(abandoned.status).toBe('abandoned');
+      expect(abandoned.winnerId).toBeUndefined();
+      expect(abandoned.history).toEqual(game.history);
+      expect(abandoned.players).toEqual(game.players);
+    });
+
+    it('should stamp the abandoned state as the newest version', () => {
+      const game = {
+        ...createGame([{ name: 'Player 1', avatar: '🎱' }]),
+        updatedAt: '2020-01-01T00:00:00.000Z',
+      };
+
+      expect(abandonGame(game).updatedAt > game.updatedAt).toBe(true);
+    });
+
+    it('should refuse a game that is already over', () => {
+      const game = { ...createGame([{ name: 'Player 1', avatar: '🎱' }]), status: 'completed' as const };
+
+      expect(() => abandonGame(game)).toThrow('Only an active game can be abandoned');
     });
   });
 });

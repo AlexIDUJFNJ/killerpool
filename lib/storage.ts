@@ -15,6 +15,7 @@ const STORAGE_KEYS = {
   DELETED_GAMES: 'killerpool_deleted_games',
   ROSTER: 'killerpool_roster',
   PENDING_SYNC_META: 'killerpool_pending_sync_meta',
+  SHARED_GAME: 'killerpool_shared_game',
 } as const
 
 /**
@@ -47,8 +48,37 @@ export function loadCurrentGame(): Game | null {
 export function clearCurrentGame(): void {
   try {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_GAME)
+    localStorage.removeItem(STORAGE_KEYS.SHARED_GAME)
   } catch (error) {
     console.error('Failed to clear game from localStorage:', error)
+  }
+}
+
+/**
+ * Remember that the current game is being broadcast to spectators.
+ *
+ * Without this a reload silently stopped the broadcast: the host kept playing,
+ * nothing reached Supabase any more, and every spectator's screen froze on the
+ * last move before the reload. Kept under its own key, holding the game id,
+ * so the stored game keeps the exact shape an older bundle still reads.
+ */
+export function markCurrentGameShared(gameId: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SHARED_GAME, gameId)
+  } catch (error) {
+    console.error('Failed to remember game sharing:', error)
+  }
+}
+
+/**
+ * Whether this game was being shared when the page last saw it. Keyed by id,
+ * so a marker left behind by an earlier game never applies to a new one.
+ */
+export function isCurrentGameShared(gameId: string): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.SHARED_GAME) === gameId
+  } catch {
+    return false
   }
 }
 
@@ -71,10 +101,13 @@ export function saveGameHistory(games: Game[]): void {
 }
 
 /**
- * Save completed game to history
+ * Save a finished game to history: completed, or abandoned by its host.
+ * Abandoned games used to be dropped here, so ending a game early erased it
+ * without a trace. They have no winner, and achievements and the leaderboard
+ * still count completed games only.
  */
 export function saveToHistory(game: Game): void {
-  if (game.status !== 'completed') {
+  if (game.status !== 'completed' && game.status !== 'abandoned') {
     return
   }
 

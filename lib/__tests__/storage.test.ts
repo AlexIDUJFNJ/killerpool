@@ -10,6 +10,8 @@ import {
   loadGameHistory,
   getGameFromHistory,
   deleteGameFromHistory,
+  markCurrentGameShared,
+  isCurrentGameShared,
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
@@ -91,6 +93,38 @@ describe('Storage', () => {
     });
   });
 
+  describe('current game sharing', () => {
+    it('should remember which game is being shared', () => {
+      markCurrentGameShared('game-1');
+
+      expect(isCurrentGameShared('game-1')).toBe(true);
+    });
+
+    it('should not apply the marker to a different game', () => {
+      markCurrentGameShared('game-1');
+
+      expect(isCurrentGameShared('game-2')).toBe(false);
+    });
+
+    it('should forget sharing together with the current game', () => {
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      saveCurrentGame(game);
+      markCurrentGameShared(game.id);
+
+      clearCurrentGame();
+
+      expect(isCurrentGameShared(game.id)).toBe(false);
+    });
+
+    it('should leave the stored game in the shape older bundles read', () => {
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      saveCurrentGame(game);
+      markCurrentGameShared(game.id);
+
+      expect(JSON.parse(localStorage.getItem('killerpool_current_game')!)).toEqual(game);
+    });
+  });
+
   describe('clearCurrentGame', () => {
     it('should clear the current game', () => {
       const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
@@ -132,7 +166,7 @@ describe('Storage', () => {
       expect(history[0]).toEqual(game);
     });
 
-    it('should not save non-completed games', () => {
+    it('should not save a game that is still being played', () => {
       const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
       game.status = 'active';
 
@@ -140,6 +174,25 @@ describe('Storage', () => {
       const history = loadGameHistory();
 
       expect(history).toHaveLength(0);
+    });
+
+    it('should save an abandoned game', () => {
+      // Ending a game early used to erase it: only 'completed' got through
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      game.status = 'abandoned';
+
+      saveToHistory(game);
+
+      expect(loadGameHistory()).toEqual([game]);
+    });
+
+    it('should replace a completed entry when the same game is abandoned after an undo', () => {
+      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
+      saveToHistory({ ...game, status: 'completed' });
+
+      saveToHistory({ ...game, status: 'abandoned' });
+
+      expect(loadGameHistory().map(g => g.status)).toEqual(['abandoned']);
     });
 
     it('should add new games to the beginning of history', () => {

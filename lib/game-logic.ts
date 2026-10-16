@@ -251,6 +251,24 @@ export function undoLastAction(game: Game): Game {
 }
 
 /**
+ * End a game before anybody has won. It keeps its players and history, so it
+ * can still be looked at, but there is no winner and nothing counts it.
+ */
+export function abandonGame(game: Game): Game {
+  if (game.status !== 'active') {
+    throw new Error('Only an active game can be abandoned')
+  }
+
+  return {
+    ...game,
+    status: 'abandoned',
+    // A fresh timestamp, like every other transition: the abandoned state is
+    // the newest version of this game, and the row in Supabase follows it
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+/**
  * Add a new player to an active game
  * The new player gets the minimum lives among all active players
  */
