@@ -2,8 +2,11 @@
  * Tests for the history page: sign-in vs connectivity, Sync, and which games show
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import * as React from 'react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderToString } from 'react-dom/server';
+import { hydrateRoot } from 'react-dom/client';
 import HistoryPage from '../page';
 import { saveGameHistory } from '@/lib/storage';
 import { mergeGamesWithSupabase, isSupabaseAvailable, retryPendingSyncs } from '@/lib/sync';
@@ -119,6 +122,73 @@ describe('HistoryPage', () => {
     expect(screen.getByText('Game Abandoned')).toBeInTheDocument();
     expect(screen.queryByText('Alice Won!')).not.toBeInTheDocument();
     expect(screen.getByText('Showing 1 of 2 games')).toBeInTheDocument();
+  });
+
+  it('should drop a deleted game from the list', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<HistoryPage />);
+
+    const [first] = await screen.findAllByRole('button', { name: /^delete game from/i });
+    await user.click(first);
+
+    expect(screen.getAllByRole('button', { name: /^delete game from/i })).toHaveLength(1);
+  });
+
+  it('should show what Sync brought down', async () => {
+    mockSignedIn.mockResolvedValue(true);
+    mockMerge.mockImplementation(async () => {
+      saveGameHistory([makeGame({ id: 'remote', winnerId: 'p2' }), completed, abandoned]);
+    });
+    const user = userEvent.setup();
+    render(<HistoryPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^sync$/i }));
+
+    expect(await screen.findByText('Bob Won!')).toBeInTheDocument();
+  });
+
+  it('should pick up a game finished in another tab', async () => {
+    render(<HistoryPage />);
+    await screen.findByText('Alice Won!');
+
+    // Another tab writes the key; this one only hears the storage event
+    localStorage.setItem(
+      'killerpool_game_history',
+      JSON.stringify([makeGame({ id: 'other-tab', winnerId: 'p2' }), completed])
+    );
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'killerpool_game_history' }));
+    });
+
+    expect(screen.getByText('Bob Won!')).toBeInTheDocument();
+    expect(screen.queryByText('Game Abandoned')).not.toBeInTheDocument();
+  });
+
+  it('should render on the server without the stored list, and hydrate without a mismatch', async () => {
+    // The server has no localStorage. What it sends has to be what the first
+    // client render produces, or React throws the markup away
+    const html = renderToString(<HistoryPage />);
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain('Alice');
+
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const onRecoverableError = jest.fn();
+
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <HistoryPage />, { onRecoverableError });
+    });
+
+    expect(await within(container).findByText('Alice Won!')).toBeInTheDocument();
+    expect(onRecoverableError).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    act(() => root?.unmount());
+    container.remove();
   });
 
   it('should name each delete button after its game', async () => {

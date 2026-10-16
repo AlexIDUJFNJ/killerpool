@@ -8,13 +8,12 @@ import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
-import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers } from '@/lib/game-logic'
+import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers, MAX_PLAYERS } from '@/lib/game-logic'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, RotateCcw, Home, Play, UsersRound, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { saveRematchPlayers } from '@/lib/storage'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -24,6 +23,8 @@ import type { ResultSyncState } from '@/contexts/game-context'
 
 /** get_leaderboard's min_games default (supabase/migrations/00013) */
 const LEADERBOARD_MIN_GAMES = 3
+
+const JOINING_AVATARS = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
 
 /** What the winner screen says while the result is not (yet) in Supabase */
 const RESULT_SYNC_NOTES: Record<Exclude<ResultSyncState, 'saved'>, string> = {
@@ -55,13 +56,11 @@ export default function GamePage() {
     clearSpectatorGame,
     addPlayer
   } = useGame()
-  const [showWinner, setShowWinner] = React.useState(false)
   const [showAllPlayers, setShowAllPlayers] = React.useState(false)
   const [showInviteModal, setShowInviteModal] = React.useState(false)
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
   const [showAddPlayer, setShowAddPlayer] = React.useState(false)
   const [newPlayerName, setNewPlayerName] = React.useState('')
-  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [showBlackCelebration, setShowBlackCelebration] = React.useState(false)
@@ -70,7 +69,9 @@ export default function GamePage() {
   // The game id the load below has run for. A plain boolean meant moving from
   // one game link to another never loaded the second game.
   const initializedForRef = React.useRef<string | null>(null)
-  const lastHistoryLengthRef = React.useRef(0)
+  // Set when this page loads a game somebody had already won, see the
+  // victory haptic below
+  const openedWonGameRef = React.useRef<string | null>(null)
 
   // Load game from Supabase if not in context (only once on mount)
   // IMPORTANT: Wait for context to finish loading from localStorage before
@@ -89,10 +90,6 @@ export default function GamePage() {
     // If we already have a game with correct ID (local game), no need to load
     if (game && game.id === gameId) {
       initializedForRef.current = gameId
-      if (game.status === 'completed') {
-        setShowWinner(true)
-        haptics.victory()
-      }
       return
     }
 
@@ -108,12 +105,11 @@ export default function GamePage() {
         const loadedGame = await loadGameFromSupabase(gameId)
 
         if (loadedGame) {
+          if (loadedGame.status === 'completed') {
+            openedWonGameRef.current = loadedGame.id
+          }
           // Set as spectator game (will subscribe to realtime)
           setSpectatorGame(loadedGame)
-
-          if (loadedGame.status === 'completed') {
-            setShowWinner(true)
-          }
         } else {
           setLoadError('Game not found')
           // Redirect to home after a delay
@@ -151,36 +147,36 @@ export default function GamePage() {
     }
   }, [clearSpectatorGame])
 
-  // Check authentication status
-  React.useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setIsAuthenticated(!!user)
-    })
-  }, [])
-
-  // Watch for pot_black actions (spectator mode — detect from realtime updates)
-  // Only trigger when history grows by exactly 1 (a single new realtime action),
-  // not on initial load where history jumps from 0 to N all at once.
-  React.useEffect(() => {
-    if (!game) return
-    const historyLen = game.history.length
-    if (historyLen === lastHistoryLengthRef.current + 1) {
-      const lastAction = game.history[historyLen - 1]
-      if (lastAction?.action === 'pot_black' && isSpectatorMode) {
-        setShowBlackCelebration(true)
-      }
+  // A black potted on the host's device reaches a spectator as an update with
+  // one new action on the same game. Loading a game, where history goes from
+  // nothing to N at once, is not a shot. Compared during render with what the
+  // last render saw (state, not an effect), so the celebration starts with
+  // the render that shows the shot rather than one render after it.
+  const historyLength = game?.history.length ?? 0
+  const [seenShots, setSeenShots] = React.useState({ gameId: game?.id ?? null, length: historyLength })
+  if (game && (game.id !== seenShots.gameId || historyLength !== seenShots.length)) {
+    const oneNewShot = game.id === seenShots.gameId && historyLength === seenShots.length + 1
+    setSeenShots({ gameId: game.id, length: historyLength })
+    if (oneNewShot && isSpectatorMode && game.history[historyLength - 1].action === 'pot_black') {
+      setShowBlackCelebration(true)
     }
-    lastHistoryLengthRef.current = historyLen
-  }, [game?.history.length, game, isSpectatorMode])
+  }
 
-  // Watch for game completion and show winner screen
+  // The winner screen is up exactly while the game is won (see the render
+  // below), so undoing the deciding shot takes it down and the next win
+  // brings it back. The win buzzes on the devices that see it happen: the
+  // host's, also when reopening the finished game, and those of spectators
+  // watching live. Not for a spectator who opens a game already won.
+  const wonGameId = game?.id === gameId && game.status === 'completed' ? game.id : null
   React.useEffect(() => {
-    if (game && game.status === 'completed' && !showWinner) {
-      setShowWinner(true)
+    if (!wonGameId) {
+      openedWonGameRef.current = null
+      return
+    }
+    if (openedWonGameRef.current !== wonGameId) {
       haptics.victory()
     }
-  }, [game, showWinner])
+  }, [wonGameId])
 
   // Show loading state
   if (isLoading || isLoadingFromSupabase) {
@@ -214,6 +210,8 @@ export default function GamePage() {
   const activePlayers = getActivePlayers(game)
   const nextPlayers = getNextPlayers(game, 1)
   const nextPlayer = nextPlayers[0]
+  // Eliminated players count too: they stay in the row the database checks
+  const isFull = game.players.length >= MAX_PLAYERS
 
   const handleSwipe = (action: 'miss' | 'pot' | 'pot_black') => {
     // Map swipe action to GameAction
@@ -240,6 +238,16 @@ export default function GamePage() {
     performAction(gameAction)
   }
 
+  const handleAddPlayer = () => {
+    const name = newPlayerName.trim()
+    if (!name || isFull) return
+    const avatar = JOINING_AVATARS[Math.floor(Math.random() * JOINING_AVATARS.length)]
+    addPlayer(name, avatar)
+    setNewPlayerName('')
+    setShowAddPlayer(false)
+    haptics.tap()
+  }
+
   const handleUndo = () => {
     undoAction()
     haptics.tap()
@@ -257,7 +265,6 @@ export default function GamePage() {
   const handleUndoWin = () => {
     undoAction()
     haptics.tap()
-    setShowWinner(false)
     setCurrentPlayerKey((prev) => prev + 1)
   }
 
@@ -286,11 +293,15 @@ export default function GamePage() {
   }
 
   // Winner Screen
-  if (showWinner && game.status === 'completed') {
+  if (game.status === 'completed') {
     const winner = game.players.find((p) => p.id === game.winnerId)
     // Only the creator carries a userId, so this is true exactly when the
     // signed-in user is the one who actually won
     const didIWin = !!currentUserId && winner?.userId === currentUserId
+    // From the provider, which follows signing in and out. This page used to
+    // ask once on its own, and kept offering "Sign in" to someone who just had.
+    // null while the session is still being read: neither message yet.
+    const isSignedIn = currentUserId === undefined ? null : currentUserId !== null
 
     return (
       <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
@@ -318,7 +329,7 @@ export default function GamePage() {
           </motion.div>
 
           {/* Authentication Info */}
-          {isAuthenticated === false && (
+          {isSignedIn === false && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -336,12 +347,17 @@ export default function GamePage() {
                       <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                         Sign in to save your wins and climb the global rankings.
                       </p>
-                      <Link href="/auth" className="inline-block mt-2">
-                        <Button size="sm" variant="outline" className="border-amber-500/50 hover:bg-amber-500/10 text-xs sm:text-sm">
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 border-amber-500/50 hover:bg-amber-500/10 text-xs sm:text-sm"
+                      >
+                        <Link href="/auth">
                           <LogIn className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           Sign In
-                        </Button>
-                      </Link>
+                        </Link>
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -353,7 +369,7 @@ export default function GamePage() {
               flashing the wrong message at the actual winner. Claimed only once
               the upload is confirmed: this used to say "saved" the moment the
               screen appeared, whatever the network did. */}
-          {isAuthenticated === true && currentUserId !== null && didIWin && !isSpectatorMode && resultSync === 'saved' && (
+          {isSignedIn && didIWin && !isSpectatorMode && resultSync === 'saved' && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -376,7 +392,7 @@ export default function GamePage() {
             </motion.div>
           )}
 
-          {isAuthenticated === true && currentUserId !== null && !didIWin && !isSpectatorMode && (
+          {isSignedIn && !didIWin && !isSpectatorMode && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -396,7 +412,7 @@ export default function GamePage() {
             </motion.div>
           )}
 
-          {isAuthenticated === true && !isSpectatorMode && resultSync && resultSync !== 'saved' && (
+          {isSignedIn && !isSpectatorMode && resultSync && resultSync !== 'saved' && (
             <p className="mb-6 text-xs sm:text-sm text-muted-foreground" role="status">
               {RESULT_SYNC_NOTES[resultSync]}
             </p>
@@ -447,11 +463,11 @@ export default function GamePage() {
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/60 border-b">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <div>
               <h1 className="text-lg font-bold">Killer Pool</h1>
               <p className="text-xs text-muted-foreground">
@@ -466,7 +482,7 @@ export default function GamePage() {
               variant="ghost"
               size="icon"
               onClick={() => setShowInviteModal(true)}
-              title="Share game"
+              aria-label="Share game"
             >
               <QrCode className="h-5 w-5" />
             </Button>
@@ -477,7 +493,7 @@ export default function GamePage() {
                 size="icon"
                 onClick={handleUndo}
                 disabled={game.history.length === 0}
-                title="Undo last action"
+                aria-label="Undo last action"
               >
                 <RotateCcw className="h-5 w-5" />
               </Button>
@@ -486,7 +502,7 @@ export default function GamePage() {
               variant="ghost"
               size="icon"
               onClick={() => setShowAllPlayers(true)}
-              title="View all players"
+              aria-label="View all players"
             >
               <UsersRound className="h-5 w-5" />
             </Button>
@@ -632,34 +648,16 @@ export default function GamePage() {
               {showAddPlayer ? (
                 <div className="flex gap-2">
                   <Input
+                    aria-label="New player name"
                     placeholder="Player name"
                     value={newPlayerName}
                     onChange={(e) => setNewPlayerName(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newPlayerName.trim()) {
-                        const avatars = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
-                        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
-                        addPlayer(newPlayerName.trim(), randomAvatar)
-                        setNewPlayerName('')
-                        setShowAddPlayer(false)
-                        haptics.tap()
-                      }
+                      if (e.key === 'Enter') handleAddPlayer()
                     }}
                     autoFocus
                   />
-                  <Button
-                    onClick={() => {
-                      if (newPlayerName.trim()) {
-                        const avatars = ['🎱', '🎯', '🏆', '⭐', '🔥', '💎', '🎪', '🎲']
-                        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
-                        addPlayer(newPlayerName.trim(), randomAvatar)
-                        setNewPlayerName('')
-                        setShowAddPlayer(false)
-                        haptics.tap()
-                      }
-                    }}
-                    disabled={!newPlayerName.trim()}
-                  >
+                  <Button onClick={handleAddPlayer} disabled={!newPlayerName.trim() || isFull}>
                     Add
                   </Button>
                   <Button
@@ -673,14 +671,23 @@ export default function GamePage() {
                   </Button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setShowAddPlayer(true)}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Player
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowAddPlayer(true)}
+                    disabled={isFull}
+                    aria-describedby={isFull ? 'player-limit-note' : undefined}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Add Player
+                  </Button>
+                  {isFull && (
+                    <p id="player-limit-note" role="status" className="mt-2 text-center text-sm text-muted-foreground">
+                      A game can have up to {MAX_PLAYERS} players.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

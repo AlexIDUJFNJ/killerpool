@@ -58,12 +58,12 @@ export default function Error({
                 Try Again
               </Button>
 
-              <Link href="/" className="w-full">
-                <Button variant="outline" size="lg" className="w-full">
+              <Button asChild variant="outline" size="lg" className="w-full">
+                <Link href="/">
                   <Home className="mr-2 h-4 w-4" />
                   Go Home
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </CardContent>
         </Card>

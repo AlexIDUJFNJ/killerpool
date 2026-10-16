@@ -5,8 +5,9 @@
 import * as React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import GamePage from '../[id]/page';
-import { createGame, applyAction } from '@/lib/game-logic';
+import { createGame, applyAction, MAX_PLAYERS } from '@/lib/game-logic';
 import { Game } from '@/lib/types';
+import { haptics } from '@/lib/haptic';
 
 const mockPush = jest.fn();
 let mockParams: { id: string } = { id: '' };
@@ -20,12 +21,6 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/contexts/game-context', () => ({
   useGame: () => mockContext,
-}));
-
-jest.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    auth: { getUser: () => Promise.resolve({ data: { user: mockUser } }) },
-  }),
 }));
 
 jest.mock('@/lib/haptic', () => ({
@@ -57,7 +52,9 @@ jest.mock('motion/react', () => {
 });
 
 jest.mock('@/components/game/invite-modal', () => ({ InviteModal: () => null }));
-jest.mock('@/components/game/black-ball-celebration', () => ({ BlackBallCelebration: () => null }));
+jest.mock('@/components/game/black-ball-celebration', () => ({
+  BlackBallCelebration: ({ show }: { show: boolean }) => (show ? <div>Black ball celebration</div> : null),
+}));
 jest.mock('@/components/game/swipeable-player-card', () => ({
   SwipeablePlayerCard: ({ name }: { name: string }) => <div>{name}</div>,
 }));
@@ -152,6 +149,162 @@ describe('winner screen', () => {
     render(<GamePage />);
 
     expect(await screen.findByText(/uploads automatically/i)).toBeInTheDocument();
+    expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('winner screen lifecycle', () => {
+  it('should take the winner screen down when the deciding shot is undone', async () => {
+    const won = wonBy(myGame(), 0);
+    setUp(won);
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/wins!/i);
+
+    // What undoAction leaves in the provider
+    mockContext = { ...mockContext, game: { ...won, status: 'active', winnerId: undefined }, resultSync: null };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText(/wins!/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'End Game' })).toBeInTheDocument();
+  });
+
+  it('should buzz once when the game is won on screen', async () => {
+    const game = myGame();
+    setUp(applyAction({ ...game, currentPlayerIndex: 1 }, 'miss'));
+    const { rerender } = render(<GamePage />);
+    await screen.findByRole('button', { name: 'End Game' });
+    expect(haptics.victory).not.toHaveBeenCalled();
+
+    mockContext = { ...mockContext, game: wonBy(game, 0), resultSync: 'saved' };
+    rerender(<GamePage />);
+    rerender(<GamePage />);
+
+    expect(await screen.findByText(/wins!/i)).toBeInTheDocument();
+    expect(haptics.victory).toHaveBeenCalledTimes(1);
+  });
+
+  it('should buzz once when the host reopens a game they won', async () => {
+    // It used to buzz twice: the load and the completion check both fired
+    setUp(wonBy(myGame(), 0));
+    render(<GamePage />);
+
+    await screen.findByText(/wins!/i);
+    expect(haptics.victory).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not buzz for a spectator opening a game that was already won', async () => {
+    const won = wonBy(myGame(), 0);
+    const ctx = setUp(won, {
+      game: null,
+      loadGameFromSupabase: jest.fn().mockResolvedValue(won),
+    });
+    const { rerender } = render(<GamePage />);
+    await waitFor(() => expect(ctx.setSpectatorGame).toHaveBeenCalledWith(won));
+
+    // What setSpectatorGame leaves in the provider
+    mockContext = { ...ctx, game: won, isSpectatorMode: true, resultSync: null };
+    rerender(<GamePage />);
+
+    expect(await screen.findByText(/wins!/i)).toBeInTheDocument();
+    expect(haptics.victory).not.toHaveBeenCalled();
+  });
+
+  it('should buzz for a spectator watching the win happen', async () => {
+    const start = myGame();
+    setUp(applyAction({ ...start, currentPlayerIndex: 1 }, 'miss'), { isSpectatorMode: true });
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/you are watching/i);
+
+    mockContext = { ...mockContext, game: wonBy(start, 0) };
+    rerender(<GamePage />);
+
+    expect(await screen.findByText(/wins!/i)).toBeInTheDocument();
+    expect(haptics.victory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('black ball for spectators', () => {
+  function onTheTable(): Game {
+    return applyAction(myGame(), 'miss');
+  }
+
+  it('should celebrate a black that arrives as one new shot', async () => {
+    const game = onTheTable();
+    setUp(game, { isSpectatorMode: true });
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/you are watching/i);
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+
+    mockContext = { ...mockContext, game: applyAction(game, 'pot_black') };
+    rerender(<GamePage />);
+
+    expect(screen.getByText('Black ball celebration')).toBeInTheDocument();
+  });
+
+  it('should not celebrate an ordinary pot', async () => {
+    const game = onTheTable();
+    setUp(game, { isSpectatorMode: true });
+    const { rerender } = render(<GamePage />);
+    await screen.findByText(/you are watching/i);
+
+    mockContext = { ...mockContext, game: applyAction(game, 'pot') };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+  });
+
+  it('should not celebrate the blacks already in a game being opened', async () => {
+    // Loading a game is not a shot, even when its history ends in a black
+    const opened = applyAction(myGame(), 'pot_black');
+    setUp(opened, { isSpectatorMode: true });
+    render(<GamePage />);
+
+    await screen.findByText(/you are watching/i);
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+  });
+
+  it('should leave the host\'s own blacks to the swipe that potted them', async () => {
+    const game = onTheTable();
+    setUp(game);
+    const { rerender } = render(<GamePage />);
+    await screen.findByRole('button', { name: 'End Game' });
+
+    mockContext = { ...mockContext, game: applyAction(game, 'pot_black') };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText('Black ball celebration')).not.toBeInTheDocument();
+  });
+});
+
+describe('who is signed in', () => {
+  it('should follow the account the provider reports', async () => {
+    // The page used to read the session once on its own: after signing in in
+    // another tab it still offered "Sign in", next to the provider's account
+    setUp(wonBy(myGame(), 0), { currentUserId: null });
+    const { rerender } = render(<GamePage />);
+    expect(await screen.findByText(/compete on the leaderboard/i)).toBeInTheDocument();
+
+    mockContext = { ...mockContext, currentUserId: ME };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText(/compete on the leaderboard/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/your win is saved to your stats/i)).toBeInTheDocument();
+  });
+
+  it('should show neither message while the session is still being read', async () => {
+    setUp(wonBy(myGame(), 0), { currentUserId: undefined });
+    render(<GamePage />);
+
+    await screen.findByText(/wins!/i);
+    expect(screen.queryByText(/compete on the leaderboard/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
+  });
+
+  it('should not congratulate an account that did not win', async () => {
+    setUp(wonBy(myGame(), 0), { currentUserId: '0b0b0b0b-0000-4000-8000-00000000000b' });
+    render(<GamePage />);
+
+    expect(await screen.findByText(/me takes this one/i)).toBeInTheDocument();
     expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
   });
 });
@@ -260,4 +413,84 @@ describe('leaving the page', () => {
   function inPlayGame() {
     return applyAction(myGame(), 'pot');
   }
+});
+
+describe('adding a player mid-game', () => {
+  function gameWith(count: number): Game {
+    return createGame(
+      Array.from({ length: count }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' })),
+      undefined,
+      ME
+    );
+  }
+
+  it('should add a player by name', async () => {
+    const ctx = setUp(gameWith(2));
+    render(<GamePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View all players' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Player' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'New player name' }), {
+      target: { value: '  Late  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(ctx.addPlayer).toHaveBeenCalledWith('Late', expect.any(String));
+  });
+
+  it('should not offer to add a player to a full game', async () => {
+    const ctx = setUp(gameWith(MAX_PLAYERS));
+    render(<GamePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View all players' }));
+    const add = screen.getByRole('button', { name: 'Add Player' });
+
+    expect(add).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('up to 32 players');
+    fireEvent.click(add);
+    expect(screen.queryByRole('textbox', { name: 'New player name' })).not.toBeInTheDocument();
+    expect(ctx.addPlayer).not.toHaveBeenCalled();
+  });
+
+  it('should count eliminated players towards the limit', async () => {
+    const full = gameWith(MAX_PLAYERS);
+    setUp({
+      ...full,
+      players: full.players.map((p, i) => (i > 1 ? { ...p, lives: 0, eliminated: true } : p)),
+    });
+    render(<GamePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View all players' }));
+
+    expect(screen.getByRole('button', { name: 'Add Player' })).toBeDisabled();
+  });
+});
+
+describe('accessibility', () => {
+  it('should name the icon-only header buttons', async () => {
+    setUp(applyAction(myGame(), 'pot'));
+    render(<GamePage />);
+
+    expect(await screen.findByRole('button', { name: 'Share game' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo last action' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View all players' })).toBeInTheDocument();
+  });
+
+  it('should not put a button inside a link', async () => {
+    // The winner screen's sign-in prompt, shown to guests
+    mockUser = null;
+    setUp(wonBy(myGame(), 0), { currentUserId: null });
+    const { container } = render(<GamePage />);
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/auth');
+    expect(container.querySelector('a button, button a')).toBeNull();
+  });
+
+  it('should go back from the game screen with a plain link', async () => {
+    setUp(applyAction(myGame(), 'pot'));
+    const { container } = render(<GamePage />);
+
+    expect(await screen.findByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/');
+    expect(container.querySelector('a button, button a')).toBeNull();
+  });
 });

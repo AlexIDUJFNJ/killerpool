@@ -7,7 +7,7 @@
 import * as React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { GameProvider, useGame } from '../game-context';
-import { createGame, applyAction } from '@/lib/game-logic';
+import { createGame, applyAction, MAX_PLAYERS } from '@/lib/game-logic';
 import {
   loadGameHistory,
   saveCurrentGame,
@@ -23,15 +23,40 @@ import { mapGameToDbRow } from '@/lib/game-mapper';
 import { Game } from '@/lib/types';
 
 const mockSingle = jest.fn();
+type MockAuthListener = (event: string, session: { user: { id: string } } | null) => void;
+const mockAuthListeners = new Set<MockAuthListener>();
+const mockUnsubscribe = jest.fn();
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: jest.fn(() => ({
-    auth: { getUser: jest.fn().mockResolvedValue({ data: { user: null } }) },
+    auth: {
+      getUser: jest.fn().mockResolvedValue({ data: { user: null } }),
+      onAuthStateChange: jest.fn((listener: MockAuthListener) => {
+        mockAuthListeners.add(listener);
+        return {
+          data: {
+            subscription: {
+              unsubscribe: () => {
+                mockAuthListeners.delete(listener);
+                mockUnsubscribe();
+              },
+            },
+          },
+        };
+      }),
+    },
     from: jest.fn(() => ({
       select: () => ({ eq: () => ({ single: mockSingle }) }),
     })),
   })),
 }));
+
+/** What supabase-js tells its listeners */
+function authEvent(event: string, userId: string | null) {
+  act(() => {
+    mockAuthListeners.forEach(listener => listener(event, userId ? { user: { id: userId } } : null));
+  });
+}
 
 jest.mock('@/lib/sync', () => ({
   syncFinishedGame: jest.fn().mockResolvedValue({ ok: true }),
@@ -97,6 +122,7 @@ const liveWrites = () => mockedSyncActive.mock.calls.map(([g]: [Game]) => g.hist
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuthListeners.clear();
   mockedSyncFinished.mockResolvedValue({ ok: true });
   mockedSyncActive.mockResolvedValue({ ok: true });
 });
@@ -586,6 +612,61 @@ describe('GameProvider', () => {
     act(() => result.current.endGame());
 
     expect(mockedSyncFinished.mock.calls[0][0].status).toBe('abandoned');
+  });
+
+  describe('who is signed in', () => {
+    const USER_A = '0a0a0a0a-0000-4000-8000-00000000000a';
+    const USER_B = '0b0b0b0b-0000-4000-8000-00000000000b';
+
+    it('should not say anything until the session has been read', async () => {
+      const { result } = await renderProvider();
+
+      expect(result.current.currentUserId).toBeUndefined();
+
+      authEvent('INITIAL_SESSION', null);
+      expect(result.current.currentUserId).toBeNull();
+    });
+
+    it('should follow signing in, signing out and switching accounts', async () => {
+      // Read once at mount, the id used to outlive the account it belonged
+      // to: the winner screen and the next new game went on using it
+      const { result } = await renderProvider();
+      authEvent('INITIAL_SESSION', USER_A);
+      expect(result.current.currentUserId).toBe(USER_A);
+
+      authEvent('SIGNED_OUT', null);
+      expect(result.current.currentUserId).toBeNull();
+
+      authEvent('SIGNED_IN', USER_B);
+      expect(result.current.currentUserId).toBe(USER_B);
+    });
+
+    it('should keep one subscription and drop it on unmount', async () => {
+      const { unmount } = await renderProvider();
+      expect(mockAuthListeners.size).toBe(1);
+
+      unmount();
+
+      expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
+      expect(mockAuthListeners.size).toBe(0);
+    });
+  });
+
+  it('should leave a full game as it is when another player is added', async () => {
+    // The database refuses a game above the limit for good, so the game must
+    // never get there, whatever the screen offers
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const full = createGame(
+      Array.from({ length: MAX_PLAYERS }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' }))
+    );
+    const { result } = await renderProvider();
+    act(() => result.current.startGame(full));
+
+    act(() => result.current.addPlayer('One more', '🎲'));
+
+    expect(result.current.game?.players).toHaveLength(MAX_PLAYERS);
+    expect(loadCurrentGame()?.players).toHaveLength(MAX_PLAYERS);
+    consoleErrorSpy.mockRestore();
   });
 
   it('should throw when used outside the provider', () => {

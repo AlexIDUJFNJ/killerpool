@@ -86,8 +86,14 @@ export function isCurrentGameShared(gameId: string): boolean {
 export const MAX_HISTORY_GAMES = 50
 
 /**
+ * Fired on this tab's window whenever the stored history changes. The
+ * browser's 'storage' event only reaches the other tabs.
+ */
+export const HISTORY_CHANGE_EVENT = 'killerpool-history-change'
+
+/**
  * Replace the stored game history. The only writer of the history key, so the
- * cap lives in one place.
+ * cap lives in one place, and so is the change notification.
  */
 export function saveGameHistory(games: Game[]): void {
   try {
@@ -97,7 +103,56 @@ export function saveGameHistory(games: Game[]): void {
     )
   } catch (error) {
     console.error('Failed to save game history:', error)
+    return
   }
+  window.dispatchEvent(new Event(HISTORY_CHANGE_EVENT))
+}
+
+/**
+ * Calls onChange whenever the stored history changes, in this tab or in
+ * another one. The subscribe half of a useSyncExternalStore store, with
+ * readGameHistorySnapshot.
+ */
+export function subscribeToGameHistory(onChange: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    // A null key means the whole storage was cleared
+    if (event.key === STORAGE_KEYS.GAME_HISTORY || event.key === null) onChange()
+  }
+  window.addEventListener(HISTORY_CHANGE_EVENT, onChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(HISTORY_CHANGE_EVENT, onChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+const NO_GAMES: readonly Game[] = []
+let historySnapshot: { raw: string | null; games: readonly Game[] } = { raw: null, games: NO_GAMES }
+
+/**
+ * The stored history, as useSyncExternalStore needs it: the same array for as
+ * long as the stored value is the same (a fresh parse on every call would
+ * re-render forever), so it must not be mutated. Use loadGameHistory for a
+ * copy to change.
+ */
+export function readGameHistorySnapshot(): readonly Game[] {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(STORAGE_KEYS.GAME_HISTORY)
+  } catch {
+    return NO_GAMES
+  }
+
+  if (raw !== historySnapshot.raw) {
+    let games = NO_GAMES
+    try {
+      games = raw ? JSON.parse(raw) : NO_GAMES
+    } catch (error) {
+      console.error('Failed to load game history:', error)
+    }
+    historySnapshot = { raw, games }
+  }
+  return historySnapshot.games
 }
 
 /**
