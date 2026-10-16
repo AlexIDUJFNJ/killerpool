@@ -272,7 +272,7 @@ export function getPlayerNamesSuggestions(): string[] {
 }
 
 /**
- * Get IDs of completed games that failed to sync to Supabase
+ * Ids of finished games whose upload has not been confirmed yet
  */
 export function getPendingSyncIds(): string[] {
   try {
@@ -286,7 +286,8 @@ export function getPendingSyncIds(): string[] {
 }
 
 /**
- * Mark a game as pending sync (will be retried when back online)
+ * Queue a game for upload. Callers do this before the attempt, not after it
+ * fails, so a tab closed mid-request still leaves the game in the queue.
  */
 export function markPendingSync(gameId: string): void {
   try {
@@ -391,16 +392,26 @@ export function clearGameDeleted(gameId: string): void {
  * Kept in its own key so `killerpool_pending_sync` stays a plain array of ids:
  * this is a PWA, and a client running an older bundle from the service worker
  * cache would stop draining a queue whose shape changed under it.
+ *
+ * A game is retried until MAX_SYNC_AGE_MS after its first failure, with the
+ * wait between attempts doubling up to BACKOFF_MAX_MS. There used to be a cap
+ * of five attempts on top of that, which at a one-minute base meant giving up
+ * after about a quarter of an hour — a phone that spent an evening offline
+ * lost every game played that evening, and the two longer limits were never
+ * reached.
  */
-export const MAX_SYNC_ATTEMPTS = 5
-const MAX_SYNC_AGE_MS = 14 * 24 * 60 * 60 * 1000
-const BACKOFF_BASE_MS = 60_000
-const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
+export const MAX_SYNC_AGE_MS = 14 * 24 * 60 * 60 * 1000
+export const BACKOFF_BASE_MS = 60_000
+export const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
 
 export interface PendingSyncMeta {
   attempts: number
   firstFailedAt: number
   lastAttemptAt: number
+  /**
+   * Set by older bundles on a refusal. A refused game now leaves the queue at
+   * once (lib/sync.ts), but entries they wrote are still honoured.
+   */
   permanent?: boolean
 }
 
@@ -424,36 +435,30 @@ function writeSyncMeta(meta: Record<string, PendingSyncMeta>): void {
 }
 
 /**
- * Note a failed attempt. A permanent failure — one the server will refuse
- * again, like an RLS rejection — is marked so it is never retried.
+ * Note a failed attempt that is worth repeating
  */
-export function recordSyncFailure(gameId: string, options?: { permanent?: boolean }): void {
+export function recordSyncFailure(gameId: string, now = Date.now()): void {
   const meta = readSyncMeta()
-  const now = Date.now()
   const existing = meta[gameId]
 
   meta[gameId] = {
     attempts: (existing?.attempts ?? 0) + 1,
     firstFailedAt: existing?.firstFailedAt ?? now,
     lastAttemptAt: now,
-    permanent: options?.permanent || existing?.permanent,
+    permanent: existing?.permanent,
   }
 
   writeSyncMeta(meta)
 }
 
 /**
- * Whether to stop trying: refused outright, tried too often, or too old.
+ * Whether to stop trying: refused outright, or failing for too long.
  * An id with no record (an older bundle queued it) is never exhausted.
  */
 export function isSyncExhausted(gameId: string, now = Date.now()): boolean {
   const entry = readSyncMeta()[gameId]
   if (!entry) return false
-  return (
-    entry.permanent === true ||
-    entry.attempts >= MAX_SYNC_ATTEMPTS ||
-    now - entry.firstFailedAt > MAX_SYNC_AGE_MS
-  )
+  return entry.permanent === true || now - entry.firstFailedAt > MAX_SYNC_AGE_MS
 }
 
 /**

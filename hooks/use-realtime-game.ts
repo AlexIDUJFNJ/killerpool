@@ -90,8 +90,8 @@ export function useSyncGameForRealtime(game: Game | null) {
     inFlightRef.current = true
 
     syncActiveGameToSupabase(game)
-      .then(({ success }) => {
-        if (success) setSyncedGameId(game.id)
+      .then((outcome) => {
+        if (outcome.ok) setSyncedGameId(game.id)
       })
       .catch((error) => {
         console.error('Failed to sync game:', error)

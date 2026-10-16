@@ -121,6 +121,19 @@ describe('Game Logic', () => {
       expect(game.createdBy).toBe('creator-id');
     });
 
+    it('should record the creator even when no player is marked as them', () => {
+      // Nobody gets the userId, but the sync still needs to know whose game it is
+      const players = [
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ];
+
+      const game = createGame(players, DEFAULT_RULESET, null, 'creator-id');
+
+      expect(game.players.every(p => !p.userId)).toBe(true);
+      expect(game.createdBy).toBe('creator-id');
+    });
+
     it('should fall back to the first player when no owner is marked', () => {
       const players = [
         { name: 'Player 1', avatar: '🎱' },

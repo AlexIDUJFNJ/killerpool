@@ -9,7 +9,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { GameProvider, useGame } from '../game-context';
 import { createGame, applyAction } from '@/lib/game-logic';
 import { loadGameHistory, saveCurrentGame, loadCurrentGame } from '@/lib/storage';
-import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync';
+import { syncFinishedGame, syncActiveGameToSupabase } from '@/lib/sync';
 import { checkAchievementsForGame } from '@/lib/achievements';
 import { updateGameStatus } from '@/lib/realtime';
 import { Game } from '@/lib/types';
@@ -22,8 +22,8 @@ jest.mock('@/lib/supabase/client', () => ({
 }));
 
 jest.mock('@/lib/sync', () => ({
-  autoSyncGame: jest.fn().mockResolvedValue(true),
-  syncActiveGameToSupabase: jest.fn().mockResolvedValue({ success: true }),
+  syncFinishedGame: jest.fn().mockResolvedValue({ ok: true }),
+  syncActiveGameToSupabase: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
 jest.mock('@/lib/achievements', () => ({
@@ -110,7 +110,7 @@ describe('GameProvider', () => {
     act(() => result.current.startGame(game));
     act(() => result.current.startGame(playToCompletion(game, 1)));
 
-    await waitFor(() => expect(autoSyncGame).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(syncFinishedGame).toHaveBeenCalledTimes(1));
     expect(loadGameHistory()).toHaveLength(1);
   });
 
@@ -124,7 +124,7 @@ describe('GameProvider', () => {
     const game = twoPlayerGame();
     const finished = playToCompletion(game, 1);
     act(() => result.current.startGame(finished));
-    await waitFor(() => expect(autoSyncGame).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(syncFinishedGame).toHaveBeenCalledTimes(1));
 
     act(() => result.current.undoAction());
     expect(result.current.game?.status).toBe('active');
@@ -132,20 +132,20 @@ describe('GameProvider', () => {
     // Play on to the other winner
     act(() => result.current.startGame(playToCompletion(result.current.game!, 0)));
 
-    await waitFor(() => expect(autoSyncGame).toHaveBeenCalledTimes(2));
-    const winners = (autoSyncGame as jest.Mock).mock.calls.map(([g]: [Game]) => g.winnerId);
+    await waitFor(() => expect(syncFinishedGame).toHaveBeenCalledTimes(2));
+    const winners = (syncFinishedGame as jest.Mock).mock.calls.map(([g]: [Game]) => g.winnerId);
     expect(winners[0]).not.toBe(winners[1]);
   });
 
   it('should grant achievements only after a successful sync', async () => {
-    (autoSyncGame as jest.Mock).mockResolvedValueOnce(false);
+    (syncFinishedGame as jest.Mock).mockResolvedValueOnce({ ok: false, failure: 'retry', message: 'offline' });
     const { result } = renderHook(() => useGame(), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     const game = twoPlayerGame();
     act(() => result.current.startGame(playToCompletion(game, 1)));
 
-    await waitFor(() => expect(autoSyncGame).toHaveBeenCalled());
+    await waitFor(() => expect(syncFinishedGame).toHaveBeenCalled());
     expect(checkAchievementsForGame).not.toHaveBeenCalled();
   });
 

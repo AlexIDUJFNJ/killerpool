@@ -181,7 +181,10 @@ export default function NewGamePage() {
       id: resolveRosterPlayerId(p.name),
     }))
 
-    const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId)
+    // With nobody marked as "me" no player gets the userId, but the game still
+    // records who created it: the sync decides from that which account may
+    // upload it
+    const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId, userId)
     rememberRosterPlayers(entries.map(e => ({ id: e.id, name: e.name, avatar: e.avatar })))
     startGame(game)
 

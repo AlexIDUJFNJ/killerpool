@@ -63,6 +63,11 @@ export interface Game {
   rulesetId?: string
   ruleset: Ruleset
   history: GameHistoryEntry[]
+  /**
+   * Who created the game: an auth uid, or this device's guest id (getGuestId).
+   * Decides which account may upload it — see rowOwner in lib/sync.ts. For a
+   * game loaded from Supabase it is the row's created_by.
+   */
   createdBy?: string | null
 }
 

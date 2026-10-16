@@ -37,12 +37,19 @@ export function createPlayer(
 }
 
 /**
- * Create a new game
+ * Create a new game.
+ *
+ * `userId` goes to the player marked as the owner. `createdBy` records who
+ * created the game — an auth uid, or this device's guest id — and defaults to
+ * `userId`. They differ when nobody in the game is marked as "me": no player
+ * carries the userId then, but the sync still has to know which account the
+ * game belongs to (see rowOwner in lib/sync.ts).
  */
 export function createGame(
   players: NewGamePlayerInput[],
   ruleset: Ruleset = DEFAULT_RULESET,
-  userId?: string | null
+  userId?: string | null,
+  createdBy: string | null | undefined = userId
 ): Game {
   // Only the marked player gets the userId; everyone else is tracked by their
   // per-game player id. Position means nothing here — the form shuffles rows
@@ -70,7 +77,7 @@ export function createGame(
     ruleset,
     rulesetId: ruleset.id,
     history: [],
-    createdBy: userId,
+    createdBy,
   }
 }
 

@@ -21,6 +21,12 @@ import {
   resolveRosterPlayerId,
   rememberRosterPlayers,
   getPlayerNamesSuggestions,
+  recordSyncFailure,
+  isSyncExhausted,
+  isSyncBackedOff,
+  MAX_SYNC_AGE_MS,
+  BACKOFF_BASE_MS,
+  BACKOFF_MAX_MS,
 } from '../storage';
 import { createGame } from '../game-logic';
 import { Game } from '../types';
@@ -440,6 +446,73 @@ describe('Storage', () => {
       expect(getPendingSyncIds()).toEqual([]);
 
       consoleErrorSpy.mockRestore();
+    });
+
+    it('should keep the queue a plain array of ids', () => {
+      // Older bundles from the service worker cache read this key directly
+      markPendingSync('game-1');
+      recordSyncFailure('game-1');
+
+      expect(JSON.parse(localStorage.getItem('killerpool_pending_sync')!)).toEqual(['game-1']);
+    });
+  });
+
+  describe('retry backoff', () => {
+    const now = Date.now();
+
+    it('should not give up after a handful of failures', () => {
+      // A cap of five attempts used to end retries after about 15 minutes
+      for (let i = 0; i < 20; i++) recordSyncFailure('game-1', now - 3 * 24 * 3600_000);
+
+      expect(isSyncExhausted('game-1', now)).toBe(false);
+    });
+
+    it('should keep retrying for two weeks after the first failure', () => {
+      recordSyncFailure('game-1', now - MAX_SYNC_AGE_MS + 60_000);
+
+      expect(isSyncExhausted('game-1', now)).toBe(false);
+    });
+
+    it('should give up once two weeks have passed since the first failure', () => {
+      recordSyncFailure('game-1', now - MAX_SYNC_AGE_MS - 1);
+      recordSyncFailure('game-1', now);
+
+      expect(isSyncExhausted('game-1', now)).toBe(true);
+    });
+
+    it('should honour a refusal recorded by an older bundle', () => {
+      localStorage.setItem(
+        'killerpool_pending_sync_meta',
+        JSON.stringify({ 'game-1': { attempts: 1, firstFailedAt: now, lastAttemptAt: now, permanent: true } })
+      );
+
+      expect(isSyncExhausted('game-1', now)).toBe(true);
+
+      // and a later failure does not clear it
+      recordSyncFailure('game-1', now);
+      expect(isSyncExhausted('game-1', now)).toBe(true);
+    });
+
+    it('should double the wait after each failure', () => {
+      recordSyncFailure('game-1', now);
+      expect(isSyncBackedOff('game-1', now + BACKOFF_BASE_MS - 1)).toBe(true);
+      expect(isSyncBackedOff('game-1', now + BACKOFF_BASE_MS)).toBe(false);
+
+      recordSyncFailure('game-1', now);
+      expect(isSyncBackedOff('game-1', now + 2 * BACKOFF_BASE_MS - 1)).toBe(true);
+      expect(isSyncBackedOff('game-1', now + 2 * BACKOFF_BASE_MS)).toBe(false);
+    });
+
+    it('should never wait longer than the cap between attempts', () => {
+      for (let i = 0; i < 40; i++) recordSyncFailure('game-1', now);
+
+      expect(isSyncBackedOff('game-1', now + BACKOFF_MAX_MS - 1)).toBe(true);
+      expect(isSyncBackedOff('game-1', now + BACKOFF_MAX_MS)).toBe(false);
+    });
+
+    it('should never back off a game it has no record of', () => {
+      expect(isSyncBackedOff('queued-by-an-older-bundle', now)).toBe(false);
+      expect(isSyncExhausted('queued-by-an-older-bundle', now)).toBe(false);
     });
   });
 });

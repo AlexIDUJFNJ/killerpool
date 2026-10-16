@@ -17,7 +17,7 @@ import {
   resolveRosterPlayerId,
   rememberRosterPlayers,
 } from '@/lib/storage'
-import { autoSyncGame, syncActiveGameToSupabase } from '@/lib/sync'
+import { syncFinishedGame, syncActiveGameToSupabase } from '@/lib/sync'
 import { checkAchievementsForGame, onUnlockedAchievements } from '@/lib/achievements'
 import { AchievementToasts } from '@/components/achievements/achievement-toast'
 import { mapDbGameToGame } from '@/lib/game-mapper'
@@ -139,9 +139,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // Auto-sync to Supabase in background, then grant achievements
     // (the RPC reads the game row, so it must run after a successful sync;
     // a failed sync is retried by retryPendingSyncs, which also grants)
-    autoSyncGame(game)
-      .then(async (synced) => {
-        if (!synced) return
+    syncFinishedGame(game)
+      .then(async (outcome) => {
+        if (!outcome.ok) return
         const unlocked = await checkAchievementsForGame(game)
         if (unlocked.length > 0) {
           setNewAchievements((prev) => [...prev, ...unlocked])
@@ -183,9 +183,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       // Sync full game state to Supabase if sharing is enabled
       // This ensures spectators see all updates in realtime
       if (isSharingEnabled) {
-        syncActiveGameToSupabase(updatedGame).then((result) => {
-          if (!result.success) {
-            console.error('[performAction] Failed to sync game:', result.error)
+        syncActiveGameToSupabase(updatedGame).then((outcome) => {
+          if (!outcome.ok) {
+            console.error('[performAction] Failed to sync game:', outcome.message)
           }
         }).catch((error) => {
           console.error('[performAction] Failed to sync game:', error)
@@ -327,10 +327,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     try {
 
       // Sync game to Supabase first (this ensures the game exists in DB)
-      const syncResult = await syncActiveGameToSupabase(game)
+      const outcome = await syncActiveGameToSupabase(game)
 
-      if (!syncResult.success) {
-        console.error('[enableSharing] Sync failed for game:', game.id, syncResult.error)
+      if (!outcome.ok) {
+        console.error('[enableSharing] Sync failed for game:', game.id, outcome.message)
         return false
       }
 
