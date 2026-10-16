@@ -52,6 +52,9 @@ export default function NewGamePage() {
   const [playerSuggestions, setPlayerSuggestions] = React.useState<string[]>([])
   const [activeSuggestionRowId, setActiveSuggestionRowId] = React.useState<string | null>(null)
   const [filteredSuggestions, setFilteredSuggestions] = React.useState<string[]>([])
+  // Why the last Start was refused. Shown next to the button and cleared by
+  // the next edit, so it never describes a form that has since changed.
+  const [formError, setFormError] = React.useState<string | null>(null)
   const nextRowId = React.useRef(2)
 
   React.useEffect(() => {
@@ -101,12 +104,14 @@ export default function NewGamePage() {
   }, [])
 
   const handleAddPlayer = () => {
+    setFormError(null)
     const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
     setPlayers([...players, { rowId: `p${nextRowId.current++}`, name: '', avatar: nextAvatar }])
   }
 
   const handleRemovePlayer = (rowId: string) => {
     if (players.length > 2) {
+      setFormError(null)
       setPlayers(players.filter(p => p.rowId !== rowId))
       if (meRowId === rowId) {
         setMeRowId(null)
@@ -115,6 +120,7 @@ export default function NewGamePage() {
   }
 
   const handleNameChange = (rowId: string, name: string) => {
+    setFormError(null)
     setPlayers(prev => prev.map(p => (p.rowId === rowId ? { ...p, name } : p)))
 
     // Update filtered suggestions for autocomplete
@@ -132,6 +138,7 @@ export default function NewGamePage() {
   }
 
   const handleSelectSuggestion = (rowId: string, suggestion: string) => {
+    setFormError(null)
     setPlayers(prev => prev.map(p => (p.rowId === rowId ? { ...p, name: suggestion } : p)))
     setFilteredSuggestions([])
     setActiveSuggestionRowId(null)
@@ -152,14 +159,14 @@ export default function NewGamePage() {
     // Validate
     const validPlayers = players.filter(p => p.name.trim().length > 0)
     if (validPlayers.length < 2) {
-      alert('Please add at least 2 players with names')
+      setFormError('Add at least 2 players with names')
       return
     }
 
     // Never guess who the creator is. A wrong guess hands their achievements
     // and their leaderboard entry to another player, and that is not reversible
     if (meRowId !== null && !validPlayers.some(p => p.rowId === meRowId)) {
-      alert('Enter your own name, or mark which player is you')
+      setFormError('Enter your own name, or mark which player is you')
       return
     }
 
@@ -168,7 +175,7 @@ export default function NewGamePage() {
     const names = validPlayers.map(p => p.name.trim().toLowerCase())
     const duplicate = names.find((name, i) => names.indexOf(name) !== i)
     if (duplicate) {
-      alert(`Two players are called "${duplicate}". Give them different names.`)
+      setFormError(`Two players are called "${duplicate}". Give them different names.`)
       return
     }
 
@@ -271,9 +278,10 @@ export default function NewGamePage() {
                         leaderboard and /stats are keyed on. */}
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setFormError(null)
                         setMeRowId(current => (current === player.rowId ? null : player.rowId))
-                      }
+                      }}
                       aria-pressed={meRowId === player.rowId}
                       title={meRowId === player.rowId ? 'This is you' : 'Mark this player as you'}
                       className={cn(
@@ -360,6 +368,15 @@ export default function NewGamePage() {
             <Shuffle className="mr-2 h-5 w-5" />
             Shuffle Players
           </Button>
+        )}
+
+        {formError && (
+          <p
+            role="alert"
+            className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            {formError}
+          </p>
         )}
 
         <Button
