@@ -22,6 +22,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   const [copied, setCopied] = React.useState(false)
   const [isSharing, setIsSharing] = React.useState(false)
   const [sharingFailed, setSharingFailed] = React.useState(false)
+  const [downloadFailed, setDownloadFailed] = React.useState(false)
   // "Try again" bumps this to run the sharing effect once more
   const [attempt, setAttempt] = React.useState(0)
   const inviteLink = generateInviteLink(gameId)
@@ -31,6 +32,10 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   // Spectators skip this: the game is already in Supabase.
   const needsSharing = open && !isSharingEnabled && !isSpectatorMode
   const isSyncing = needsSharing && !sharingFailed
+  // The link is held back until the host's first write has landed. Inserting a
+  // guest game is open to anyone, and that first row fixes the host-secret hash
+  // (00016): whoever got the id into the database first would own the game.
+  const canShare = isSharingEnabled || isSpectatorMode
 
   // enableSharing changes identity with every game update; reading it from a
   // ref keys the effect on intent (open, retry) instead of on each shot played
@@ -97,11 +102,12 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   }
 
   const handleDownloadQR = async () => {
+    setDownloadFailed(false)
     try {
       await downloadQRCode(gameId)
     } catch (error) {
       console.error('Failed to download QR code:', error)
-      alert('Failed to download QR code')
+      setDownloadFailed(true)
     }
   }
 
@@ -155,7 +161,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
           )}
 
           {/* QR Code */}
-          {qrCodeDataUrl && (
+          {canShare && qrCodeDataUrl && (
             <div className="flex flex-col items-center gap-3 p-4 bg-muted rounded-lg">
               <a
                 href={inviteLink}
@@ -180,48 +186,57 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
                 <Download className="h-4 w-4 mr-2" />
                 Download QR Code
               </Button>
+              {downloadFailed && (
+                <p className="text-sm text-destructive" role="alert">
+                  The QR code couldn&apos;t be saved. Try again, or share the link instead.
+                </p>
+              )}
             </div>
           )}
 
-          {/* Invite Link */}
-          <div className="space-y-2">
-            <Label htmlFor={linkInputId}>Invite Link</Label>
-            <div className="flex gap-2">
-              <Input
-                id={linkInputId}
-                value={inviteLink}
-                readOnly
-                className="flex-1"
-                onClick={(e) => e.currentTarget.select()}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleCopy}
-                disabled={copied}
-                aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
+          {canShare && (
+            <>
+              {/* Invite Link */}
+              <div className="space-y-2">
+                <Label htmlFor={linkInputId}>Invite Link</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id={linkInputId}
+                    value={inviteLink}
+                    readOnly
+                    className="flex-1"
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleCopy}
+                    disabled={copied}
+                    aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
+                  >
+                    {copied ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button
-              variant="default"
-              className="flex-1"
-              onClick={handleShare}
-              disabled={isSharing}
-            >
-              <Share2 className="h-4 w-4 mr-2" />
-              Share Link
-            </Button>
-          </div>
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  variant="default"
+                  className="flex-1"
+                  onClick={handleShare}
+                  disabled={isSharing}
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Link
+                </Button>
+              </div>
+            </>
+          )}
 
           {/* Instructions */}
           <div className="text-xs text-muted-foreground space-y-1 p-3 bg-muted/50 rounded-md">
