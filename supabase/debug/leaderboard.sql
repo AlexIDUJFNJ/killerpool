@@ -1,6 +1,11 @@
 -- ====================================
 -- Debug queries for leaderboard issue
 -- Run these queries in Supabase SQL Editor to diagnose the problem
+--
+-- Read-only: every statement here is a SELECT, and it has to stay that way.
+-- This file is pasted by hand into the production database; anything that
+-- writes belongs in a migration. Nothing here runs automatically: the
+-- Supabase CLI applies supabase/migrations/ only.
 -- ====================================
 
 -- 1. Check if there are any completed games
@@ -39,7 +44,12 @@ WHERE g.status = 'completed'
 LIMIT 10;
 
 -- 4. Test the get_leaderboard function directly
+--
+-- Since 00013 it ranks only players with at least min_games completed games
+-- (default 3, which is what the client uses). Someone missing from the first
+-- result but present in the second is below the minimum, not lost.
 SELECT * FROM get_leaderboard(15);
+SELECT * FROM get_leaderboard(15, 1);   -- same, without the qualifying minimum
 
 -- 5. Check if any player_profiles exist
 SELECT
@@ -56,6 +66,11 @@ LIMIT 10;
 -- including anonymous ones — so a single non-UUID id would abort the whole
 -- query with 22P02, which is exactly the bug migration 00012 fixed in
 -- get_leaderboard itself. Do not "simplify" this back to ::uuid.
+--
+-- Lists everyone, including players below get_leaderboard's qualifying
+-- minimum (00013: min_games, default 3), and orders the way v5 ranks: win
+-- rate, then wins, then games. `qualifies` and `games_to_qualify` say why a
+-- player with games on record is not on the table.
 WITH player_game_stats AS (
     SELECT
         lower(participant->>'id')   AS player_key,
@@ -73,18 +88,30 @@ WITH player_game_stats AS (
     FROM games g,
     LATERAL jsonb_array_elements(g.participants) AS participant
     WHERE g.status = 'completed'
+),
+per_player AS (
+    SELECT
+        COALESCE(pgs.user_key, pgs.player_key) AS stable_key,
+        MAX(pgs.player_name) AS player_name,
+        pgs.user_key,
+        COUNT(DISTINCT pgs.game_id)::BIGINT AS total_games,
+        COUNT(DISTINCT pgs.game_id) FILTER (WHERE pgs.is_winner = 1)::BIGINT AS games_won
+    FROM player_game_stats pgs
+    GROUP BY COALESCE(pgs.user_key, pgs.player_key), pgs.user_key
 )
 SELECT
-    COALESCE(pgs.user_key, pgs.player_key) AS stable_key,
-    MAX(pgs.player_name) as player_name,
-    pgs.user_key,
-    COUNT(DISTINCT pgs.game_id)::BIGINT AS total_games,
-    COUNT(DISTINCT pgs.game_id) FILTER (WHERE pgs.is_winner = 1)::BIGINT AS games_won,
-    COALESCE(pp.display_name, MAX(pgs.player_name)) as display_name
-FROM player_game_stats pgs
-LEFT JOIN player_profiles pp ON pgs.user_key = pp.user_id::text
-GROUP BY COALESCE(pgs.user_key, pgs.player_key), pgs.user_key, pp.display_name
-ORDER BY games_won DESC, total_games DESC;
+    p.stable_key,
+    COALESCE(pp.display_name, p.player_name) AS display_name,
+    p.user_key,
+    p.total_games,
+    p.games_won,
+    ROUND(p.games_won::NUMERIC / p.total_games * 100, 2) AS win_rate,
+    -- 3 is get_leaderboard's default min_games, the one the client gets
+    p.total_games >= 3              AS qualifies,
+    GREATEST(3 - p.total_games, 0)  AS games_to_qualify
+FROM per_player p
+LEFT JOIN player_profiles pp ON p.user_key = pp.user_id::text
+ORDER BY qualifies DESC, win_rate DESC, games_won DESC, total_games DESC;
 
 -- 7. Participants whose id is not a UUID — these used to break get_leaderboard
 --    for everyone before 00012

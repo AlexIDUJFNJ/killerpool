@@ -118,7 +118,7 @@ JSON.parse(localStorage.getItem('killerpool_roster') || '[]')
 `Game successfully synced to Supabase: <game_id>`; при неудаче —
 `Failed to sync game to Supabase` / `Failed to auto-sync game`.
 
-Отладочные запросы лежат в `debug_leaderboard.sql` (Supabase SQL Editor):
+Отладочные запросы лежат в `supabase/debug/leaderboard.sql` (Supabase SQL Editor):
 
 ```sql
 SELECT
@@ -183,7 +183,7 @@ LIMIT 10;
 `games` пишется анонимными клиентами, поэтому одно мусорное значение уронит
 весь запрос с `22P02` — ровно этот баг чинила миграция `00012`: одна битая
 строка делала лидерборд недоступным для всех. Запросы в
-`debug_leaderboard.sql` сравнивают id как текст именно поэтому.
+`supabase/debug/leaderboard.sql` сравнивают id как текст именно поэтому.
 
 ### 6. Функция не возвращает данные
 
@@ -222,7 +222,7 @@ SELECT user_id, display_name, avatar_url, created_at FROM player_profiles LIMIT 
 
 ## Порядок разбора
 
-1. **Запустить `debug_leaderboard.sql`** целиком в Supabase SQL Editor.
+1. **Запустить `supabase/debug/leaderboard.sql`** целиком в Supabase SQL Editor.
 2. **Посмотреть консоль**: сыграть партию до конца и найти
    `Game successfully synced to Supabase`.
 3. **Проверить localStorage**: `killerpool_roster` (id игроков),
@@ -318,7 +318,7 @@ DELETE FROM games WHERE status = 'completed';
 ## Контакт для поддержки
 
 Если проблема не решена, приложите:
-1. Результаты запросов из `debug_leaderboard.sql`
+1. Результаты запросов из `supabase/debug/leaderboard.sql`
 2. Скриншот консоли браузера после завершения игры
 3. Структуру последней завершённой игры
 4. Содержимое localStorage-ключей `killerpool_roster`, `killerpool_guest_id`,
