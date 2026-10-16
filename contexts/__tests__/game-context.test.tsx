@@ -436,6 +436,74 @@ describe('GameProvider', () => {
     });
   });
 
+  describe('host secret', () => {
+    it('should mint it when the host starts a game, before the first write', async () => {
+      const secretAtWrite: Array<string | null> = [];
+      mockedSyncActive.mockImplementation(async (g: Game) => {
+        secretAtWrite.push(getHostSecret(g.id));
+        return { ok: true };
+      });
+      const { result } = await renderProvider();
+      const game = twoPlayerGame();
+
+      act(() => result.current.startGame(game));
+      await act(async () => {
+        await result.current.enableSharing();
+      });
+
+      const secret = getHostSecret(game.id);
+      expect(secret).toMatch(/^[0-9a-f]{64}$/);
+      expect(secretAtWrite[0]).toBe(secret);
+      // Never in the Game: that object is written, kept in history and shown
+      expect(JSON.stringify(result.current.game)).not.toContain(secret);
+      expect(JSON.stringify(loadCurrentGame())).not.toContain(secret);
+    });
+
+    it('should keep it when the same game is started again', async () => {
+      const { result } = await renderProvider();
+      const game = twoPlayerGame();
+
+      act(() => result.current.startGame(game));
+      const secret = getHostSecret(game.id);
+      act(() => result.current.startGame(applyAction(game, 'miss')));
+
+      expect(getHostSecret(game.id)).toBe(secret);
+    });
+
+    it('should give every game its own', async () => {
+      const { result } = await renderProvider();
+      const first = twoPlayerGame();
+      const second = twoPlayerGame();
+
+      act(() => result.current.startGame(first));
+      act(() => result.current.startGame(second));
+
+      expect(getHostSecret(first.id)).not.toBe(getHostSecret(second.id));
+    });
+
+    it('should not mint one for a game being watched, and never write it', async () => {
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const { result } = await renderProvider();
+      const watched = twoPlayerGame();
+
+      act(() => result.current.setSpectatorGame(watched));
+      const [, onUpdate] = mockedSubscribe.mock.calls[0];
+      act(() => result.current.performAction('miss'));
+      act(() => result.current.undoAction());
+      act(() => onUpdate(playToCompletion(watched, 1)));
+      act(() => result.current.endGame());
+      await act(async () => {
+        expect(await result.current.enableSharing()).toBe(false);
+      });
+
+      expect(getHostSecret(watched.id)).toBeNull();
+      expect(mockedSyncActive).not.toHaveBeenCalled();
+      expect(mockedSyncFinished).not.toHaveBeenCalled();
+
+      consoleWarnSpy.mockRestore();
+    });
+  });
+
   describe('sharing', () => {
     it('should sync each action once sharing is enabled', async () => {
       const { result } = await renderProvider();
@@ -587,74 +655,6 @@ describe('GameProvider', () => {
     act(() => result.current.endGame());
 
     expect(mockedSyncFinished.mock.calls[0][0].status).toBe('abandoned');
-  });
-
-  describe('host secret', () => {
-    it('should mint it when the host starts a game, before the first write', async () => {
-      const secretAtWrite: Array<string | null> = [];
-      mockedSyncActive.mockImplementation(async (g: Game) => {
-        secretAtWrite.push(getHostSecret(g.id));
-        return { ok: true };
-      });
-      const { result } = await renderProvider();
-      const game = twoPlayerGame();
-
-      act(() => result.current.startGame(game));
-      await act(async () => {
-        await result.current.enableSharing();
-      });
-
-      const secret = getHostSecret(game.id);
-      expect(secret).toMatch(/^[0-9a-f]{64}$/);
-      expect(secretAtWrite[0]).toBe(secret);
-      // Never in the Game: that object is written, kept in history and shown
-      expect(JSON.stringify(result.current.game)).not.toContain(secret);
-      expect(JSON.stringify(loadCurrentGame())).not.toContain(secret);
-    });
-
-    it('should keep it when the same game is started again', async () => {
-      const { result } = await renderProvider();
-      const game = twoPlayerGame();
-
-      act(() => result.current.startGame(game));
-      const secret = getHostSecret(game.id);
-      act(() => result.current.startGame(applyAction(game, 'miss')));
-
-      expect(getHostSecret(game.id)).toBe(secret);
-    });
-
-    it('should give every game its own', async () => {
-      const { result } = await renderProvider();
-      const first = twoPlayerGame();
-      const second = twoPlayerGame();
-
-      act(() => result.current.startGame(first));
-      act(() => result.current.startGame(second));
-
-      expect(getHostSecret(first.id)).not.toBe(getHostSecret(second.id));
-    });
-
-    it('should not mint one for a game being watched, and never write it', async () => {
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
-      const { result } = await renderProvider();
-      const watched = twoPlayerGame();
-
-      act(() => result.current.setSpectatorGame(watched));
-      const [, onUpdate] = mockedSubscribe.mock.calls[0];
-      act(() => result.current.performAction('miss'));
-      act(() => result.current.undoAction());
-      act(() => onUpdate(playToCompletion(watched, 1)));
-      act(() => result.current.endGame());
-      await act(async () => {
-        expect(await result.current.enableSharing()).toBe(false);
-      });
-
-      expect(getHostSecret(watched.id)).toBeNull();
-      expect(mockedSyncActive).not.toHaveBeenCalled();
-      expect(mockedSyncFinished).not.toHaveBeenCalled();
-
-      consoleWarnSpy.mockRestore();
-    });
   });
 
   it('should throw when used outside the provider', () => {

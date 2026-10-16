@@ -738,7 +738,8 @@ describe('the host secret (00016)', () => {
     return { game: completedGame(id, createdBy), secret };
   }
 
-  // Every way a game row leaves this device
+  // Every way a game row leaves this device (syncAllGamesToSupabase, which
+  // nothing calls, goes through syncFinishedGame)
   const writePaths: Array<[string, (game: Game) => Promise<unknown>]> = [
     [
       'the live share and an undone win (syncActiveGameToSupabase)',
@@ -755,13 +756,6 @@ describe('the host secret (00016)', () => {
         saveToHistory(game);
         markPendingSync(game.id);
         await retryPendingSyncs();
-      },
-    ],
-    [
-      'the sync page (syncAllGamesToSupabase)',
-      async game => {
-        saveToHistory(game);
-        await syncAllGamesToSupabase();
       },
     ],
   ];
