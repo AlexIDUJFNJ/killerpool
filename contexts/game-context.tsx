@@ -120,7 +120,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // whether an update overtook it while it was in flight
   const spectatorUpdatesRef = React.useRef(0)
 
-  // Load game from localStorage on mount
+  // Load game from localStorage on mount. An effect on purpose, and the one
+  // set-state-in-effect warning left (see eslint.config.mjs): the first
+  // client render has to match the server's, which has no storage, and from
+  // here on the game is this provider's own state, storage only its copy.
   React.useEffect(() => {
     const savedGame = loadCurrentGame()
     if (savedGame && savedGame.status === 'active') {
