@@ -22,9 +22,10 @@ We are committed to providing a welcoming and inclusive environment for everyone
 ### Prerequisites
 
 - Node.js 22.x (see `engines` in package.json)
-- npm or yarn
+- npm (the lockfile is `package-lock.json`; `.npmrc` sets `legacy-peer-deps`, see the comment there before changing it)
 - Git
 - A Supabase account (for database features)
+- The [Supabase CLI](https://supabase.com/docs/guides/cli), only if you change the database
 
 ### Setup
 
@@ -114,24 +115,34 @@ git checkout -b feature/your-feature-name
 
 ### File Naming
 
-- React components: `PascalCase.tsx` (e.g., `PlayerCard.tsx`)
-- Utilities/helpers: `kebab-case.ts` (e.g., `game-logic.ts`)
-- Pages: Next.js conventions (`page.tsx`, `layout.tsx`, etc.)
+- Every file is `kebab-case`: components too (`player-card.tsx`, `swipeable-player-card.tsx`), utilities (`game-logic.ts`), hooks (`use-realtime-game.ts`)
+- The component a file exports is `PascalCase` (`export function PlayerCard`)
+- Pages and route files follow Next.js conventions (`page.tsx`, `layout.tsx`, `route.ts`, `opengraph-image.tsx`)
+- Tests sit in a `__tests__/` directory next to the code, as `<file>.test.ts(x)`
 
 ### Code Formatting
 
-We use ESLint for linting. Run the linter before committing:
+ESLint 9 (flat config, `eslint.config.mjs`) checks the code. Run it before committing:
 
 ```bash
 npm run lint
 ```
 
+Prettier is configured too (`.prettierrc`: no semicolons, single quotes, width
+100; `eslint-config-prettier` turns off the ESLint rules that would fight it;
+Markdown is excluded in `.prettierignore`). Most of the codebase predates it,
+so `npm run format:check` currently reports a large share of files. Format the
+files you change (`npx prettier --write <files>`) and leave unrelated files
+alone: a repository-wide `npm run format` belongs in a commit of its own, not
+mixed into a fix.
+
 ## Agent session capture (Entire)
 
 The repository is set up for [Entire](https://docs.entire.io), which records the
 context behind AI-assisted changes — prompts, tool calls and diffs — as
-checkpoints tied to commits. That is why `.entire/settings.json` and the hooks
-in `.claude/settings.json` are committed, and why cloning installs git hooks.
+checkpoints tied to commits. That is why `.entire/settings.json` and the Claude Code hooks
+in `.claude/settings.json` are committed. Cloning installs nothing: git hooks
+are local, and `entire enable` is what writes them into `.git/hooks`.
 
 Transcripts do **not** go into this repository. `checkpoint_remote` points at a
 separate private repo, because this one is public and Entire states that its
@@ -157,7 +168,9 @@ Two things to know, both learned the hard way:
   `entire import claude-code` backfills past transcripts, but as read-only
   history — not linked to commits and without generated summaries.
 
-Contributing without Entire is fine. The hooks no-op when the CLI is absent.
+Contributing without Entire is fine. Without `entire enable` there are no git
+hooks, and the Claude Code hooks in `.claude/settings.json` exit quietly when
+the CLI is not installed.
 
 ## Commit Guidelines
 
@@ -256,15 +269,17 @@ npm run test:coverage # with coverage
 
 Tests live next to the code they cover, in `__tests__/` directories, named
 `*.test.ts` / `*.test.tsx`. Setup lives in `jest.config.ts` and `jest.setup.ts`.
-Coverage is collected from `lib/`, `components/`, `hooks/` and `contexts/` —
-`contexts/` was added deliberately: the state machine that lives there is where
-the real bugs were, and for a long time it was not even measured.
+Coverage is collected from `app/`, `lib/`, `components/`, `hooks/` and
+`contexts/` (`collectCoverageFrom` in `jest.config.ts`). `contexts/` was added
+deliberately: the state machine that lives there is where the real bugs were,
+and for a long time it was not even measured. Pages under `app/` have tests of
+their own now (auth, new game, game screen, history, stats, profile, the error page).
 
 New code under `lib/` is expected to come with tests. Pure logic is the priority
 — the game rules in `lib/__tests__/game-logic.test.ts` are, in practice, the
 specification of how Killer Pool behaves here. The write path (`lib/sync.ts`,
-`contexts/game-context.tsx`) is the second priority: every bug fixed in the last
-two rounds lived there, and 164 green tests noticed none of them.
+`contexts/game-context.tsx`) is the second priority: most of the bugs fixed so
+far lived there, and for a long time a fully green suite noticed none of them.
 
 `jest.setup.ts` deliberately does **not** stub `localStorage` / `sessionStorage`.
 jsdom provides both, separately; the old stub handed out one shared object for
@@ -275,6 +290,18 @@ Database changes have their own harness, outside Jest: `./supabase/test/setup-lo
 brings up a throwaway Postgres and applies every migration from scratch, and
 `supabase/test/rls-policies.sql` exercises the policies under the real roles.
 Run both before sending a migration to production.
+
+### Database changes
+
+- A change to the schema is a new numbered file in `supabase/migrations/`.
+  Never edit a migration that has already been applied.
+- It reaches production through `supabase db push`, not the SQL Editor:
+  anything applied by hand is missing from the migration history, and the next
+  push tries to apply it again. See [DEPLOYMENT.md](./DEPLOYMENT.md#supabase-cli)
+  for the one-time history repair and the CLI setup.
+- After the migration is applied, regenerate the types and commit them with
+  the change: `npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts`.
+  The file is generated; do not edit it by hand.
 
 End-to-end tests are not set up. See the Planned section of ARCHITECTURE.md.
 
@@ -288,25 +315,35 @@ killerpool/
 │   ├── error.tsx           # Error boundary
 │   ├── loading.tsx         # Loading state
 │   ├── not-found.tsx       # 404 page
-│   ├── auth/               # Authentication pages
-│   ├── game/               # Game pages
-│   ├── history/            # Game history
-│   └── profile/            # User profile
+│   ├── auth/               # Sign-in page, error codes, OAuth callback
+│   ├── game/               # New game, game screen (host and spectator)
+│   ├── history/            # Game history and game details
+│   ├── leaderboard/        # Leaderboard
+│   ├── stats/              # Personal stats
+│   ├── profile/            # User profile
+│   ├── help/               # Rules and gestures
+│   └── offline/            # Service-worker offline fallback
 ├── components/             # React components
 │   ├── ui/                 # shadcn/ui components
-│   └── game/               # Game-specific components
+│   ├── game/               # Game-specific components, shot styles
+│   ├── achievements/       # Achievement cards and toasts
+│   ├── leaderboard/        # Leaderboard list and cards
+│   └── theme.ts, theme-toggle.tsx  # Light / Dark / System theme
 ├── lib/                    # Utilities and helpers
 │   ├── supabase/           # Supabase clients
-│   ├── types/              # TypeScript types
+│   ├── types/              # Generated database types
 │   ├── game-logic.ts       # Game logic
-│   └── storage.ts          # Storage helpers
+│   ├── storage.ts          # localStorage helpers
+│   └── sync.ts             # Writes to Supabase, retry queue
 ├── contexts/               # React context (game state)
 ├── hooks/                  # Shared hooks
 ├── supabase/
 │   ├── migrations/         # SQL migrations
+│   ├── debug/              # SQL Editor queries for debugging
 │   └── test/               # Local Postgres harness + RLS checks
 ├── public/                 # Static files
-├── scripts/                # Build-time scripts (icon generation)
+├── scripts/                # Icon generation, bundle size report
+├── docs/archive/           # Historical material, not current
 ├── instrumentation.ts      # Sentry (server + edge)
 ├── instrumentation-client.ts # Sentry (browser)
 └── proxy.ts                # Next.js middleware (auth session refresh)

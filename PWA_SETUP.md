@@ -2,20 +2,20 @@
 
 Полное руководство по настройке и использованию PWA функциональности в Killerpool.
 
-**Последнее обновление:** 2026-07-07
+**Последнее обновление:** 2026-10-16
 
 ## 📋 Содержание
 
-- [Что реализовано](#что-реализовано)
-- [Архитектура PWA](#архитектура-pwa)
-- [Service Worker](#service-worker)
-- [Офлайн режим](#офлайн-режим)
-- [Офлайн-синхронизация (pending sync retry)](#офлайн-синхронизация-pending-sync-retry)
-- [Иконки и манифест](#иконки-и-манифест)
-- [Установка на устройства](#установка-на-устройства)
-- [Тестирование](#тестирование)
-- [Troubleshooting](#troubleshooting)
-- [Planned / Not implemented](#planned--not-implemented)
+- [Что реализовано](#-что-реализовано)
+- [Архитектура PWA](#️-архитектура-pwa)
+- [Service Worker](#️-service-worker)
+- [Офлайн режим](#-офлайн-режим)
+- [Офлайн-синхронизация (pending sync retry)](#-офлайн-синхронизация-pending-sync-retry)
+- [Иконки и манифест](#-иконки-и-манифест)
+- [Установка на устройства](#-установка-на-устройства)
+- [Тестирование](#-тестирование)
+- [Troubleshooting](#-troubleshooting)
+- [Planned / Not implemented](#️-planned--not-implemented)
 
 ---
 
@@ -23,16 +23,16 @@
 
 ### Основные функции PWA
 
-- ✅ **Service Worker** (`@ducanh2912/next-pwa` + Workbox) с регистрацией из `components/pwa-init.tsx`
+- ✅ **Service Worker** (`@ducanh2912/next-pwa` + Workbox); регистрирует его только сам плагин (`register: true`)
 - ✅ **Офлайн режим** - игра полностью работает без интернета (состояние в localStorage)
 - ✅ **Кеширование ресурсов** - статика, Supabase API, изображения, видео
-- ✅ **Retry-синхронизация** - неудачные синки игр помечаются pending и повторяются при восстановлении связи (`retryPendingSyncs()` из `lib/sync.ts`)
+- ✅ **Очередь выгрузки** - завершённая или брошенная игра встаёт в очередь `killerpool_pending_sync` до первой попытки и догоняется при восстановлении связи (`retryPendingSyncs()` из `lib/sync.ts`), до 14 дней
 - ✅ **Установка на устройства** - iOS, Android, Desktop
-- ✅ **Manifest.json** с полной конфигурацией
-- ✅ **Иконки** - 16x16 до 512x512, генерируются из `public/icon.svg`
+- ✅ **Manifest.json** на английском, как и весь интерфейс
+- ✅ **Иконки** - 16x16 до 512x512 и настоящий `favicon.ico`, генерируются из `public/icon.svg`
 - ✅ **Офлайн fallback страница** - `/offline`
 
-> ⚠️ Background Sync API и `lib/sync-manager.ts` (очередь `killerpool_sync_queue`) **удалены** — вместо них простой retry-механизм на localStorage, см. раздел [Офлайн-синхронизация](#офлайн-синхронизация-pending-sync-retry).
+> ⚠️ Background Sync API и `lib/sync-manager.ts` (очередь `killerpool_sync_queue`) **удалены** — вместо них простой retry-механизм на localStorage, см. раздел [Офлайн-синхронизация](#-офлайн-синхронизация-pending-sync-retry).
 
 > ⚠️ **Production-сборка обязана идти через webpack** (`next build --webpack`, так настроен `npm run build`): `@ducanh2912/next-pwa` генерирует `sw.js` через webpack-хук, который Turbopack не выполняет. Turbopack-сборка молча выпускает приложение **без service worker** — регистрация `/sw.js` падает 404, офлайн-кеширование не работает.
 
@@ -70,13 +70,13 @@ killerpool/
 │   └── offline/
 │       └── page.tsx        # Офлайн страница
 ├── components/
-│   ├── pwa-init.tsx        # Регистрация SW + retry pending-синков + захват install-события
+│   ├── pwa-init.tsx        # Retry очереди выгрузки + захват install-события (SW регистрирует next-pwa)
 │   └── pwa-install-button.tsx  # Кнопка «Install App» (на главной)
 ├── hooks/
 │   └── use-install-prompt.ts   # useSyncExternalStore над стором установки
 ├── lib/
 │   ├── pwa-install.ts      # Стор beforeinstallprompt вне React
-│   ├── sync.ts             # autoSyncGame / retryPendingSyncs / syncActiveGameToSupabase
+│   ├── sync.ts             # syncFinishedGame / retryPendingSyncs / syncActiveGameToSupabase
 │   └── storage.ts          # killerpool_pending_sync + killerpool_pending_sync_meta
 └── scripts/
     └── generate-icons.js   # Генерация иконок из icon.svg (sharp)
@@ -87,8 +87,8 @@ killerpool/
 ```
 1. User загружает приложение
    ↓
-2. PWAInit (components/pwa-init.tsx) регистрирует /sw.js
-   и сразу вызывает retryPendingSyncs()
+2. Скрипт, который next-pwa вставил в клиентский entry, регистрирует /sw.js;
+   PWAInit (components/pwa-init.tsx) сразу вызывает retryPendingSyncs()
    ↓
 3. Workbox кеширует статику и API-ответы
    ↓
@@ -117,6 +117,9 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
   swcMinify: true,
+  fallbacks: {
+    document: '/offline',
+  },
   workboxOptions: {
     disableDevLogs: true,
     runtimeCaching: [ /* см. next.config.js */ ],
@@ -132,11 +135,13 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 
 ### Регистрация
 
-Помимо `register: true`, регистрация продублирована в `components/pwa-init.tsx` (клиентский компонент, монтируется в `app/layout.tsx`):
+Service worker регистрирует **только** `@ducanh2912/next-pwa` (`register: true`): плагин вставляет вызов в клиентский entry, и тот же скрипт обслуживает `cacheOnFrontEndNav` и `reloadOnOnline`. В development плагин выключен, поэтому SW там не регистрируется вовсе.
 
-- `navigator.serviceWorker.register('/sw.js')`
-- слушает `updatefound` / `statechange` — логирует появление новой версии SW
-- вызывает `initInstallCapture()` (`lib/pwa-install.ts`), который перехватывает `beforeinstallprompt` / `appinstalled`; сама кнопка живёт в `components/pwa-install-button.tsx`
+Ручной `navigator.serviceWorker.register('/sw.js')` в `components/pwa-init.tsx` удалён: в production он дублировал плагин, а в `next dev` регистрировал тот `public/sw.js`, что остался от последней сборки. Логирования `updatefound` / `statechange` в коде тоже нет.
+
+`components/pwa-init.tsx` (клиентский компонент в `app/layout.tsx`) теперь делает две вещи: запускает `retryPendingSyncs()` и вызывает `initInstallCapture()` (`lib/pwa-install.ts`), который перехватывает `beforeinstallprompt` / `appinstalled`; сама кнопка живёт в `components/pwa-install-button.tsx`.
+
+`proxy.ts` не обрабатывает `sw.js`, `workbox-*.js`, `swe-worker-*.js`, `fallback-*.js` и `manifest.json`: service worker запрашивает их на каждой проверке обновлений, и каждый такой запрос ждал бы сетевого `getUser()` в Supabase.
 
 ### Жизненный цикл
 
@@ -156,12 +161,12 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 
 ### Офлайн страница
 
-Находится в `app/offline/page.tsx` (client component):
+Находится в `app/offline/page.tsx` (client component, текст на английском):
 
-- Показывает статус подключения (`navigator.onLine` + события `online`/`offline`)
+- Показывает статус подключения (`navigator.onLine` + события `online`/`offline`); смена статуса объявляется скринридерам (`role="status"`)
 - При восстановлении связи автоматически редиректит на `/` через 1 секунду
-- Кнопка "Повторить попытку" (`router.push('/')` если онлайн, иначе `window.location.reload()`)
-- Блок с информацией об офлайн режиме и автоматической синхронизации
+- Кнопка «Try again» (`router.push('/')` если онлайн, иначе `window.location.reload()` — перезагрузка снова спрашивает service worker)
+- Блок «Offline mode»: играть можно дальше, игры сохраняются на устройстве и выгружаются, когда сеть вернётся
 
 ### Тестирование офлайн режима
 
@@ -178,33 +183,41 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 
 ### Как работает
 
-1. После завершения игры вызывается `autoSyncGame(game)` (`lib/sync.ts`) — upsert игры в таблицу `games` Supabase
-2. Если синк не удался (например, офлайн) → id игры помечается в localStorage-ключе **`killerpool_pending_sync`** (`markPendingSync`, `lib/storage.ts`)
-3. `retryPendingSyncs()` проходит по pending-ids, находит игры в истории и повторяет `syncGameToSupabase(game)`; успешные — снимаются с pending (`unmarkPendingSync`)
-4. Игры, удалённые из истории, просто снимаются с pending
-5. **Попытки не бесконечны.** Неустранимые ошибки Postgres (`42501`, `22P02`, `23502`, …) снимают игру с очереди сразу; остальные — после `MAX_SYNC_ATTEMPTS = 5` попыток с нарастающей паузой. Без этого предела игра с постоянным отказом ломилась бы в сеть при каждом переключении вкладки
+1. Игра закончилась (победа) или брошена → `syncFinishedGame(game)` (`lib/sync.ts`). Первым делом id игры встаёт в localStorage-ключ **`killerpool_pending_sync`** (`markPendingSync`, `lib/storage.ts`) — **до** попытки, поэтому вкладка, закрытая посреди запроса, не теряет игру
+2. Затем upsert строки в `games`. Исход:
+   - успех — игра снимается с очереди (`unmarkPendingSync`);
+   - окончательный отказ (`PERMANENT_ERROR_CODES` в `lib/sync.ts`: `42501`, `23514`, `22P02`, `PGRST204` и др.) — тоже снимается: повтор не поможет;
+   - игра создана другим аккаунтом, который сейчас не вошёл, — остаётся в очереди без счётчика попыток и ждёт входа этого аккаунта;
+   - всё остальное (сеть, 5xx, истёкший токен, сбой `getUser`) — `recordSyncFailure`, повтор позже
+3. `retryPendingSyncs()` проходит по очереди, берёт игры из истории и пишет их тем же писателем. Пропускает игры в отсрочке (1 минута, удваиваясь, но не больше 6 часов), игру, чья первая попытка ещё в полёте, и текущую игру, если её победу отменили и она снова идёт
+4. Игры, удалённые из истории, просто снимаются с очереди
+5. **Попытки не бесконечны, но и не короткие:** игру держат 14 дней с первой неудачи. Прежний предел в 5 попыток при базе в минуту сдавался примерно через четверть часа — телефон, проведший вечер офлайн, терял игры вечера
 6. Ачивки, разблокированные при позднем синке, доезжают до UI через событие `killerpool:achievements-unlocked` — `PWAInit` не внутри `GameProvider` и напрямую до состояния не дотянется
 
 ### API
 
 ```typescript
 // lib/sync.ts
-export async function autoSyncGame(game: Game): Promise<void>
+export async function syncFinishedGame(game: Game): Promise<UpsertOutcome>
 export async function retryPendingSyncs(): Promise<void>
-export async function syncGameToSupabase(game: Game): Promise<boolean>
+export function syncActiveGameToSupabase(game: Game): Promise<UpsertOutcome>  // live sharing, без очереди
 
 // lib/storage.ts (ключ killerpool_pending_sync)
 export function getPendingSyncIds(): string[]
 export function markPendingSync(gameId: string): void
 export function unmarkPendingSync(gameId: string): void
 
-// lib/storage.ts (ключ killerpool_pending_sync_meta) — счётчик попыток
-export const MAX_SYNC_ATTEMPTS = 5
-export function recordSyncFailure(gameId: string): void
-export function isSyncExhausted(gameId: string): boolean
-export function isSyncBackedOff(gameId: string): boolean
+// lib/storage.ts (ключ killerpool_pending_sync_meta) — попытки и отсрочка
+export const MAX_SYNC_AGE_MS = 14 * 24 * 60 * 60 * 1000
+export const BACKOFF_BASE_MS = 60_000
+export const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
+export function recordSyncFailure(gameId: string, now?: number): void
+export function isSyncExhausted(gameId: string, now?: number): boolean
+export function isSyncBackedOff(gameId: string, now?: number): boolean
 export function clearSyncMeta(gameId: string): void
 ```
+
+Подробнее о типе `UpsertOutcome` и о том, как выбирается владелец строки, — в [API.md](./API.md#sync-api).
 
 Счётчик держится в **отдельном** ключе намеренно: `killerpool_pending_sync`
 остаётся простым массивом строк, потому что часть пользователей какое-то время
@@ -219,11 +232,11 @@ export function clearSyncMeta(gameId: string): void
 - на событии `window` `online`
 - на `document` `visibilitychange` (если вкладка стала видимой и `navigator.onLine`)
 
-`retryPendingSyncs()` сам выходит рано, если выполняется на сервере или `navigator.onLine === false`.
+`retryPendingSyncs()` сам выходит рано, если выполняется на сервере, `navigator.onLine === false` или предыдущий прогон ещё не закончился.
 
 ### Ручная синхронизация
 
-Страница `/sync` (`app/sync/page.tsx`) позволяет вручную выгрузить всю локальную историю игр в Supabase через `syncAllGamesToSupabase()`.
+Страницы `/sync` больше нет. Её заменила кнопка **Sync** на `/history` (видна вошедшим и онлайн): она сначала выгружает очередь (`retryPendingSyncs()`), потом скачивает игры аккаунта и сливает их с локальной историей (`mergeGamesWithSupabase()`). Раньше эта кнопка только скачивала, и игры из очереди ждали следующего события.
 
 ---
 
@@ -244,7 +257,7 @@ node scripts/generate-icons.js
 - `apple-touch-icon.png` - iOS (180x180)
 - `favicon-32x32.png` - Browser
 - `favicon-16x16.png` - Browser
-- `favicon.ico` - Browser (32x32)
+- `favicon.ico` - Browser: настоящий ICO-контейнер с PNG 16, 32 и 48 px. `sharp` ICO не кодирует, и раньше под этим именем лежал обычный PNG — браузеры его прощали, Windows и часть краулеров нет
 
 ### Manifest.json
 
@@ -254,6 +267,7 @@ node scripts/generate-icons.js
 {
   "name": "Killerpool - Modern Killer Pool Game",
   "short_name": "Killerpool",
+  "description": "Track Killer Pool games with friends: lives, turns, history and stats. Works offline.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0f0d",
@@ -261,7 +275,8 @@ node scripts/generate-icons.js
   "orientation": "portrait",
   "scope": "/",
   "categories": ["games", "entertainment", "sports"],
-  "lang": "ru"
+  "lang": "en",
+  "dir": "ltr"
 }
 ```
 
@@ -272,12 +287,13 @@ node scripts/generate-icons.js
 `app/layout.tsx` подключает PWA-метаданные:
 
 - `metadata.manifest: '/manifest.json'`
-- `metadata.appleWebApp` (`capable: true`, `title: 'Killerpool'`)
-- `viewport.themeColor: '#10b981'`
+- `<html lang="en">`
+- `metadata.appleWebApp` (`capable: true`, `statusBarStyle: 'black'`, `title: 'Killerpool'`) — Next выводит из него `mobile-web-app-capable` и `apple-mobile-web-app-status-bar-style`. `black` — непрозрачная полоса со светлым текстом: подходит тёмной теме по умолчанию, читается на светлой и не заводит шапку под часы, как `black-translucent`
+- `viewport`: `width: 'device-width'`, `initialScale: 1`, `themeColor: '#10b981'`; `maximumScale` нет — масштабирование разрешено (WCAG 1.4.4), а поля ввода с шрифтом 16px не провоцируют автозум iOS
 - `<link rel="icon">` для favicon.ico / 16x16 / 32x32, `<link rel="apple-touch-icon">`
-- `<meta name="apple-mobile-web-app-capable" content="yes">`, `apple-mobile-web-app-status-bar-style: black-translucent`, `mobile-web-app-capable`, `format-detection: telephone=no`
+- `<meta name="apple-mobile-web-app-capable" content="yes">` (для старых iOS), `format-detection: telephone=no`
 
-OG/Twitter-картинки — динамические route-файлы `app/opengraph-image.tsx` и `app/twitter-image.tsx` (статического og-image.png нет).
+OG/Twitter-картинки — route-файлы `app/opengraph-image.tsx` и `app/twitter-image.tsx` (статического og-image.png нет) на Node.js runtime; входных данных у них нет, поэтому рендерятся один раз при сборке.
 
 ---
 
@@ -343,18 +359,15 @@ OG/Twitter-картинки — динамические route-файлы `app/o
 
 ## 🧪 Тестирование
 
-### Lighthouse PWA Audit
+### Локальный production-билд
 
 ```bash
 npm run build
 npm run start
-
-# В Chrome DevTools:
-# 1. Lighthouse → PWA
-# 2. Generate report
+# Chrome DevTools → Application: Manifest (устанавливаемость) и Service Workers
 ```
 
-> Помните: в dev-режиме (`npm run dev`) SW отключён (`disable: NODE_ENV === 'development'`).
+> Помните: в dev-режиме (`npm run dev`) SW отключён (`disable: NODE_ENV === 'development'`). Отдельной PWA-категории в современном Lighthouse нет — устанавливаемость смотрят в DevTools → Application → Manifest.
 
 ### Проверка Service Worker
 
@@ -379,7 +392,7 @@ caches.keys().then(keys => console.log('Cache keys:', keys))
    // В консоли — посмотреть очередь pending-игр
    JSON.parse(localStorage.getItem('killerpool_pending_sync') || '[]')
    ```
-   Завершите игру офлайн → id появится в `killerpool_pending_sync` → включите сеть (или вернитесь на вкладку) → массив должен опустеть, игра появится в Supabase.
+   Завершите игру офлайн → id появится в `killerpool_pending_sync` (он появляется ещё до попытки, так что виден и онлайн, пока запрос в полёте) → включите сеть (или вернитесь на вкладку) → массив должен опустеть, игра появится в Supabase. Если сеть вернулась быстро, попытка может быть ещё в отсрочке: смотрите `lastAttemptAt` и `attempts` в `killerpool_pending_sync_meta`.
 
 3. **Manifest**:
    - DevTools → Application → Manifest
@@ -392,7 +405,7 @@ caches.keys().then(keys => console.log('Cache keys:', keys))
 2. Откройте установленное приложение
 3. Проверьте:
    - Полноэкранный режим (без адресной строки Safari)
-   - Статус-бар (`black-translucent`)
+   - Статус-бар (`black`, непрозрачный)
    - Иконка приложения
 
 ---
@@ -405,7 +418,8 @@ caches.keys().then(keys => console.log('Cache keys:', keys))
 
 **Решение**:
 - Убедитесь, что используете HTTPS (или localhost)
-- Убедитесь, что это production-билд — в dev SW отключён
+- Убедитесь, что это production-билд — в dev SW отключён и не регистрируется вообще, даже если в `public/` остался `sw.js` от прошлой сборки
+- Проверьте, что `sw.js` есть: сборка должна идти через webpack (`npm run build`), Turbopack-сборка выходит без него
 - Откройте DevTools → Console для ошибок
 
 ### Кеш не обновляется
@@ -434,8 +448,9 @@ caches.keys().then(keys =>
    JSON.parse(localStorage.getItem('killerpool_pending_sync') || '[]')
    ```
 2. Убедитесь, что игра осталась в `killerpool_game_history` — retry берёт данные оттуда (`getGameFromHistory`), удалённые из истории игры снимаются с pending без синка
-3. Триггерните retry вручную: уйдите с вкладки и вернитесь (событие `visibilitychange`) либо перезагрузите страницу — `retryPendingSyncs()` вызывается при монтировании `PWAInit`
-4. Проверьте консоль на ошибки Supabase (RLS, сеть)
+3. Триггерните retry вручную: кнопка Sync на `/history` (для вошедших), уход с вкладки и возврат (событие `visibilitychange`) или перезагрузка страницы — `retryPendingSyncs()` вызывается при монтировании `PWAInit`. Игра в отсрочке до следующего срока не пойдёт
+4. Проверьте консоль на ошибки Supabase (`Failed to sync game to Supabase: <сообщение> <код>`). Если игра создана под другим аккаунтом, она ждёт его входа (когда вошёл другой аккаунт, экран победителя об этом говорит)
+5. Гостевая игра, которая уже лежит в облаке, после входа в аккаунт перезаписана быть не может (`42501`, окончательный отказ) — она остаётся только в локальной истории
 
 ### iOS не показывает prompt установки
 
@@ -453,26 +468,6 @@ caches.keys().then(keys =>
 **Решение**:
 - Manifest подключается через `metadata.manifest` в `app/layout.tsx`
 - Убедитесь, что `manifest.json` доступен по пути `/manifest.json`
-- Проверьте Content-Type: должен быть `application/manifest+json`
-
----
-
-## 📊 Метрики успеха PWA
-
-### Lighthouse PWA Score
-
-Цель: **100/100**
-
-Критерии:
-- ✅ Fast and reliable
-- ✅ Installable
-- ✅ PWA optimized
-
-### Core Web Vitals
-
-- **LCP** (Largest Contentful Paint): < 2.5s
-- **INP** (Interaction to Next Paint): < 200ms
-- **CLS** (Cumulative Layout Shift): < 0.1
 
 ---
 
@@ -485,7 +480,7 @@ caches.keys().then(keys =>
 - [ ] Manifest.json корректен и доступен
 - [ ] Офлайн страница работает
 - [ ] Retry-синк работает: игра, завершённая офлайн, попадает в Supabase после восстановления связи
-- [ ] Lighthouse PWA score = 100
+- [ ] DevTools → Application → Manifest не показывает ошибок установки
 - [ ] Тестирование на iOS Safari
 - [ ] Тестирование на Android Chrome
 - [ ] HTTPS включен
@@ -496,7 +491,7 @@ caches.keys().then(keys =>
 ## 🗺️ Planned / Not implemented
 
 - **Share Target**: объявление `share_target` убрано из `manifest.json` — оно указывало на несуществующий route `/share`, из-за чего Android показывал приложение в системном share-меню, а шаринг приводил к 404
-- **Уведомление о новой версии SW**: событие `updatefound` логируется в консоль; toast для пользователя не реализован
+- **Уведомление о новой версии SW**: не реализовано — обработчика `updatefound` в коде нет, toast для пользователя тоже
 - **Screenshots в манифесте**: массив `screenshots` пуст
 
 ---
@@ -511,5 +506,5 @@ caches.keys().then(keys =>
 
 ---
 
-**Последнее обновление:** 2026-08-11
-**Статус:** ✅ PWA работает; офлайн-синк — retry с пределом попыток; кнопка установки реализована
+**Последнее обновление:** 2026-10-16
+**Статус:** ✅ PWA работает; SW регистрирует только next-pwa; офлайн-выгрузка — очередь до 14 дней; кнопка установки реализована
