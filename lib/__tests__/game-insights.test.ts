@@ -146,6 +146,7 @@ describe('getPlayerStats', () => {
         accuracy: 0,
         longestStreak: 0,
         currentStreak: 0,
+        lives: 3,
         startingLives: 3,
         minLives: 3,
         wasOnLastLife: false,

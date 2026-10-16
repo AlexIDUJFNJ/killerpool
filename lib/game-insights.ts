@@ -70,6 +70,8 @@ export interface PlayerStats {
   longestStreak: number
   /** Pots in a row up to and including the player's latest shot */
   currentStreak: number
+  /** Lives now */
+  lives: number
   /** Lives before the first shot; a player who has not played yet has their current lives */
   startingLives: number
   /** Fewest lives at any point, 0 for a player who went out */
@@ -167,6 +169,7 @@ function tallyPlayers(game: Game): PlayerTally[] {
       accuracy: 0,
       longestStreak: 0,
       currentStreak: 0,
+      lives: player.lives,
       startingLives,
       minLives: startingLives,
       // A player can start on one life: one added mid-game gets the fewest

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { PlayerCard } from '@/components/game/player-card'
 import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
+import { GameAwards } from '@/components/game/game-awards'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
@@ -328,6 +329,9 @@ export default function GamePage() {
               {game.history.length} actions • {game.players.length - activePlayers.length} eliminated
             </p>
           </motion.div>
+
+          {/* Awards and match stats, the same for the host and spectators */}
+          <GameAwards game={game} className="mb-8" />
 
           {/* Authentication Info */}
           {isSignedIn === false && (

@@ -5,19 +5,18 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
 import { createClient } from '@/lib/supabase/client'
 import { Game, GameAction } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { ACTION_STYLES } from '@/components/game/action-styles'
+import { GameAwards } from '@/components/game/game-awards'
 import { formatDuration, getGameWinner } from '../history-utils'
 import { mapDbGameToGame } from '@/lib/game-mapper'
 import { motion } from 'motion/react'
 import {
   ArrowLeft,
   Trophy,
-  Users,
   Clock,
   Share2,
   Calendar,
@@ -201,17 +200,6 @@ export default function GameDetailsPage() {
     }).format(date)
   }
 
-  // Calculate player statistics
-  const getPlayerStats = (playerId: string) => {
-    const playerHistory = game.history.filter(h => h.playerId === playerId)
-    return {
-      totalActions: playerHistory.length,
-      misses: playerHistory.filter(h => h.action === 'miss').length,
-      pots: playerHistory.filter(h => h.action === 'pot').length,
-      blackPots: playerHistory.filter(h => h.action === 'pot_black').length,
-    }
-  }
-
   return (
     <main className="min-h-screen p-6">
       <div className="max-w-4xl mx-auto" id="game-details-content">
@@ -313,80 +301,8 @@ export default function GameDetailsPage() {
           </Card>
         </motion.div>
 
-        {/* Player Statistics */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="mb-6"
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Player Statistics
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {game.players.map((player) => {
-                  const stats = getPlayerStats(player.id)
-                  return (
-                    <div
-                      key={player.id}
-                      className={`p-4 rounded-lg border-2 transition-all ${
-                        player.id === winner?.id
-                          ? 'border-green-500/50 bg-green-500/5'
-                          : 'border-border bg-muted/50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">{player.avatar}</span>
-                          <div>
-                            <div className="font-semibold flex items-center gap-2">
-                              {player.name}
-                              {player.id === winner?.id && (
-                                <Trophy className="h-4 w-4 text-yellow-500" />
-                              )}
-                              {player.eliminated && (
-                                <Badge variant="destructive" className="text-xs">
-                                  Eliminated
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              Final Lives: {player.lives}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2 text-center">
-                        <div className="bg-background rounded-md p-2">
-                          <div className="font-bold">{stats.totalActions}</div>
-                          <div className="text-xs text-muted-foreground">Actions</div>
-                        </div>
-                        <div className={cn('rounded-md border p-2', ACTION_STYLES.miss.surface)}>
-                          <div className={cn('font-bold', ACTION_STYLES.miss.text)}>{stats.misses}</div>
-                          <div className="text-xs text-muted-foreground">Misses</div>
-                        </div>
-                        <div className={cn('rounded-md border p-2', ACTION_STYLES.pot.surface)}>
-                          <div className={cn('font-bold', ACTION_STYLES.pot.text)}>{stats.pots}</div>
-                          <div className="text-xs text-muted-foreground">Pots</div>
-                        </div>
-                        <div className={cn('rounded-md border p-2', ACTION_STYLES.pot_black.surface)}>
-                          <div className={cn('font-bold', ACTION_STYLES.pot_black.text)}>{stats.blackPots}</div>
-                          <div className="text-xs text-muted-foreground">Blacks</div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+        {/* Awards (completed games only) and match stats, as on the winner screen */}
+        <GameAwards game={game} className="mb-6" />
 
         {/* Action Timeline */}
         <motion.div
