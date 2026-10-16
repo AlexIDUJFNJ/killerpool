@@ -29,7 +29,6 @@ import { RealtimeChannel } from '@supabase/supabase-js'
 interface GameContextValue {
   game: Game | null
   isLoading: boolean
-  isRealtimeConnected: boolean
   isSpectatorMode: boolean
   isSharingEnabled: boolean
   currentUserId: string | null
@@ -39,7 +38,6 @@ interface GameContextValue {
   performAction: (action: GameAction) => void
   undoAction: () => void
   endGame: () => void
-  resumeGame: () => void
   loadGameFromSupabase: (gameId: string) => Promise<Game | null>
   setSpectatorGame: (game: Game) => void
   clearSpectatorGame: () => void
@@ -67,7 +65,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const { isSynced } = useSyncGameForRealtime(realtimeEnabled ? game : null)
 
   // Setup realtime subscription
-  const { isConnected: isRealtimeConnected } = useRealtimeGame(
+  useRealtimeGame(
     realtimeEnabled && game ? game.id : null,
     {
       enabled: realtimeEnabled && isSynced,
@@ -247,13 +245,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setGame(null)
   }, [game, isSpectatorMode])
 
-  const resumeGame = React.useCallback(() => {
-    const savedGame = loadCurrentGame()
-    if (savedGame && savedGame.status === 'active') {
-      setGame(savedGame)
-    }
-  }, [])
-
   // Load a game from Supabase by ID (for spectators)
   const loadGameFromSupabase = React.useCallback(async (gameId: string): Promise<Game | null> => {
     try {
@@ -302,9 +293,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           } as Game
           return updated
         })
-      },
-      // Actions arrive folded into the game update above; nothing extra to do
-      () => {}
+      }
     )
 
     if (!channel) {
@@ -364,7 +353,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const value: GameContextValue = {
     game,
     isLoading,
-    isRealtimeConnected,
     isSpectatorMode,
     isSharingEnabled,
     currentUserId,
@@ -374,7 +362,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     performAction,
     undoAction,
     endGame,
-    resumeGame,
     loadGameFromSupabase,
     setSpectatorGame,
     clearSpectatorGame,

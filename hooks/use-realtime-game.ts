@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Game, GameHistoryEntry } from '@/lib/types'
+import { Game } from '@/lib/types'
 import { subscribeToGame, unsubscribeFromGame } from '@/lib/realtime'
 import { syncActiveGameToSupabase } from '@/lib/sync'
 import { RealtimeChannel } from '@supabase/supabase-js'
@@ -11,7 +11,6 @@ import { RealtimeChannel } from '@supabase/supabase-js'
 interface UseRealtimeGameOptions {
   enabled?: boolean
   onGameUpdate?: (game: Partial<Game>) => void
-  onNewAction?: (action: GameHistoryEntry) => void
 }
 
 export function useRealtimeGame(
@@ -21,7 +20,6 @@ export function useRealtimeGame(
   const {
     enabled = true,
     onGameUpdate,
-    onNewAction,
   } = options
 
   const [isConnected, setIsConnected] = useState(false)
@@ -29,13 +27,11 @@ export function useRealtimeGame(
 
   // Use refs for callbacks to avoid re-subscribing on every render
   const onGameUpdateRef = useRef(onGameUpdate)
-  const onNewActionRef = useRef(onNewAction)
 
   // Keep refs up to date
   useEffect(() => {
     onGameUpdateRef.current = onGameUpdate
-    onNewActionRef.current = onNewAction
-  }, [onGameUpdate, onNewAction])
+  }, [onGameUpdate])
 
   useEffect(() => {
     if (!gameId || !enabled) {
@@ -52,9 +48,6 @@ export function useRealtimeGame(
       gameId,
       (gameUpdate) => {
         onGameUpdateRef.current?.(gameUpdate)
-      },
-      (action) => {
-        onNewActionRef.current?.(action)
       },
       // Driven by the channel's own status, so "live" means subscribed rather
       // than merely "a channel object exists"

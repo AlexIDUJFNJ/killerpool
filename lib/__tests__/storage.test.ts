@@ -8,10 +8,8 @@ import {
   clearCurrentGame,
   saveToHistory,
   loadGameHistory,
-  clearGameHistory,
   getGameFromHistory,
   deleteGameFromHistory,
-  hasCurrentGame,
   getPendingSyncIds,
   markPendingSync,
   unmarkPendingSync,
@@ -116,19 +114,6 @@ describe('Storage', () => {
     });
   });
 
-  describe('hasCurrentGame', () => {
-    it('should return true when a game exists', () => {
-      const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
-      saveCurrentGame(game);
-
-      expect(hasCurrentGame()).toBe(true);
-    });
-
-    it('should return false when no game exists', () => {
-      expect(hasCurrentGame()).toBe(false);
-    });
-  });
-
   describe('saveToHistory and loadGameHistory', () => {
     it('should save completed game to history', () => {
       const game = createGame([{ name: 'Player 1', avatar: '🎱' }]);
@@ -217,40 +202,6 @@ describe('Storage', () => {
       const history = loadGameHistory();
       expect(history).toEqual([]);
       expect(consoleErrorSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-    });
-  });
-
-  describe('clearGameHistory', () => {
-    it('should clear all game history', () => {
-      const game1 = createGame([{ name: 'Player 1', avatar: '🎱' }]);
-      game1.status = 'completed';
-      const game2 = createGame([{ name: 'Player 2', avatar: '🎯' }]);
-      game2.status = 'completed';
-
-      saveToHistory(game1);
-      saveToHistory(game2);
-
-      expect(loadGameHistory()).toHaveLength(2);
-
-      clearGameHistory();
-      expect(loadGameHistory()).toHaveLength(0);
-    });
-
-    it('should handle errors gracefully', () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
-      jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-        throw new Error('Failed to remove');
-      });
-
-      clearGameHistory();
-
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to clear game history:',
-        expect.any(Error)
-      );
 
       consoleErrorSpy.mockRestore();
     });

@@ -21,7 +21,6 @@ type GameUpdate = Database['public']['Tables']['games']['Update']
 export function subscribeToGame(
   gameId: string,
   onUpdate: (game: Partial<Game>) => void,
-  onAction: (action: GameHistoryEntry) => void,
   onStatus?: (connected: boolean) => void
 ): RealtimeChannel | null {
   try {
@@ -54,13 +53,6 @@ export function subscribeToGame(
           }
 
           onUpdate(gameUpdate)
-
-          // If history changed, notify about new action
-          const history = gameUpdate.history ?? []
-          const lastAction = history[history.length - 1]
-          if (lastAction) {
-            onAction(lastAction)
-          }
         }
       )
       .subscribe((status, err) => {

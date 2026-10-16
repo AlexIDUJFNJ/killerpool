@@ -3,7 +3,6 @@
  */
 
 import {
-  syncGameToSupabase,
   syncAllGamesToSupabase,
   autoSyncGame,
   retryPendingSyncs,
@@ -80,23 +79,20 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
 });
 
-describe('syncGameToSupabase', () => {
+describe('autoSyncGame upload', () => {
   it('should refuse anything that is not completed', async () => {
     const { gamesUpsert } = mockSupabase({ userId: 'user-1' });
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
     const game = { ...completedGame('game-1'), status: 'active' as const };
-    expect(await syncGameToSupabase(game)).toBe(false);
+    expect(await autoSyncGame(game)).toBe(false);
     expect(gamesUpsert).not.toHaveBeenCalled();
-
-    consoleWarnSpy.mockRestore();
   });
 
   it('should upsert the mapped row keyed on id', async () => {
     const { gamesUpsert } = mockSupabase({ userId: 'user-1' });
     const game = completedGame('game-1');
 
-    expect(await syncGameToSupabase(game)).toBe(true);
+    expect(await autoSyncGame(game)).toBe(true);
 
     const [row, options] = gamesUpsert.mock.calls[0];
     expect(options).toEqual({ onConflict: 'id' });
@@ -113,7 +109,7 @@ describe('syncGameToSupabase', () => {
     // varying shape means a varying upsert
     const { gamesUpsert } = mockSupabase({ userId: 'user-1' });
 
-    await syncGameToSupabase(completedGame('game-1'));
+    await autoSyncGame(completedGame('game-1'));
 
     expect(Object.keys(gamesUpsert.mock.calls[0][0]).sort()).toEqual([
       'created_at',
@@ -132,7 +128,7 @@ describe('syncGameToSupabase', () => {
   it('should leave ruleset_id null for the non-UUID default ruleset', async () => {
     const { gamesUpsert } = mockSupabase({ userId: 'user-1' });
 
-    await syncGameToSupabase(completedGame('game-1'));
+    await autoSyncGame(completedGame('game-1'));
 
     expect(gamesUpsert.mock.calls[0][0].ruleset_id).toBeNull();
   });
@@ -140,7 +136,7 @@ describe('syncGameToSupabase', () => {
   it('should write a null owner for a guest', async () => {
     const { gamesUpsert, profilesUpsert } = mockSupabase({ userId: null });
 
-    await syncGameToSupabase(completedGame('game-1'));
+    await autoSyncGame(completedGame('game-1'));
 
     expect(gamesUpsert.mock.calls[0][0].created_by).toBeNull();
     // No account, no profile to create
@@ -150,7 +146,7 @@ describe('syncGameToSupabase', () => {
   it('should create the profile without overwriting a custom name', async () => {
     const { profilesUpsert } = mockSupabase({ userId: 'user-1' });
 
-    await syncGameToSupabase(completedGame('game-1'));
+    await autoSyncGame(completedGame('game-1'));
 
     expect(profilesUpsert).toHaveBeenCalledWith(
       { user_id: 'user-1', display_name: 'player' },
@@ -162,7 +158,7 @@ describe('syncGameToSupabase', () => {
     mockSupabase({ userId: 'user-1', upsertError: { message: 'nope', code: '42501' } });
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
 
-    expect(await syncGameToSupabase(completedGame('game-1'))).toBe(false);
+    expect(await autoSyncGame(completedGame('game-1'))).toBe(false);
 
     consoleErrorSpy.mockRestore();
   });

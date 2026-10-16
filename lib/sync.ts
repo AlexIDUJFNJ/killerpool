@@ -89,18 +89,6 @@ async function upsertGameRow(game: Game): Promise<UpsertOutcome> {
 }
 
 /**
- * Sync a completed game to Supabase
- */
-export async function syncGameToSupabase(game: Game): Promise<boolean> {
-  if (game.status !== 'completed') {
-    console.warn('Only completed games can be synced to Supabase')
-    return false
-  }
-
-  return (await upsertGameRow(game)).ok
-}
-
-/**
  * Sync all games from localStorage to Supabase
  */
 export async function syncAllGamesToSupabase(): Promise<{
@@ -308,8 +296,8 @@ export async function retryPendingSyncs(): Promise<void> {
 }
 
 /**
- * Sync an active game to Supabase for sharing/spectator mode
- * Unlike syncGameToSupabase, this works for games of any status
+ * Sync an active game to Supabase for sharing/spectator mode.
+ * Works for games of any status.
  */
 export async function syncActiveGameToSupabase(game: Game): Promise<{ success: boolean; error?: string }> {
   const result = await upsertGameRow(game)

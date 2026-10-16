@@ -176,13 +176,6 @@ export function getActivePlayers(game: Game): Player[] {
 }
 
 /**
- * Get eliminated players
- */
-export function getEliminatedPlayers(game: Game): Player[] {
-  return game.players.filter(p => p.eliminated)
-}
-
-/**
  * Get the next N players in the queue (after current player)
  */
 export function getNextPlayers(game: Game, count: number = 2): Player[] {
@@ -297,29 +290,4 @@ export function getSortedPlayers(game: Game): Player[] {
   const activePlayers = game.players.filter(p => !p.eliminated)
   const eliminatedPlayers = game.players.filter(p => p.eliminated)
   return [...activePlayers, ...eliminatedPlayers]
-}
-
-/**
- * Calculate game statistics
- */
-export function calculateStats(game: Game) {
-  const totalActions = game.history.length
-  const totalMisses = game.history.filter(h => h.action === 'miss').length
-  const totalPots = game.history.filter(h => h.action === 'pot').length
-  const totalBlackPots = game.history.filter(h => h.action === 'pot_black').length
-
-  const duration = game.status === 'completed'
-    ? new Date(game.updatedAt).getTime() - new Date(game.createdAt).getTime()
-    : undefined
-
-  const winner = getWinner(game)
-
-  return {
-    totalActions,
-    totalMisses,
-    totalPots,
-    totalBlackPots,
-    duration,
-    winner,
-  }
 }

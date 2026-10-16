@@ -86,29 +86,6 @@ export interface NewGamePlayerInput {
 }
 
 /**
- * New game form data
- */
-export interface NewGameFormData {
-  players: Array<{
-    name: string
-    avatar: string
-  }>
-  rulesetId?: string
-}
-
-/**
- * Game stats
- */
-export interface GameStats {
-  totalActions: number
-  totalMisses: number
-  totalPots: number
-  totalBlackPots: number
-  duration?: number
-  winner?: Player
-}
-
-/**
  * Default ruleset for Classic Killer Pool
  */
 export const DEFAULT_RULESET: Ruleset = {
@@ -157,17 +134,6 @@ export interface AchievementDefinition {
   description: string
   icon: string
   rarity: 'common' | 'rare' | 'epic' | 'legendary'
-}
-
-/**
- * User achievement (earned)
- */
-export interface UserAchievement {
-  id: string
-  userhId: string
-  achievementType: AchievementType
-  unlockedAt: string
-  gameId?: string
 }
 
 /**

@@ -107,17 +107,6 @@ export function loadGameHistory(): Game[] {
 }
 
 /**
- * Clear all game history
- */
-export function clearGameHistory(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEYS.GAME_HISTORY)
-  } catch (error) {
-    console.error('Failed to clear game history:', error)
-  }
-}
-
-/**
  * Get a specific game from history by ID
  */
 export function getGameFromHistory(gameId: string): Game | null {
@@ -139,13 +128,6 @@ export function deleteGameFromHistory(gameId: string): void {
   } catch (error) {
     console.error('Failed to delete game from history:', error)
   }
-}
-
-/**
- * Check if there's a current game in progress
- */
-export function hasCurrentGame(): boolean {
-  return loadCurrentGame() !== null
 }
 
 /**
