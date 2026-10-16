@@ -12,8 +12,10 @@ import {
   toSpeech,
   PHRASES,
   COMMENTARY_PRIORITY,
+  COMMENTARY_STREAKS,
   type CommentaryKind,
 } from '../commentary';
+import { ON_FIRE_STREAK } from '../game-insights';
 import { createGame, applyAction, undoLastAction, addPlayerToGame } from '../game-logic';
 import { Game, GameAction } from '../types';
 
@@ -135,6 +137,11 @@ describe('the sound of a shot', () => {
 });
 
 describe('streaks', () => {
+  it('should start calling streaks where the player card goes "on fire"', () => {
+    // The line and the badge on the card arrive with the same shot
+    expect(COMMENTARY_STREAKS.onFire).toBe(ON_FIRE_STREAK);
+  });
+
   it('should call a streak of three, five and every one from seven', () => {
     const called: Array<[number, CommentaryKind[]]> = [];
     let game = newGame('Anna', 'Boris');
@@ -147,20 +154,20 @@ describe('streaks', () => {
     expect(called).toEqual([
       [1, []],
       [2, []],
-      [3, ['streak_3']],
+      [3, ['on_fire']],
       [4, []],
-      [5, ['streak_5']],
+      [5, ['blazing']],
       [6, []],
-      [7, ['streak_7']],
-      [8, ['streak_7']],
-      [9, ['streak_7']],
+      [7, ['unstoppable']],
+      [8, ['unstoppable']],
+      [9, ['unstoppable']],
     ]);
   });
 
   it('should count the streak in the line', () => {
     const six = shots(newGame('Anna', 'Boris'), 0, 'pot', 'pot', 'pot', 'pot', 'pot', 'pot');
     const [event] = detectCommentaryEvents(six, shoot(six, 0, 'pot'));
-    expect(event).toEqual({ kind: 'streak_7', name: 'Anna', count: 7 });
+    expect(event).toEqual({ kind: 'unstoppable', name: 'Anna', count: 7 });
   });
 
   it('should count each player\'s own turns, whoever shoots in between', () => {
@@ -170,12 +177,12 @@ describe('streaks', () => {
     game = shoot(game, 0, 'pot');
     game = shoot(game, 1, 'pot');
 
-    expect(kinds(game, shoot(game, 0, 'pot'))).toEqual(['streak_3']);
+    expect(kinds(game, shoot(game, 0, 'pot'))).toEqual(['on_fire']);
   });
 
   it('should start counting again after a miss', () => {
     const game = shots(newGame('Anna', 'Boris'), 0, 'pot', 'pot', 'miss', 'pot', 'pot');
-    expect(kinds(game, shoot(game, 0, 'pot'))).toEqual(['streak_3']);
+    expect(kinds(game, shoot(game, 0, 'pot'))).toEqual(['on_fire']);
   });
 
   it('should call the miss that ends a streak of three or more', () => {
@@ -213,6 +220,14 @@ describe('lives', () => {
 
     expect(next.players[0].lives).toBe(2);
     expect(kinds(game, next)).toEqual(['comeback']);
+  });
+
+  it('should call it a comeback the second time a player climbs off the last life', () => {
+    // Off it with a black once, back down to one, and off it again
+    const game = shots(newGame('Anna', 'Boris'), 0, 'miss', 'miss', 'pot_black', 'miss');
+    expect(game.players[0].lives).toBe(1);
+
+    expect(kinds(game, shoot(game, 0, 'pot_black'))).toEqual(['comeback']);
   });
 
   it('should call a comeback for any climb off the last life a ruleset allows', () => {

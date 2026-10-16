@@ -44,7 +44,7 @@ describe('lines', () => {
 
   it('should show lines one after another, in order', () => {
     const queue = new CommentaryQueue(now);
-    queue.say('streak_3', 'One');
+    queue.say('on_fire', 'One');
     queue.say('eliminated', 'Two');
     queue.say('final_duel', 'Three');
 
@@ -61,8 +61,8 @@ describe('lines', () => {
 
   it('should keep only the newest lines when they pile up', () => {
     const queue = new CommentaryQueue(now);
-    queue.say('streak_3', 'On screen');
-    for (let i = 1; i <= MAX_WAITING + 2; i++) queue.say('streak_3', `Waiting ${i}`);
+    queue.say('on_fire', 'On screen');
+    for (let i = 1; i <= MAX_WAITING + 2; i++) queue.say('on_fire', `Waiting ${i}`);
 
     const seen: Array<string | null> = [];
     for (let i = 0; i <= MAX_WAITING; i++) {
@@ -86,10 +86,10 @@ describe('lines', () => {
 
   it('should give every line its own id', () => {
     const queue = new CommentaryQueue(now);
-    queue.say('streak_3', 'Same words');
+    queue.say('on_fire', 'Same words');
     const first = queue.getSnapshot().line!.id;
     advance(LINE_MS);
-    queue.say('streak_3', 'Same words');
+    queue.say('on_fire', 'Same words');
 
     expect(queue.getSnapshot().line!.id).not.toBe(first);
   });
@@ -109,7 +109,7 @@ describe('holding', () => {
 
   it('should send a line on screen aside and bring it back in full', () => {
     const queue = new CommentaryQueue(now);
-    queue.say('streak_3', 'Three in a row');
+    queue.say('on_fire', 'Three in a row');
     advance(LINE_MS - 500);
 
     queue.setHeld(true);

@@ -14,9 +14,9 @@ const KIND_ICONS: Record<CommentaryKind, string> = {
   comeback: '🧟',
   streak_broken: '🧊',
   last_life: '😬',
-  streak_7: '☄️',
-  streak_5: '🔥',
-  streak_3: '🔥',
+  unstoppable: '☄️',
+  blazing: '🔥',
+  on_fire: '🔥',
 }
 
 function useStage(queue: CommentaryQueue) {

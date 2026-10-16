@@ -13,6 +13,7 @@
 
 import type { Game, GameHistoryEntry, Player } from './types'
 import type { SoundEffect } from './sound'
+import { ON_FIRE_STREAK, getLastShotInsight, getPlayerStats } from './game-insights'
 
 export type CommentaryKind =
   | 'victory'
@@ -22,9 +23,21 @@ export type CommentaryKind =
   | 'comeback'
   | 'streak_broken'
   | 'last_life'
-  | 'streak_7'
-  | 'streak_5'
-  | 'streak_3'
+  | 'unstoppable'
+  | 'blazing'
+  | 'on_fire'
+
+/**
+ * The streaks the commentator calls. The first is the one the player card
+ * starts showing "On fire" at, so the line and the badge arrive together;
+ * then two more, and every shot from two more again. Under the classic
+ * thresholds: 3, 5, and 7 and up.
+ */
+export const COMMENTARY_STREAKS = {
+  onFire: ON_FIRE_STREAK,
+  blazing: ON_FIRE_STREAK + 2,
+  unstoppable: ON_FIRE_STREAK + 4,
+} as const
 
 /**
  * Most important first. One shot can set off several events — a miss that
@@ -39,9 +52,9 @@ export const COMMENTARY_PRIORITY: readonly CommentaryKind[] = [
   'comeback',
   'streak_broken',
   'last_life',
-  'streak_7',
-  'streak_5',
-  'streak_3',
+  'unstoppable',
+  'blazing',
+  'on_fire',
 ]
 
 export interface CommentaryEvent {
@@ -101,37 +114,6 @@ export function isSingleNewShot(prev: Game | null, next: Game | null): boolean {
   return lastBefore < 0 || after[lastBefore]?.id === before[lastBefore].id
 }
 
-/**
- * How many shots in a row the player has potted (pot or black), counting back
- * from their latest. Every player's turns are counted on their own: other
- * players shooting in between do not break a streak.
- *
- * Private on purpose, and meant to be replaced by the shared streak helper
- * the player card uses once both are in.
- */
-function currentStreak(history: readonly GameHistoryEntry[], playerId: string): number {
-  let streak = 0
-  for (let i = history.length - 1; i >= 0; i--) {
-    const entry = history[i]
-    if (entry.playerId !== playerId) continue
-    if (entry.action === 'miss') break
-    streak++
-  }
-  return streak
-}
-
-/** Turns in a row, up to the latest, that the player began and ended on one life */
-function turnsSurvivedOnLastLife(history: readonly GameHistoryEntry[], playerId: string): number {
-  let turns = 0
-  for (let i = history.length - 1; i >= 0; i--) {
-    const entry = history[i]
-    if (entry.playerId !== playerId) continue
-    if (entry.livesBefore !== 1 || entry.livesAfter !== 1) break
-    turns++
-  }
-  return turns
-}
-
 function toDuelPlayer(player: Player): DuelPlayer {
   return { id: player.id, name: player.name, avatar: player.avatar, lives: player.lives }
 }
@@ -143,9 +125,14 @@ function toDuelPlayer(player: Player): DuelPlayer {
 export function analyzeTransition(prev: Game | null, next: Game | null): ShotTransition | null {
   if (!prev || !next || !isSingleNewShot(prev, next)) return null
 
-  const shot = next.history[next.history.length - 1]
-  const shooter = next.players.find((p) => p.id === shot.playerId)
-  const name = shooter?.name ?? shot.playerName
+  // What the shot did is the shared reading of the latest shot (the player
+  // card's streak badge comes from the same module). Whether there was a
+  // shot at all is the comparison above, which only this module needs.
+  const insight = getLastShotInsight(next)
+  if (!insight) return null
+  const shot = next.history[insight.index]
+  const shooter = next.players.find((p) => p.id === insight.playerId)
+  const name = shooter?.name ?? insight.playerName
   const events: CommentaryEvent[] = []
 
   const won = next.status === 'completed' && !!next.winnerId
@@ -154,49 +141,48 @@ export function analyzeTransition(prev: Game | null, next: Game | null): ShotTra
     if (winner) events.push({ kind: 'victory', name: winner.name })
   }
 
+  // One shot puts one player out, so two left after a knockout means three
+  // before it: a game that started with two never gets here
   let duel: DuelPlayer[] | null = null
-  const left = activePlayers(next)
-  if (next.status === 'active' && activePlayers(prev).length > 2 && left.length === 2) {
+  if (next.status === 'active' && insight.eliminated && insight.playersLeft === 2) {
+    const left = activePlayers(next)
     duel = left.map(toDuelPlayer)
     events.push({ kind: 'final_duel', name: left[0].name, rival: left[1].name })
   }
 
-  const knockedOut = shot.livesAfter <= 0
-  if (knockedOut) events.push({ kind: 'eliminated', name })
+  if (insight.eliminated) events.push({ kind: 'eliminated', name })
 
   // Off the last life. Under the classic rules only a black does that, so the
-  // two lines split by how long the player had been hanging on: potting the
-  // black on the very next turn is the clutch shot, climbing out after
-  // surviving turns on one life is the comeback. With rules where something
-  // else gives a life back, that is a comeback too.
-  if (shot.livesBefore === 1 && shot.livesAfter >= 2) {
-    const clutch =
-      shot.action === 'pot_black' && turnsSurvivedOnLastLife(prev.history, shot.playerId) === 0
+  // two lines split by whether the player had already got through a shot on
+  // one life: a black straight away is the clutch shot, climbing out after
+  // hanging on is the comeback. With rules where something else gives a
+  // life back, that is a comeback too.
+  if (insight.escapedLastLife) {
+    const before = getPlayerStats(prev).find((s) => s.playerId === insight.playerId)
+    const clutch = insight.action === 'pot_black' && (before?.lastLifeShotsSurvived ?? 0) === 0
     events.push({ kind: clutch ? 'black_on_last_life' : 'comeback', name })
   }
 
-  if (shot.action === 'miss') {
-    const broken = currentStreak(prev.history, shot.playerId)
-    if (broken >= 3) events.push({ kind: 'streak_broken', name, count: broken })
-  } else {
-    const streak = currentStreak(next.history, shot.playerId)
-    if (streak >= 7) events.push({ kind: 'streak_7', name, count: streak })
-    else if (streak === 5) events.push({ kind: 'streak_5', name, count: streak })
-    else if (streak === 3) events.push({ kind: 'streak_3', name, count: streak })
+  // The badge on the player card was "on fire" until this miss
+  if (insight.streakEnded >= COMMENTARY_STREAKS.onFire) {
+    events.push({ kind: 'streak_broken', name, count: insight.streakEnded })
   }
 
-  if (!knockedOut && shot.livesBefore > 1 && shot.livesAfter === 1) {
-    events.push({ kind: 'last_life', name })
-  }
+  const { streak } = insight
+  if (streak >= COMMENTARY_STREAKS.unstoppable) events.push({ kind: 'unstoppable', name, count: streak })
+  else if (streak === COMMENTARY_STREAKS.blazing) events.push({ kind: 'blazing', name, count: streak })
+  else if (streak === COMMENTARY_STREAKS.onFire) events.push({ kind: 'on_fire', name, count: streak })
+
+  if (insight.droppedToLastLife) events.push({ kind: 'last_life', name })
 
   events.sort((a, b) => COMMENTARY_PRIORITY.indexOf(a.kind) - COMMENTARY_PRIORITY.indexOf(b.kind))
 
   let sound: SoundEffect
   if (won) sound = 'victory'
   else if (duel) sound = 'duel'
-  else if (knockedOut) sound = 'eliminated'
-  else if (shot.action === 'pot_black') sound = 'black'
-  else if (shot.action === 'pot') sound = 'pot'
+  else if (insight.eliminated) sound = 'eliminated'
+  else if (insight.action === 'pot_black') sound = 'black'
+  else if (insight.action === 'pot') sound = 'pot'
   else sound = 'miss'
 
   return { shot, sound, events, duel }
@@ -215,21 +201,21 @@ export function detectCommentaryEvents(prev: Game | null, next: Game | null): Co
  * the event. Short enough to read in the 2.5 s a line is on screen.
  */
 export const PHRASES: Readonly<Record<CommentaryKind, readonly string[]>> = {
-  streak_3: [
-    '{name} has three in a row. Somebody check that cue for batteries.',
-    'Three straight for {name}. Getting warm!',
-    "Hat-trick, {name}! Don't let it go to your head.",
-    'Three on the bounce from {name}. The table is listening.',
-    '{name} is heating up. Three in a row!',
+  on_fire: [
+    '{name} is on fire! {count} in a row.',
+    '{count} straight for {name}. Somebody check that cue for batteries.',
+    '{name} is heating up. {count} on the bounce!',
+    'On fire! {name} makes it {count}. The table is listening.',
+    "{count} in a row, {name}. Don't let it go to your head.",
   ],
-  streak_5: [
-    'Five in a row! {name} is on fire.',
-    '{name}, five straight. Is this a hustle?',
-    'Five! Get {name} a drink. Or a fire extinguisher.',
-    'Five in a row for {name}. The rest of you, take notes.',
-    '{name} has gone five for five. This is getting rude.',
+  blazing: [
+    '{count} in a row! {name} is blazing.',
+    '{name}, {count} straight. Is this a hustle?',
+    '{count}! Get {name} a drink. Or a fire extinguisher.',
+    '{count} in a row for {name}. The rest of you, take notes.',
+    '{name} has gone {count} for {count}. This is getting rude.',
   ],
-  streak_7: [
+  unstoppable: [
     '{count} in a row! {name} has left the building.',
     '{name} makes it {count}. Call the fire brigade.',
     '{count} straight. {name} is playing a different game.',
