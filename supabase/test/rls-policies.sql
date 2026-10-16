@@ -298,12 +298,15 @@ DELETE FROM games;
 DELETE FROM rulesets WHERE name = 'Rogue default';
 DELETE FROM auth.users WHERE id IN (
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+  'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ffffffff-ffff-4fff-8fff-ffffffffffff');
 INSERT INTO auth.users (id, email) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'alice@example.com'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'mallory@example.com'),
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'carol@example.com'),
-  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'dave@example.com');
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'dave@example.com'),
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'erin@example.com'),
+  ('ffffffff-ffff-4fff-8fff-ffffffffffff', 'frank@example.com');
 
 -- Rows with an age are planted around the timestamp trigger: through the
 -- trigger, the server stamps updated_at = now() on INSERT (00015).
@@ -648,6 +651,117 @@ SELECT expect('K-setup carol wins, shot, lost nothing   ', rls_try('authenticate
 SELECT expect_eq('K4 ...perfect_game (and the streak)',
   ach_try('authenticated', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '6c000000-0000-4000-8000-000000000003'),
   'perfect_game,win_streak_3');
+
+\echo
+\echo '=== G. a registered identity counts only in its own games (00015, section 8) ==='
+-- Erin is signed in on her phone: her host participant carries her uid, her
+-- games carry created_by = her uid (rowOwner in lib/sync.ts). Her participant
+-- ids are as public as every game row.
+\set erin_players '[{"id":"e0000000-0000-4000-8000-000000000001","name":"Erin","userId":"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"},{"id":"e0000000-0000-4000-8000-000000000002","name":"Opp","userId":null}]'
+SELECT expect('G-setup Erin''s profile (ensurePlayerProfile)', rls_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        $$INSERT INTO player_profiles (user_id, display_name) VALUES ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'Erin')
+          ON CONFLICT (user_id) DO NOTHING$$), 'ALLOWED (rows=1)');
+SELECT expect('G-setup Erin wins honestly, 5 h ago', rls_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        mk_upsert('6e000000-0000-4000-8000-000000000001', 'completed', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+                  'e0000000-0000-4000-8000-000000000001', :'erin_players', '[]', now() - interval '5 hours')), 'ALLOWED (rows=1)');
+SELECT expect('G-setup ...4 h ago', rls_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        mk_upsert('6e000000-0000-4000-8000-000000000002', 'completed', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+                  'e0000000-0000-4000-8000-000000000001', :'erin_players', '[]', now() - interval '4 hours')), 'ALLOWED (rows=1)');
+SELECT expect('G-setup ...3 h ago', rls_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        mk_upsert('6e000000-0000-4000-8000-000000000003', 'completed', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+                  'e0000000-0000-4000-8000-000000000001', :'erin_players', '[]', now() - interval '3 hours')), 'ALLOWED (rows=1)');
+SELECT expect('G-setup ...2 h ago', rls_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        mk_upsert('6e000000-0000-4000-8000-000000000004', 'completed', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+                  'e0000000-0000-4000-8000-000000000001', :'erin_players', '[]', now() - interval '2 hours')), 'ALLOWED (rows=1)');
+SELECT expect_eq('G1 her honest games count: four wins, streak of four',
+  ach_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '6e000000-0000-4000-8000-000000000004'),
+  'first_win,win_streak_3');
+-- The forgeries. Writing them is allowed (anon INSERT has to stay open, 00014);
+-- what is tested is that they count for nothing. All dated now: the newest.
+SELECT expect('G-forge anon: a loss naming Erin            ', rls_try('anon', NULL,
+        mk_upsert('6f000000-0000-4000-8000-000000000001', 'completed', NULL,
+                  'e0000000-0000-4000-8000-000000000002', :'erin_players')), 'ALLOWED (rows=1)');
+-- five black pots and no life lost: pot_black_master and perfect_game, if it
+-- counted for her
+SELECT expect('G-forge anon: a win naming Erin             ', rls_try('anon', NULL,
+        mk_upsert('6f000000-0000-4000-8000-000000000002', 'completed', NULL,
+                  'e0000000-0000-4000-8000-000000000001', :'erin_players',
+                  (SELECT jsonb_agg(jsonb_build_object('id', 'b' || i, 'action', 'pot_black',
+                                                       'playerId', 'e0000000-0000-4000-8000-000000000001',
+                                                       'livesBefore', 3, 'livesAfter', 3))
+                     FROM generate_series(1, 5) i))), 'ALLOWED (rows=1)');
+SELECT expect('G-forge Mallory: a loss naming Erin, own row', rls_try('authenticated', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        mk_upsert('6f000000-0000-4000-8000-000000000003', 'completed', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                  'e0000000-0000-4000-8000-000000000002', :'erin_players')), 'ALLOWED (rows=1)');
+SELECT expect('G-forge anon: Erin''s uid as a participant id', rls_try('anon', NULL,
+        mk_upsert('6f000000-0000-4000-8000-000000000004', 'completed', NULL, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+                  '[{"id":"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","name":"Erin, fake"},{"id":"e0000000-0000-4000-8000-000000000002","name":"Opp"}]')),
+        'ALLOWED (rows=1)');
+SELECT expect('G-setup Erin wins honestly, 1 h ago', rls_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        mk_upsert('6e000000-0000-4000-8000-000000000005', 'completed', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+                  'e0000000-0000-4000-8000-000000000001', :'erin_players', '[]', now() - interval '1 hour')), 'ALLOWED (rows=1)');
+SELECT expect_eq('G2 the planted losses did not end her streak (5 straight)',
+  ach_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '6e000000-0000-4000-8000-000000000005'),
+  'win_streak_5');
+SELECT expect_eq('G3 a forged win naming her earns her nothing',
+  ach_try('authenticated', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '6f000000-0000-4000-8000-000000000002'),
+  '(none)');
+SELECT expect_eq('G4 her leaderboard row: her name, her 5 games, 5 wins',
+  (SELECT display_name || ' ' || total_games || '/' || games_won
+     FROM get_leaderboard(100, 1) WHERE player_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'),
+  'Erin 5/5');
+SELECT expect_eq('G5 no other row carries her uid (the participant-id trick is dropped)',
+  (SELECT count(*)::text FROM get_leaderboard(100, 1) WHERE player_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'), '1');
+SELECT expect_eq('G6 the forged games land on a guest row of their own',
+  (SELECT display_name || ' ' || total_games || '/' || games_won
+     FROM get_leaderboard(100, 1) WHERE player_id = 'e0000000-0000-4000-8000-000000000001'),
+  'Erin 3/1');
+
+-- Frank played as a guest on this device, then signed in. The game he
+-- finishes first after signing in is adopted on its INSERT: created_by = his
+-- uid, while his host participant still carries the device guest id.
+\set frank_guest_players '[{"id":"f0000000-0000-4000-8000-000000000001","name":"Frank","userId":"f9999999-9999-4999-8999-999999999999"},{"id":"f0000000-0000-4000-8000-000000000002","name":"Pal","userId":null}]'
+\set frank_players '[{"id":"f0000000-0000-4000-8000-000000000001","name":"Frank","userId":"ffffffff-ffff-4fff-8fff-ffffffffffff"},{"id":"f0000000-0000-4000-8000-000000000002","name":"Pal","userId":null}]'
+SELECT expect('G-setup Frank''s guest game, synced as a guest', rls_try('anon', NULL,
+        mk_upsert('6d000000-0000-4000-8000-000000000001', 'completed', NULL,
+                  'f0000000-0000-4000-8000-000000000001', :'frank_guest_players', '[]', now() - interval '3 hours')), 'ALLOWED (rows=1)');
+SELECT expect('G-setup Frank''s profile (ensurePlayerProfile)', rls_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        $$INSERT INTO player_profiles (user_id, display_name) VALUES ('ffffffff-ffff-4fff-8fff-ffffffffffff', 'Frank')
+          ON CONFLICT (user_id) DO NOTHING$$), 'ALLOWED (rows=1)');
+SELECT expect('G7 a guest game adopted at its first INSERT after sign-in', rls_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        mk_upsert('6d000000-0000-4000-8000-000000000002', 'completed', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+                  'f0000000-0000-4000-8000-000000000001', :'frank_guest_players', '[]', now() - interval '2 hours')), 'ALLOWED (rows=1)');
+SELECT expect('G-setup Frank''s first game as himself     ', rls_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        mk_upsert('6d000000-0000-4000-8000-000000000003', 'completed', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+                  'f0000000-0000-4000-8000-000000000001', :'frank_players', '[]', now() - interval '1 hour')), 'ALLOWED (rows=1)');
+SELECT expect_eq('G8 ...it still counts as a guest game, by participant id, with his other guest game',
+  (SELECT display_name || ' ' || total_games || '/' || games_won
+     FROM get_leaderboard(100, 1) WHERE player_id = 'f0000000-0000-4000-8000-000000000001'),
+  'Frank 2/2');
+SELECT expect_eq('G9 ...not under the device guest id',
+  (SELECT count(*)::text FROM get_leaderboard(100, 1) WHERE player_id = 'f9999999-9999-4999-8999-999999999999'), '0');
+SELECT expect_eq('G10 his account has exactly the game he played signed in',
+  (SELECT display_name || ' ' || total_games || '/' || games_won
+     FROM get_leaderboard(100, 1) WHERE player_id = 'ffffffff-ffff-4fff-8fff-ffffffffffff'),
+  'Frank 1/1');
+SELECT expect_eq('G11 the adopted game grants him nothing (host userId is the guest id)',
+  ach_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff', 'ffffffff-ffff-4fff-8fff-ffffffffffff', '6d000000-0000-4000-8000-000000000002'),
+  '(none)');
+SELECT expect_eq('G12 ...his signed-in game does',
+  ach_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff', 'ffffffff-ffff-4fff-8fff-ffffffffffff', '6d000000-0000-4000-8000-000000000003'),
+  'first_win');
+
+-- the RPC's contract is unchanged
+SELECT expect_eq('G13 get_leaderboard keeps its signature',
+  pg_get_function_identity_arguments('get_leaderboard'::regproc), 'limit_count integer, min_games integer');
+SELECT expect_true('G14 ...SECURITY DEFINER with a pinned search_path',
+  (SELECT prosecdef AND 'search_path=public, pg_temp' = ANY(proconfig) FROM pg_proc WHERE oid = 'get_leaderboard'::regproc));
+SELECT expect('G15 ...callable by anon', rls_try('anon', NULL, 'SELECT * FROM get_leaderboard(15)'), 'ALLOWED (rows=');
+SELECT expect_true('G16 ...min_games still defaults to 3: Erin (5) in, Frank''s guest row (2) out',
+  EXISTS (SELECT 1 FROM get_leaderboard(100) WHERE player_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')
+  AND NOT EXISTS (SELECT 1 FROM get_leaderboard(100) WHERE player_id = 'f0000000-0000-4000-8000-000000000001'));
+SELECT expect_eq('G17 ...and limit_count is still clamped to 0..100',
+  (SELECT count(*)::text FROM get_leaderboard(-5, 1)), '0');
 
 \echo
 \echo '=== E. accepted regressions — refused here, handled or tolerated in the client ==='

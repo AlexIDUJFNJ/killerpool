@@ -3,11 +3,12 @@
 -- Migration: 00015_game_integrity_and_spam_limits
 -- Description: the server owns a game's dates, a guest game has a finite
 --              writable life, a game row has a size and its winner is one of
---              its players, and the profile / ruleset / perfect_game loose
---              ends are closed.
+--              its players, the profile / ruleset / perfect_game loose ends
+--              are closed, and a signed-in user's identity counts only in
+--              games their own account wrote.
 -- ====================================
 --
--- Seven holes left after 00014. Each section names the hole, the fix, and what
+-- Eight holes left after 00014. Each section names the hole, the fix, and what
 -- it costs a client. Unless a section says otherwise, the cost is nothing — for
 -- the client running in production today and for the next one alike: every
 -- write is still the full-row upsert of lib/game-mapper.ts, and nothing here
@@ -171,21 +172,64 @@
 -- check_achievements v2 grants perfect_game when the winner's history entries
 -- lost no lives and none were malformed (00011:181) — both trivially true of
 -- an empty set, so a win without a single shot was a perfect game. v3 also
--- requires at least one entry. Everything else is v2 verbatim, including
+-- requires at least one entry. Apart from that and the created_by rule of
+-- section 8, v3 is v2 verbatim, including
 -- SECURITY DEFINER, the search_path, the p_user_id = auth.uid() guard and the
 -- grants (re-issued below; CREATE OR REPLACE would keep them anyway).
+--
+-- 8. ANYONE CAN PLAY AS A SIGNED-IN USER
+--
+-- get_leaderboard groups a participant by participants[].userId, and
+-- check_achievements counts every completed game whose participants carry the
+-- user's userId — while anon may INSERT any completed game. One request adds a
+-- win or a loss to any registered player's row, ends their win streak, or
+-- renames them (the forged game becomes their newest, and the fallback name
+-- comes from it).
+--
+-- A registered identity is now believed only where the row vouches for it.
+-- That costs honest data nothing, because in the client
+--   * a game created under an account is written only by that account
+--     (rowOwner in lib/sync.ts; otherwise it stays queued), so created_by is
+--     that account's uid;
+--   * only the host carries a userId (createGame marks one player; addPlayer
+--     passes null).
+-- So:
+--   * get_leaderboard v6 (PART 6) takes participants[].userId as the player's
+--     identity only when it equals the row's created_by. Otherwise the
+--     participant is a guest, grouped by participants[].id like every guest.
+--   * A guest whose participant id IS an account's identity (a profile's
+--     user_id, or a userId some row vouches for) is dropped. Otherwise the
+--     forger just moves the victim's uid from userId to id, and the guest row
+--     merges with the victim's and takes their profile name.
+--   * check_achievements v3 (PART 5) counts only games with created_by =
+--     p_user_id: the game it is called for, total wins, the streak and the
+--     social count.
+--
+-- What moves for existing rows:
+--   * a guest game adopted on its first INSERT after signing in (created_by =
+--     uid, the host's userId = the device's guest id) does not join the
+--     account: it keeps counting as a guest game, grouped by the host's
+--     participant id;
+--   * a guest host (userId = guest id, created_by NULL) used to be grouped by
+--     the guest id and is now grouped by participant id, like every other
+--     guest. With the device roster that id is stable per name; for games from
+--     before the roster, when every game minted fresh ids, a guest's games no
+--     longer add up;
+--   * a game created under an account but written anonymously or under another
+--     account (possible before rowOwner) no longer counts for that account;
+--   * the games of a deleted account (created_by set NULL, profile gone) stop
+--     counting for it; its host rows become guest rows.
 --
 -- WHAT THIS DELIBERATELY DOES NOT FIX
 --
 --  * A spectator can still rewrite a LIVE guest game whose id they know.
 --    Host and spectator are the same anon role with the same knowledge; only
 --    a secret the host holds can separate them (new column + RPC + client).
---  * anon can still INSERT a fabricated completed game with any participants
---    and any participants[].userId, so get_leaderboard and the aggregates of
---    check_achievements (total wins, streak, social games) stay forgeable. The
---    date clamp only stops such a game from being newest forever; it can still
---    be newest now, so a planted loss still breaks a streak until the victim's
---    next win.
+--  * A GUEST identity is still forgeable: a participant id and a guest id are
+--    printed in every public game row, so anon can insert games under them and
+--    move that guest's leaderboard row. Registered users are covered by
+--    section 8; a signed-in user can of course still write anything into
+--    their own games.
 --  * The number of anon INSERTs is not bounded — Postgres has no rate limit;
 --    the size limits bound each row, not the table.
 --  * Profiles already created with user_id NULL, and rulesets created through
@@ -201,7 +245,8 @@
 -- Reverting: recreate update_games_updated_at from 00001 and drop
 -- games_server_timestamps; re-run 00014 (policies); drop the four games_*
 -- constraints and idx_rulesets_one_default (then recreate the plain index from
--- 00001); re-run section 4 of 00011 (check_achievements v2).
+-- 00001); re-run section 4 of 00011 (check_achievements v2) and 00013
+-- (get_leaderboard v5).
 
 -- ====================================
 -- PART 1 — the server owns created_at and updated_at
@@ -410,7 +455,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rulesets_one_default
     WHERE is_default;
 
 -- ====================================
--- PART 5 — check_achievements v3: no perfect game without a shot
+-- PART 5 — check_achievements v3: no perfect game without a shot, and only
+--          the user's own games count
 -- ====================================
 -- Same signature, so CREATE OR REPLACE replaces v2 in place.
 
@@ -437,9 +483,12 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Only a game the user's own account wrote counts (header, section 8): an
+  -- honest game of a signed-in user always carries created_by = their uid,
+  -- while anyone can INSERT a game naming them in participants[].userId.
   SELECT * INTO v_game
   FROM games
-  WHERE id = p_game_id AND status = 'completed';
+  WHERE id = p_game_id AND status = 'completed' AND created_by = p_user_id;
 
   IF NOT FOUND OR v_game.winner_id IS NULL THEN
     RETURN;
@@ -483,12 +532,13 @@ BEGIN
   FROM jsonb_array_elements(COALESCE(v_game.history, '[]'::jsonb)) h
   WHERE h->>'playerId' = v_winner_id;
 
-  -- Total wins across all completed games where this user's participant won.
-  -- The @> prefilter narrows to the user's games via the GIN index.
+  -- Total wins across the user's own completed games (created_by, as above)
+  -- where their participant won. The @> prefilter narrows via the GIN index.
   SELECT COUNT(*) INTO v_total_wins
   FROM games g
   WHERE g.status = 'completed'
     AND g.winner_id IS NOT NULL
+    AND g.created_by = p_user_id
     AND g.participants @> v_user_elem
     AND EXISTS (
       SELECT 1
@@ -497,7 +547,8 @@ BEGIN
         AND p->>'userId' = p_user_id::TEXT
     );
 
-  -- Current win streak: leading wins in the user's completed games, newest first.
+  -- Current win streak: leading wins in the user's own completed games, newest
+  -- first. A planted loss is not one of them, so it cannot end the streak.
   SELECT COUNT(*) INTO v_streak
   FROM (
     SELECT
@@ -518,14 +569,16 @@ BEGIN
     FROM games g
     WHERE g.status = 'completed'
       AND g.winner_id IS NOT NULL
+      AND g.created_by = p_user_id
       AND g.participants @> v_user_elem
   ) t
   WHERE t.won AND t.losses_so_far = 0;
 
-  -- Completed games with 4+ players where the user participated.
+  -- The user's own completed games with 4+ players.
   SELECT COUNT(*) INTO v_social_games
   FROM games g
   WHERE g.status = 'completed'
+    AND g.created_by = p_user_id
     AND jsonb_array_length(g.participants) >= 4
     AND g.participants @> v_user_elem;
 
@@ -581,6 +634,201 @@ GRANT EXECUTE ON FUNCTION check_achievements(UUID, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION check_achievements(UUID, UUID) TO service_role;
 
 -- ====================================
+-- PART 6 — get_leaderboard v6: a registered identity needs the row's word
+-- ====================================
+-- Same signature as v5 (00013), so CREATE OR REPLACE swaps the body and keeps
+-- the grants. Everything but participant_rows.user_key, the registered CTE and
+-- the guest filter in stable_rows is v5 verbatim: no casts of client JSON, the
+-- single ::uuid regex-guarded, wins per distinct game, both clamps, min_games.
+
+CREATE OR REPLACE FUNCTION get_leaderboard(
+    limit_count INTEGER DEFAULT 15,
+    min_games   INTEGER DEFAULT 3
+)
+RETURNS TABLE (
+    player_id UUID,
+    display_name TEXT,
+    avatar_url TEXT,
+    total_games BIGINT,
+    games_won BIGINT,
+    games_lost BIGINT,
+    win_rate NUMERIC,
+    total_actions BIGINT,
+    total_black_pots BIGINT,
+    rank INTEGER
+)
+SECURITY DEFINER              -- global leaderboard, reads past RLS
+SET search_path = public, pg_temp   -- pg_temp last and explicit: otherwise
+                                    -- Postgres searches temp objects first,
+                                    -- which is a SECURITY DEFINER hazard
+AS $$
+#variable_conflict use_column       -- OUT parameter names collide with column
+                                    -- names; always prefer the column
+BEGIN
+    RETURN QUERY
+    WITH participant_rows AS (
+        -- One row per (completed game x participant). No casts of client JSON.
+        SELECT
+            g.id                                    AS game_id,
+            g.created_at                            AS game_created_at,
+            lower(g.winner_id::text)                AS winner_key,
+            lower(participant->>'id')               AS player_key,
+            nullif(btrim(participant->>'name'), '') AS player_name,
+            -- v6: a userId is the player's identity only when the row was
+            -- written by that very account. Anyone may INSERT a game naming
+            -- someone else's uid; nobody but the account can make created_by
+            -- equal it (games_insert_authenticated, 00014). Anything else — a
+            -- forged uid, the device guest id, an adopted guest game whose
+            -- host still carries the guest id — makes the participant a guest.
+            CASE
+                WHEN participant->>'userId' ~*
+                     '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                 AND lower(participant->>'userId') = g.created_by::text
+                THEN lower(participant->>'userId')
+            END                                     AS user_key
+        FROM games g
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(g.participants) = 'array'
+                 THEN g.participants
+                 ELSE '[]'::jsonb END
+        ) AS participant
+        WHERE g.status = 'completed'
+    ),
+    registered AS (
+        -- Identities that belong to accounts: every profile, and every userId
+        -- some row vouches for. Kept as text, so nothing here is cast.
+        SELECT pp.user_id::text AS key
+        FROM player_profiles pp
+        WHERE pp.user_id IS NOT NULL
+        UNION
+        SELECT pr.user_key
+        FROM participant_rows pr
+        WHERE pr.user_key IS NOT NULL
+    ),
+    stable_rows AS (
+        -- Grouping key: a vouched userId, else the participant id
+        SELECT *
+        FROM (
+            SELECT
+                pr.*,
+                COALESCE(pr.user_key, pr.player_key) AS stable_key
+            FROM participant_rows pr
+        ) s
+        -- Guard for the single ::uuid below. A participant with a junk id and
+        -- no vouched userId cannot be represented in the player_id UUID column
+        -- anyway, so it drops out rather than aborting the whole call.
+        WHERE s.stable_key ~
+              '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          -- v6: a guest whose participant id IS an account's identity drops
+          -- out. Without this the forger moves the victim's uid from userId to
+          -- id, and the guest row merges with the victim's and takes their
+          -- profile name. Honest participant ids come from crypto.randomUUID()
+          -- and never collide with an account.
+          AND (s.user_key IS NOT NULL
+               OR NOT EXISTS (SELECT 1 FROM registered r WHERE r.key = s.player_key))
+    ),
+    action_rows AS (
+        -- Actions counted once per (game, playerId), however many participants
+        -- claim that id
+        SELECT
+            g.id                  AS game_id,
+            lower(h->>'playerId') AS player_key,
+            COUNT(*)                                           AS action_count,
+            COUNT(*) FILTER (WHERE h->>'action' = 'pot_black') AS black_pot_count
+        FROM games g
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(g.history) = 'array'
+                 THEN g.history
+                 ELSE '[]'::jsonb END
+        ) AS h
+        WHERE g.status = 'completed'
+        GROUP BY g.id, lower(h->>'playerId')
+    ),
+    per_game AS (
+        -- Collapse duplicate participants: one player, one row per game
+        SELECT
+            sr.stable_key,
+            sr.game_id,
+            min(sr.game_created_at) AS game_created_at,
+            max(CASE WHEN sr.player_key = sr.winner_key THEN 1 ELSE 0 END) AS is_winner,
+            (array_agg(sr.player_name ORDER BY sr.player_name)
+               FILTER (WHERE sr.player_name IS NOT NULL))[1] AS player_name,
+            (array_agg(sr.player_key))[1] AS player_key
+        FROM stable_rows sr
+        GROUP BY sr.stable_key, sr.game_id
+    ),
+    per_game_actions AS (
+        SELECT
+            pg.stable_key,
+            pg.game_id,
+            COALESCE(ar.action_count, 0)    AS action_count,
+            COALESCE(ar.black_pot_count, 0) AS black_pot_count
+        FROM per_game pg
+        LEFT JOIN action_rows ar
+               ON ar.game_id    = pg.game_id
+              AND ar.player_key = pg.player_key
+    ),
+    aggregated_stats AS (
+        SELECT
+            pg.stable_key::uuid AS stable_id,   -- the only ::uuid; guarded above
+            -- Name from the player's most recent game
+            (array_agg(pg.player_name ORDER BY pg.game_created_at DESC, pg.game_id DESC)
+               FILTER (WHERE pg.player_name IS NOT NULL))[1] AS latest_player_name,
+            COUNT(*)::BIGINT                                 AS total_games,
+            COUNT(*) FILTER (WHERE pg.is_winner = 1)::BIGINT AS games_won,
+            (COUNT(*) - COUNT(*) FILTER (WHERE pg.is_winner = 1))::BIGINT AS games_lost,
+            CASE
+                WHEN COUNT(*) > 0
+                THEN COUNT(*) FILTER (WHERE pg.is_winner = 1)::NUMERIC
+                     / COUNT(*)::NUMERIC * 100
+                ELSE 0
+            END                                              AS win_rate,
+            COALESCE(SUM(pga.action_count), 0)::BIGINT       AS total_actions,
+            COALESCE(SUM(pga.black_pot_count), 0)::BIGINT    AS total_black_pots
+        FROM per_game pg
+        LEFT JOIN per_game_actions pga
+               ON pga.stable_key = pg.stable_key
+              AND pga.game_id    = pg.game_id
+        GROUP BY pg.stable_key
+    )
+    -- The profile joins on stable_id. A guest's stable_id can no longer equal a
+    -- profile's user_id (filtered in stable_rows), so a profile name only ever
+    -- lands on the account's own row. player_profiles.user_id is UNIQUE
+    -- (00003/00004), so this cannot multiply rows.
+    SELECT
+        a.stable_id AS player_id,
+        COALESCE(pp.display_name, a.latest_player_name) AS display_name,
+        pp.avatar_url,
+        a.total_games,
+        a.games_won,
+        a.games_lost,
+        ROUND(a.win_rate, 2) AS win_rate,
+        a.total_actions,
+        a.total_black_pots,
+        ROW_NUMBER() OVER (
+            ORDER BY a.win_rate    DESC,
+                     a.games_won   DESC,
+                     a.total_games DESC,
+                     a.stable_id   ASC   -- deterministic tie-break, so equal
+                                         -- players stop swapping places
+        )::INTEGER AS rank
+    FROM aggregated_stats a
+    LEFT JOIN player_profiles pp ON pp.user_id = a.stable_id
+    -- The qualifying minimum. Clamped like limit_count: the RPC is reachable by
+    -- anon, and a negative or absurd value should not change what it means.
+    WHERE a.total_games >= LEAST(GREATEST(COALESCE(min_games, 3), 1), 100)
+    ORDER BY rank
+    -- The client always asks for 15 (leaderboard-list.tsx). Clamped because the
+    -- RPC is reachable by anon: NULL would mean "no limit" and a huge value a
+    -- full scan.
+    LIMIT LEAST(GREATEST(COALESCE(limit_count, 15), 0), 100);
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- CREATE OR REPLACE kept the 00013 grants; re-issued so this file stands alone
+GRANT EXECUTE ON FUNCTION get_leaderboard(INTEGER, INTEGER) TO authenticated, anon;
+
+-- ====================================
 -- COMMENTS
 -- ====================================
 
@@ -609,4 +857,7 @@ COMMENT ON INDEX idx_rulesets_one_default IS
 'At most one default ruleset. Replaces the non-unique idx_rulesets_is_default (00001).';
 
 COMMENT ON FUNCTION check_achievements IS
-'Checks and grants achievements after game completion (v3: perfect_game needs at least one history entry by the winner; v2: caller must be auth.uid(), fixed casts, winner stats, streaks).';
+'Checks and grants achievements after game completion (v3: only games with created_by = p_user_id count — the game itself, total wins, streak, social; perfect_game needs at least one history entry by the winner. v2: caller must be auth.uid(), fixed casts, winner stats, streaks).';
+
+COMMENT ON FUNCTION get_leaderboard IS
+'Returns top N players ranked by win rate, among those who have played at least min_games (default 3). v6: participants[].userId groups a player only when it equals the row''s created_by; otherwise the participant is a guest grouped by participants[].id, and a guest whose id is an account''s identity is dropped. No casts of client-controlled JSON; the single ::uuid is regex-guarded in CTE stable_rows.';
