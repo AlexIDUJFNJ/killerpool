@@ -157,3 +157,38 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+  "Reduce motion" for CSS animations and transitions: the Tailwind ones
+  (animate-spin, transition-*) and tw-animate-css's (the dialog's fade and
+  zoom). Motion components already follow the setting through MotionConfig,
+  see components/motion-provider.tsx.
+
+  Durations go down to next to nothing instead of the animations being
+  removed, so everything still ends where it would have: a dialog fading in
+  is shown, one fading out is gone, and the animationend Radix waits for
+  before unmounting it still fires. Delays go too, so nothing waits hidden
+  for an entrance that no longer plays, and endless loops run once.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+
+  /* A spinner that stops looks like a hang: it pulses in place instead */
+  .animate-spin {
+    animation: reduced-motion-pulse 2s ease-in-out infinite !important;
+  }
+}
+
+@keyframes reduced-motion-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
