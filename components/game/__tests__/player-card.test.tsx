@@ -118,19 +118,6 @@ describe('PlayerCard', () => {
       expect(screen.getByText(/test player/i)).toBeInTheDocument();
     });
 
-    it('should render mini variant', () => {
-      render(<PlayerCard {...defaultProps} variant="mini" />);
-
-      expect(screen.getByText(/test player/i)).toBeInTheDocument();
-      expect(screen.getByText('→')).toBeInTheDocument();
-    });
-
-    it('should render inline variant', () => {
-      render(<PlayerCard {...defaultProps} variant="inline" />);
-
-      expect(screen.getByText(/test player's turn/i)).toBeInTheDocument();
-    });
-
     it('should show position number in compact variant when provided', () => {
       render(<PlayerCard {...defaultProps} variant="compact" showPosition={1} />);
 
@@ -161,8 +148,8 @@ describe('PlayerCard', () => {
       expect(container.querySelector('.bg-emerald-500.border-emerald-400')).not.toBeInTheDocument();
     });
 
-    it('should handle many lives (>5) in mini/inline variants', () => {
-      render(<PlayerCard {...defaultProps} lives={7} variant="mini" />);
+    it('should show lives beyond five as +N in the compact variant', () => {
+      render(<PlayerCard {...defaultProps} lives={7} variant="compact" />);
 
       expect(screen.getByText('+2')).toBeInTheDocument();
     });
@@ -189,13 +176,6 @@ describe('PlayerCard', () => {
       const heading = container.querySelector('h3');
       expect(heading).toBeInTheDocument();
       expect(heading).toHaveTextContent('Test Player');
-    });
-
-    it('should handle apostrophe in inline variant', () => {
-      render(<PlayerCard {...defaultProps} variant="inline" />);
-
-      // Check that the apostrophe is properly escaped
-      expect(screen.getByText(/test player's turn/i)).toBeInTheDocument();
     });
   });
 });

@@ -62,20 +62,6 @@ function ToastCard({ achievementType, onClose }: ToastCardProps) {
   )
 }
 
-interface AchievementToastProps {
-  achievementType: AchievementType
-  show: boolean
-  onClose: () => void
-}
-
-export function AchievementToast({ achievementType, show, onClose }: AchievementToastProps) {
-  return (
-    <AnimatePresence>
-      {show && <ToastCard achievementType={achievementType} onClose={onClose} />}
-    </AnimatePresence>
-  )
-}
-
 interface AchievementToastsProps {
   achievements: AchievementType[]
   onDismiss: () => void
