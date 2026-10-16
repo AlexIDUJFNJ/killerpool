@@ -155,11 +155,11 @@ export default function StatsPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <h1 className="text-2xl sm:text-3xl font-bold">Statistics</h1>
           </div>
           <div className="flex justify-center items-center h-64">
@@ -175,11 +175,11 @@ export default function StatsPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <h1 className="text-2xl sm:text-3xl font-bold">Statistics</h1>
           </div>
           <Card>
@@ -190,9 +190,9 @@ export default function StatsPage() {
                 <p className="text-sm sm:text-base text-muted-foreground mb-6">
                   Play some games to see your statistics here!
                 </p>
-                <Link href="/game/new">
-                  <Button>Start New Game</Button>
-                </Link>
+                <Button asChild>
+                  <Link href="/game/new">Start New Game</Link>
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -206,11 +206,11 @@ export default function StatsPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold">Your Statistics</h1>
             <p className="text-xs sm:text-sm text-muted-foreground">Track your performance and progress</p>
@@ -354,12 +354,12 @@ export default function StatsPage() {
                       {new Date(stats.bestGame.date).toLocaleDateString()}
                     </div>
                   </div>
-                  <Link href={`/history/${stats.bestGame.id}`}>
-                    <Button variant="outline">
+                  <Button asChild variant="outline">
+                    <Link href={`/history/${stats.bestGame.id}`}>
                       View Game
                       <Zap className="ml-2 h-4 w-4" />
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>

@@ -158,12 +158,12 @@ export default function GameDetailsPage() {
             <p className="text-muted-foreground mb-6">
               This game history could not be found. It may have been deleted or the link is incorrect.
             </p>
-            <Link href="/history">
-              <Button>
+            <Button asChild>
+              <Link href="/history">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to History
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </div>
       </main>
@@ -245,11 +245,11 @@ export default function GameDetailsPage() {
       <div className="max-w-4xl mx-auto" id="game-details-content">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/history">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/history" aria-label="Back to history">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <h1 className="text-3xl font-bold">Game Details</h1>
         </div>
 

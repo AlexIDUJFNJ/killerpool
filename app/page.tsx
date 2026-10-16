@@ -61,19 +61,19 @@ export default function Home() {
         >
           {!authLoading && (
             user ? (
-              <Link href="/profile">
-                <Button variant="outline" size="lg">
+              <Button asChild variant="outline" size="lg">
+                <Link href="/profile">
                   <CircleUser className="mr-2 h-5 w-5" />
                   Profile
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             ) : (
-              <Link href="/auth">
-                <Button variant="outline" size="lg">
+              <Button asChild variant="outline" size="lg">
+                <Link href="/auth">
                   <LogIn className="mr-2 h-5 w-5" />
                   Sign In
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           )}
         </motion.div>
@@ -114,11 +114,9 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
-                  <Link href={`/game/${game.id}`}>
-                    <Button size="default" className="sm:size-lg shrink-0">
-                      Resume
-                    </Button>
-                  </Link>
+                  <Button asChild className="shrink-0 sm:h-10 sm:px-8">
+                    <Link href={`/game/${game.id}`}>Resume</Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -132,34 +130,34 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="grid gap-4 mb-8"
         >
-          <Link href="/game/new" className="w-full">
-            <Button size="xl" className="w-full h-20 text-lg shadow-lg shadow-primary/20">
+          <Button asChild size="xl" className="w-full h-20 text-lg shadow-lg shadow-primary/20">
+            <Link href="/game/new">
               <Users className="mr-3 h-6 w-6" />
               Start New Game
-            </Button>
-          </Link>
+            </Link>
+          </Button>
 
           <div className="grid grid-cols-3 gap-2 sm:gap-4">
-            <Link href="/history" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+            <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+              <Link href="/history">
                 <History className="h-5 w-5 sm:mr-2" />
                 <span className="hidden sm:inline">History</span>
-              </Button>
-            </Link>
+              </Link>
+            </Button>
 
-            <Link href="/stats" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+            <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+              <Link href="/stats">
                 <Trophy className="h-5 w-5 sm:mr-2" />
                 <span className="hidden sm:inline">Stats</span>
-              </Button>
-            </Link>
+              </Link>
+            </Button>
 
-            <Link href="/leaderboard" className="w-full">
-              <Button variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+            <Button asChild variant="outline" size="lg" className="w-full h-14 sm:h-16 px-2 sm:px-4">
+              <Link href="/leaderboard">
                 <Award className="h-5 w-5 sm:mr-2" />
                 <span className="hidden sm:inline">Top</span>
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </motion.div>
 

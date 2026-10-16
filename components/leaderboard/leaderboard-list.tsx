@@ -192,12 +192,12 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
                       animate={{ y: 0, opacity: 1 }}
                       transition={{ delay: 0.6 }}
                     >
-                      <Link href="/auth">
-                        <Button size="lg" className="shadow-lg shadow-primary/20">
+                      <Button asChild size="lg" className="shadow-lg shadow-primary/20">
+                        <Link href="/auth">
                           <LogIn className="mr-2 h-5 w-5" />
                           Sign In to Compete
-                        </Button>
-                      </Link>
+                        </Link>
+                      </Button>
                       <p className="text-xs text-muted-foreground mt-3">
                         Join the competition and make your mark!
                       </p>
@@ -214,12 +214,12 @@ export function LeaderboardList({ limit = 15, className }: LeaderboardListProps)
                       transition={{ delay: 0.4 }}
                       className="pt-4"
                     >
-                      <Link href="/game/new">
-                        <Button size="lg" className="shadow-lg shadow-primary/20">
+                      <Button asChild size="lg" className="shadow-lg shadow-primary/20">
+                        <Link href="/game/new">
                           <Trophy className="mr-2 h-5 w-5" />
                           Start Your First Game
-                        </Button>
-                      </Link>
+                        </Link>
+                      </Button>
                     </motion.div>
                   </>
                 )}

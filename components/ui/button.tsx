@@ -33,21 +33,81 @@ const buttonVariants = cva(
   }
 )
 
+type AnyProps = Record<string, unknown>
+
+function composeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallback<T> {
+  return (node) => {
+    for (const ref of refs) {
+      if (typeof ref === "function") ref(node)
+      else if (ref) (ref as React.RefObject<T | null>).current = node
+    }
+  }
+}
+
+/**
+ * Renders its only child with the slot's props merged in — what Radix's Slot
+ * does, without the dependency. Classes are concatenated, styles merged, and
+ * an event handler on both sides runs the child's first.
+ */
+const Slot = React.forwardRef<HTMLElement, React.HTMLAttributes<HTMLElement>>(
+  ({ children, ...slotProps }, forwardedRef) => {
+    if (!React.isValidElement<AnyProps>(children)) {
+      return null
+    }
+
+    const childProps = children.props
+    const merged: AnyProps = { ...slotProps, ...childProps }
+
+    for (const key of Object.keys(slotProps)) {
+      const slotValue = (slotProps as AnyProps)[key]
+      const childValue = childProps[key]
+      if (/^on[A-Z]/.test(key) && typeof slotValue === "function" && typeof childValue === "function") {
+        merged[key] = (...args: unknown[]) => {
+          childValue(...args)
+          slotValue(...args)
+        }
+      } else if (key === "style") {
+        merged.style = { ...(slotValue as object), ...(childValue as object) }
+      } else if (key === "className") {
+        merged.className = cn(slotValue as string, childValue as string)
+      }
+    }
+
+    // React 19 passes ref as an ordinary prop
+    merged.ref = composeRefs(forwardedRef, childProps.ref as React.Ref<HTMLElement> | undefined)
+
+    return React.cloneElement(children, merged)
+  }
+)
+Slot.displayName = "Slot"
+
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
+  /**
+   * Style the single child (typically a next/link `Link`) as the button
+   * instead of rendering a `<button>`. Wrapping a Button in a Link puts a
+   * button inside an anchor, which is invalid HTML and gives keyboard and
+   * screen-reader users two nested controls for one action.
+   */
   asChild?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => {
-    return (
-      <button
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-      />
-    )
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const classes = cn(buttonVariants({ variant, size, className }))
+
+    if (asChild) {
+      return (
+        <Slot
+          className={classes}
+          ref={ref as React.Ref<HTMLElement>}
+          {...(props as React.HTMLAttributes<HTMLElement>)}
+        />
+      )
+    }
+
+    return <button className={classes} ref={ref} {...props} />
   }
 )
 Button.displayName = "Button"

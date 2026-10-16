@@ -2,6 +2,7 @@
  * Tests for Button component
  */
 
+import * as React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Button } from '../button';
@@ -153,5 +154,81 @@ describe('Button', () => {
 
     const button = screen.getByRole('button', { name: /close dialog/i });
     expect(button).toHaveAttribute('aria-label', 'Close dialog');
+  });
+
+  describe('asChild', () => {
+    it('should render the child element with button styles instead of a button', () => {
+      render(
+        <Button asChild variant="outline" size="lg">
+          <a href="/history">History</a>
+        </Button>
+      );
+
+      const link = screen.getByRole('link', { name: /history/i });
+      expect(link).toHaveAttribute('href', '/history');
+      expect(link).toHaveClass('border', 'h-10');
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('should not nest a button inside the link', () => {
+      const { container } = render(
+        <Button asChild>
+          <a href="/">Home</a>
+        </Button>
+      );
+
+      expect(container.querySelector('a button, button a')).toBeNull();
+      expect(container.querySelectorAll('a')).toHaveLength(1);
+    });
+
+    it('should merge the child className after the button classes', () => {
+      render(
+        <Button asChild className="w-full">
+          <a href="/" className="custom-link">Home</a>
+        </Button>
+      );
+
+      const link = screen.getByRole('link', { name: /home/i });
+      expect(link).toHaveClass('bg-primary', 'w-full', 'custom-link');
+    });
+
+    it('should pass aria-label through to the child', () => {
+      render(
+        <Button asChild size="icon" aria-label="Back to home">
+          <a href="/">←</a>
+        </Button>
+      );
+
+      expect(screen.getByRole('link', { name: 'Back to home' })).toBeInTheDocument();
+    });
+
+    it('should run both the child and the slot click handlers', async () => {
+      const onSlotClick = jest.fn();
+      const onChildClick = jest.fn((e: React.MouseEvent) => e.preventDefault());
+      const user = userEvent.setup();
+
+      render(
+        <Button asChild onClick={onSlotClick}>
+          <a href="/" onClick={onChildClick}>Home</a>
+        </Button>
+      );
+
+      await user.click(screen.getByRole('link', { name: /home/i }));
+
+      expect(onChildClick).toHaveBeenCalledTimes(1);
+      expect(onSlotClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('should forward the ref to the child element', () => {
+      const ref = React.createRef<HTMLButtonElement>();
+
+      render(
+        <Button asChild ref={ref}>
+          <a href="/">Home</a>
+        </Button>
+      );
+
+      expect(ref.current?.tagName).toBe('A');
+    });
   });
 });

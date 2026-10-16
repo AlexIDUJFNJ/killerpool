@@ -137,11 +137,11 @@ export default function HistoryPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <h1 className="text-2xl sm:text-3xl font-bold">Game History</h1>
           </div>
 
@@ -151,9 +151,9 @@ export default function HistoryPage() {
             <p className="text-muted-foreground mb-6">
               Complete your first game to see it here
             </p>
-            <Link href="/game/new">
-              <Button size="lg">Start New Game</Button>
-            </Link>
+            <Button asChild size="lg">
+              <Link href="/game/new">Start New Game</Link>
+            </Button>
           </div>
         </div>
       </main>
@@ -165,11 +165,11 @@ export default function HistoryPage() {
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
           <div className="flex items-center gap-3 sm:gap-4">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
+            <Button asChild variant="ghost" size="icon">
+              <Link href="/" aria-label="Back to home">
                 <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <h1 className="text-2xl sm:text-3xl font-bold">History</h1>
           </div>
 
@@ -396,11 +396,11 @@ export default function HistoryPage() {
                       </div>
                     </div>
 
-                    <Link href={`/history/${game.id}`}>
-                      <Button variant="outline" className="w-full">
+                    <Button asChild variant="outline" className="w-full">
+                      <Link href={`/history/${game.id}`}>
                         View Details
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   </CardContent>
                 </Card>
               </motion.div>

@@ -26,19 +26,19 @@ export default function NotFound() {
           <CardContent className="space-y-4">
             {/* Action buttons */}
             <div className="grid gap-3">
-              <Link href="/" className="w-full">
-                <Button size="lg" className="w-full">
+              <Button asChild size="lg" className="w-full">
+                <Link href="/">
                   <Home className="mr-2 h-4 w-4" />
                   Go Home
-                </Button>
-              </Link>
+                </Link>
+              </Button>
 
-              <Link href="/history" className="w-full">
-                <Button variant="outline" size="lg" className="w-full">
+              <Button asChild variant="outline" size="lg" className="w-full">
+                <Link href="/history">
                   <Search className="mr-2 h-4 w-4" />
                   View Game History
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </CardContent>
         </Card>

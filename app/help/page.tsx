@@ -16,11 +16,11 @@ export default function HelpPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
             <h1 className="text-3xl font-bold">Help & Documentation</h1>
             <p className="text-muted-foreground">Everything you need to know about Killerpool</p>
@@ -198,11 +198,11 @@ export default function HelpPage() {
 
         {/* Back Button */}
         <div className="flex justify-center">
-          <Link href="/">
-            <Button size="lg">
+          <Button asChild size="lg">
+            <Link href="/">
               Back to Home
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     </main>
