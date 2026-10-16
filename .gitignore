@@ -9,6 +9,8 @@
 # next.js
 /.next/
 /out/
+# SWC plugin cache, created when next/jest compiles the tests
+/.swc/
 
 # production
 /build
