@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useGame } from '@/contexts/game-context'
 import { motion } from 'motion/react'
-import { Play, History, Trophy, Users, CircleUser, LogIn, Award } from 'lucide-react'
+import { Play, History, Trophy, Users, CircleUser, LogIn, Award, CircleHelp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { PWAInstallButton } from '@/components/pwa-install-button'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -207,8 +207,15 @@ export default function Home() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.6 }}
-          className="mt-8 flex justify-center"
+          className="mt-8 flex flex-col-reverse items-center gap-4 sm:flex-row sm:justify-between"
         >
+          <Link
+            href="/help"
+            className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <CircleHelp className="h-4 w-4" />
+            Help &amp; rules
+          </Link>
           <ThemeToggle />
         </motion.footer>
       </div>
