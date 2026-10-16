@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { loadGameHistory, deleteGameFromHistory } from '@/lib/storage'
+import { deleteGameFromHistory, readGameHistorySnapshot, subscribeToGameHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
 import { motion } from 'motion/react'
 import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check, Search, Filter } from 'lucide-react'
@@ -56,10 +56,9 @@ function subscribeToConnectivity(onStoreChange: () => void) {
 }
 const getIsOnline = () => navigator.onLine
 const getIsOnlineServer = () => true
-
-function loadFinishedGames(): Game[] {
-  return loadGameHistory().filter(isFinishedGame)
-}
+// The server has no localStorage: it renders the page as not read yet, and
+// so does hydration, after which the stored list takes over
+const getHistoryOnServer = () => null
 
 function formatDate(dateString: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -82,9 +81,19 @@ function BackHome() {
 }
 
 export default function HistoryPage() {
-  // null until localStorage has been read, so an empty-state screen does not
-  // flash before the list on every visit
-  const [allGames, setAllGames] = React.useState<Game[] | null>(null)
+  // Read from localStorage as an external store, so the list follows every
+  // change to it: a delete, a Sync, a game finished in another tab. null
+  // until it has been read, so an empty-state screen does not flash before
+  // the list on every visit.
+  const storedGames = React.useSyncExternalStore<readonly Game[] | null>(
+    subscribeToGameHistory,
+    readGameHistorySnapshot,
+    getHistoryOnServer
+  )
+  const allGames = React.useMemo(
+    () => (storedGames ? storedGames.filter(isFinishedGame) : null),
+    [storedGames]
+  )
   const [searchQuery, setSearchQuery] = React.useState('')
   const [dateFilter, setDateFilter] = React.useState<DateFilter>('all')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
@@ -97,7 +106,6 @@ export default function HistoryPage() {
   const isSyncing = syncStatus === 'syncing'
 
   React.useEffect(() => {
-    setAllGames(loadFinishedGames())
     isSupabaseAvailable().then(setIsSignedIn)
   }, [])
 
@@ -114,7 +122,6 @@ export default function HistoryPage() {
       // wait in the retry queue, and "Sync" used to only download
       await retryPendingSyncs()
       await mergeGamesWithSupabase()
-      setAllGames(loadFinishedGames())
       setSyncStatus('success')
     } catch (error) {
       console.error('Sync error:', error)
@@ -127,7 +134,6 @@ export default function HistoryPage() {
   const handleDelete = (gameId: string) => {
     if (confirm('Delete this game from history?')) {
       deleteGameFromHistory(gameId)
-      setAllGames((games) => games?.filter((g) => g.id !== gameId) ?? null)
     }
   }
 
