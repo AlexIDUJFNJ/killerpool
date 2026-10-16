@@ -54,6 +54,8 @@ const config = [
       // (sw.js, workbox-*, swe-worker-*, fallback-*)
       "public/**/*.js",
       "scripts/",
+      // Agent worktrees: full copies of the repo, linted in their own checkout
+      ".claude/",
     ],
   },
 ];
