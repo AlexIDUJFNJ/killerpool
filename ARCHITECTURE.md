@@ -877,7 +877,7 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **33 сь
 - `npm run build` (prebuild-хук генерирует иконки: `scripts/generate-icons.js`)
 - Security headers — из `vercel.json` (см. выше)
 - Node 22 (`engines`)
-- Supabase — отдельный managed-проект, слинкованный через Supabase CLI. 00001–00014 исторически применялись вручную через SQL Editor, поэтому журнала миграций на проде нет: перед первым `supabase db push` его заводят `supabase migration repair --status applied 00001 … 00014`. Порядок — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду), подробности о деплое — в [DEPLOYMENT.md](./DEPLOYMENT.md)
+- Supabase — отдельный managed-проект, слинкованный через Supabase CLI. 00001–00014 исторически применялись вручную через SQL Editor, поэтому журнала миграций на проде нет: перед первым `supabase db push` его заводят `supabase migration repair --linked --status applied 00001 … 00014`. Порядок — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду), подробности о деплое — в [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ---
 

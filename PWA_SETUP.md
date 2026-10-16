@@ -6,16 +6,16 @@
 
 ## 📋 Содержание
 
-- [Что реализовано](#что-реализовано)
-- [Архитектура PWA](#архитектура-pwa)
-- [Service Worker](#service-worker)
-- [Офлайн режим](#офлайн-режим)
-- [Офлайн-синхронизация (pending sync retry)](#офлайн-синхронизация-pending-sync-retry)
-- [Иконки и манифест](#иконки-и-манифест)
-- [Установка на устройства](#установка-на-устройства)
-- [Тестирование](#тестирование)
-- [Troubleshooting](#troubleshooting)
-- [Planned / Not implemented](#planned--not-implemented)
+- [Что реализовано](#-что-реализовано)
+- [Архитектура PWA](#️-архитектура-pwa)
+- [Service Worker](#️-service-worker)
+- [Офлайн режим](#-офлайн-режим)
+- [Офлайн-синхронизация (pending sync retry)](#-офлайн-синхронизация-pending-sync-retry)
+- [Иконки и манифест](#-иконки-и-манифест)
+- [Установка на устройства](#-установка-на-устройства)
+- [Тестирование](#-тестирование)
+- [Troubleshooting](#-troubleshooting)
+- [Planned / Not implemented](#️-planned--not-implemented)
 
 ---
 
@@ -32,7 +32,7 @@
 - ✅ **Иконки** - 16x16 до 512x512 и настоящий `favicon.ico`, генерируются из `public/icon.svg`
 - ✅ **Офлайн fallback страница** - `/offline`
 
-> ⚠️ Background Sync API и `lib/sync-manager.ts` (очередь `killerpool_sync_queue`) **удалены** — вместо них простой retry-механизм на localStorage, см. раздел [Офлайн-синхронизация](#офлайн-синхронизация-pending-sync-retry).
+> ⚠️ Background Sync API и `lib/sync-manager.ts` (очередь `killerpool_sync_queue`) **удалены** — вместо них простой retry-механизм на localStorage, см. раздел [Офлайн-синхронизация](#-офлайн-синхронизация-pending-sync-retry).
 
 > ⚠️ **Production-сборка обязана идти через webpack** (`next build --webpack`, так настроен `npm run build`): `@ducanh2912/next-pwa` генерирует `sw.js` через webpack-хук, который Turbopack не выполняет. Turbopack-сборка молча выпускает приложение **без service worker** — регистрация `/sw.js` падает 404, офлайн-кеширование не работает.
 
