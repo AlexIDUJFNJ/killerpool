@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { motion } from 'motion/react'
+import { StreakBadge, ON_FIRE_CARD, isOnFire } from './streak-badge'
 
 export interface PlayerCardProps {
   id: string
@@ -18,6 +19,8 @@ export interface PlayerCardProps {
   className?: string
   variant?: 'default' | 'compact'
   showPosition?: number
+  /** Pots in a row, see getCurrentStreak: a badge from 2, the on-fire look from 3 */
+  streak?: number
 }
 
 // Color based on lives remaining - consistent across all variants
@@ -38,8 +41,10 @@ export function PlayerCard({
   className,
   variant = 'default',
   showPosition,
+  streak = 0,
 }: PlayerCardProps) {
   const lifeColor = getLifeColor(lives)
+  const onFire = !eliminated && isOnFire(streak)
 
   // Compact variant - for all players list
   if (variant === 'compact') {
@@ -92,6 +97,7 @@ export function PlayerCard({
                       Out
                     </Badge>
                   )}
+                  {!eliminated && <StreakBadge streak={streak} size="sm" />}
                 </div>
               </div>
 
@@ -139,6 +145,7 @@ export function PlayerCard({
         className={cn(
           'relative overflow-hidden transition-all',
           isActive && 'ring-2 ring-primary shadow-lg shadow-primary/20',
+          onFire && ['border-2 ring-orange-500/60', ON_FIRE_CARD],
           eliminated && 'opacity-50 grayscale'
         )}
       >
@@ -192,6 +199,8 @@ export function PlayerCard({
                   )}
                 </div>
               </div>
+
+              {!eliminated && <StreakBadge streak={streak} className="mt-3" />}
             </div>
           </div>
 

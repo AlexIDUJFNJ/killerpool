@@ -5,10 +5,12 @@ import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { PlayerCard } from '@/components/game/player-card'
 import { SwipeablePlayerCard } from '@/components/game/swipeable-player-card'
+import { GameAwards } from '@/components/game/game-awards'
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { InviteModal } from '@/components/game/invite-modal'
 import { useGame } from '@/contexts/game-context'
 import { getCurrentPlayer, getActivePlayers, getNextPlayers, getSortedPlayers, MAX_PLAYERS } from '@/lib/game-logic'
+import { getCurrentStreak } from '@/lib/game-insights'
 import { GameAction } from '@/lib/types'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, RotateCcw, Home, Play, UsersRound, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
@@ -328,6 +330,9 @@ export default function GamePage() {
             </p>
           </motion.div>
 
+          {/* Awards and match stats, the same for the host and spectators */}
+          <GameAwards game={game} className="mb-8" />
+
           {/* Authentication Info */}
           {isSignedIn === false && (
             <motion.div
@@ -592,6 +597,7 @@ export default function GamePage() {
                     eliminated={currentPlayer.eliminated}
                     maxLives={game.ruleset.params.max_lives}
                     isActive={true}
+                    streak={getCurrentStreak(game, currentPlayer.id)}
                   />
                 ) : (
                   <SwipeablePlayerCard
@@ -601,6 +607,7 @@ export default function GamePage() {
                     maxLives={game.ruleset.params.max_lives}
                     onSwipe={handleSwipe}
                     disabled={game.status !== 'active'}
+                    streak={getCurrentStreak(game, currentPlayer.id)}
                   />
                 )}
               </motion.div>
@@ -701,6 +708,7 @@ export default function GamePage() {
                 showPosition={index + 1}
                 isActive={currentPlayer?.id === player.id}
                 maxLives={game.ruleset.params.max_lives}
+                streak={getCurrentStreak(game, player.id)}
               />
             </div>
           ))}

@@ -87,6 +87,34 @@ describe('GameDetailsPage', () => {
     expect(screen.queryByText('Game Abandoned')).not.toBeInTheDocument();
   });
 
+  it('should show the awards and match stats of a completed game', async () => {
+    // Alice pots three in a row: MVP and Hot Streak
+    saveGameHistory([
+      makeGame({
+        history: [entry(1, 'pot', 'Alice'), entry(2, 'miss', 'Bob'), entry(3, 'pot', 'Alice'), entry(4, 'pot_black', 'Alice')],
+      }),
+    ]);
+    render(<GameDetailsPage />);
+
+    const awards = within(await screen.findByRole('region', { name: 'Awards' })).getAllByRole('listitem');
+    expect(awards.map((a) => a.textContent)).toEqual([
+      '🏅MVP🎯Alice3 balls potted',
+      '🔥Hot Streak🎯Alicestreak of 3',
+    ]);
+    const rows = within(screen.getByRole('region', { name: 'Match stats' })).getAllByRole('row');
+    // Header, then the winner first
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toHaveTextContent(/Alice.*Winner/);
+  });
+
+  it('should give an abandoned game its stats but no awards', async () => {
+    saveGameHistory([makeGame({ status: 'abandoned', winnerId: 'p1' })]);
+    render(<GameDetailsPage />);
+
+    expect(await screen.findByRole('region', { name: 'Match stats' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Awards' })).not.toBeInTheDocument();
+  });
+
   it('should explain a failed screenshot on the page instead of in alert()', async () => {
     saveGameHistory([makeGame()]);
     (exportScreenshot as jest.Mock).mockRejectedValueOnce(new Error('canvas'));
