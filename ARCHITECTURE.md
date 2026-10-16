@@ -31,7 +31,7 @@ Killerpool — это **client-first** приложение на Next.js 16 App 
 
 - 🎮 **Состояние игры живёт на клиенте** — `GameProvider` (React Context) + чистые функции `lib/game-logic.ts`; первичное хранилище — localStorage
 - 🗄️ **Нет собственного API-слоя** — каталога `app/api` не существует; все обращения к данным идут напрямую через Supabase JS-клиент (PostgREST + RLS)
-- 📡 **Live sharing** — хост апсертит полную строку игры в таблицу `games`, зрители получают обновления через Supabase Realtime (`postgres_changes`). Сам хост на свою строку не подписан
+- 📡 **Live sharing** — хост апсертит полную строку игры в таблицу `games`, зрители получают обновления через Supabase Realtime (`postgres_changes`). Сам хост на свою строку не подписан; писать гостевую игру может только его устройство — оно держит секрет хоста (миграция 00016)
 - 📱 **PWA** — service worker через `@ducanh2912/next-pwa`, установка на домашний экран, офлайн-страница
 - 🔄 **Очередь выгрузки** — завершённая или брошенная игра ставится в очередь `killerpool_pending_sync` до первой попытки и покидает её только после подтверждённой записи (или окончательного отказа)
 - 🔐 **Row Level Security** — доступ к данным контролируется политиками PostgreSQL, а не серверным кодом
@@ -48,6 +48,7 @@ Killerpool — это **client-first** приложение на Next.js 16 App 
 │  │  (pure functions)│  │ roster       │  │               │  │
 │  │                  │  │ pending_sync │  │               │  │
 │  │                  │  │ shared_game  │  │               │  │
+│  │                  │  │ host_secrets │  │               │  │
 │  └────────┬─────────┘  └──────────────┘  └───────────────┘  │
 └───────────┼──────────────────────────────────────────────────┘
             │ Supabase JS client (HTTPS + WebSocket)
@@ -152,7 +153,7 @@ REST-эндпоинтов нет (`app/api` не существует). Клие
 
 - `strict: true` в tsconfig
 - Типы БД в `lib/types/database.types.ts` генерируются из продовой схемы, руками не правятся:
-  `npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts` (после каждой миграции)
+  `npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts` (после каждой миграции). Единственное исключение — `games.host_secret_hash`, вписанная руками до того, как 00016 дойдёт до прода; после неё файл перегенерируется
 - Единый маппинг между строкой БД и доменным типом в обе стороны: `mapDbGameToGame` и `mapGameToDbRow` (`lib/game-mapper.ts`)
 
 ---
@@ -166,7 +167,9 @@ killerpool/
 │   ├── layout.tsx                # Root layout (lang="en", metadataBase,
 │   │                             #   GameProvider, PWAInit, MotionProvider,
 │   │                             #   инлайн-скрипт темы)
-│   ├── page.tsx                  # Home page (правила, тема, ссылка на /help)
+│   ├── page.tsx                  # Home page (правила, тема, ссылка на /help);
+│   │                             #   рендерится на сервере, ждёт только баннер
+│   │                             #   Resume и кнопка входа
 │   ├── globals.css               # Tailwind 4: @theme токены, @custom-variant dark
 │   ├── error.tsx / loading.tsx / not-found.tsx
 │   ├── global-error.tsx          # Падения самого layout (вне error.tsx)
@@ -224,6 +227,8 @@ killerpool/
 │   │                             #   очередь выгрузки, надгробия, шаринг
 │   ├── sync.ts                   # Запись в Supabase: владелец, порядок
 │   │                             #   записей, очередь с ретраями
+│   ├── host-secret.ts            # Секрет хоста игры (00016): localStorage,
+│   │                             #   SHA-256, заголовок x-host-secret
 │   ├── realtime.ts               # Подписки на postgres_changes
 │   ├── achievements.ts           # checkAchievements (RPC) + событие о поздних
 │   ├── pwa-install.ts            # Перехват beforeinstallprompt (вне React)
@@ -238,8 +243,8 @@ killerpool/
 │   └── __tests__/                # Тесты lib-слоя
 │
 ├── supabase/
-│   ├── migrations/               # 00001–00015 (см. раздел про БД)
-│   ├── debug/leaderboard.sql     # Отладочные запросы для SQL Editor
+│   ├── migrations/               # 00001–00016 (см. раздел про БД)
+│   ├── debug/leaderboard.sql     # Отладочные запросы для SQL Editor (v6)
 │   └── test/                     # Локальный Postgres + проверка RLS под ролями
 ├── public/                       # manifest.json, иконки, favicon.ico (ICO),
 │                                 #   sw.js и workbox-* (генерируются)
@@ -269,7 +274,9 @@ killerpool/
 
 Почти все игровые экраны — Client Components (`'use client'`): игра интерактивна и живёт в браузере. Ленивой загрузки компонентов нет: обёртки `next/dynamic` лежали в `components/lazy-components.tsx`, но ни один экран их не импортировал, поэтому файл удалён как мёртвый. Динамически импортируется только `html2canvas-pro` — в момент нажатия «скриншот». Если понадобится вынести `qrcode` из основного чанка, `dynamic()` ставится прямо в месте импорта.
 
-На игровом экране и в форме новой игры нет системных `alert`/`confirm`: подтверждение End Game — в `BottomSheet` (там же сказано, что значит закончить: победителя нет, игра остаётся в истории как незаконченная, зрители видят конец), ошибка формы — inline рядом с кнопкой Start, неудача включения шаринга — текстом и кнопкой «Try again» в invite modal. В истории и при скачивании QR браузерные диалоги ещё остались.
+Системных `alert`/`confirm` в приложении нет. Подтверждение End Game — в `BottomSheet` (там же сказано, что значит закончить: победителя нет, игра остаётся в истории как незаконченная, зрители видят конец), удаление игры из истории — тоже в `BottomSheet` «Delete this game?»: игра удаляется только с этого устройства, а выгруженная копия по-прежнему считается в лидерборде. Ошибка формы новой игры — inline рядом с кнопкой Start; неудача включения шаринга — текстом и кнопкой «Try again» в invite modal, неудача скачивания QR — строкой под кнопкой; исход экспорта на странице игры в истории (ошибка CSV или скриншота, «summary copied») — под кнопками экспорта, в live-регионе (`role="alert"` для ошибки, `role="status"` для сообщения).
+
+Главная (`app/page.tsx`) рендерится на сервере целиком: сохранённая игра лежит в localStorage и известна только после гидрации, поэтому ждёт её один баннер «Resume», а кнопка Sign In / Profile появляется, когда `GameProvider` прочитал сессию (`currentUserId`). Своей подписки на auth у страницы нет.
 
 ### Layer 2: Business Logic
 
@@ -312,12 +319,13 @@ const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : user
 
 ### Layer 3: Data Access & Sync
 
-**Файлы:** `lib/storage.ts`, `lib/sync.ts`, `lib/realtime.ts`, `lib/game-mapper.ts`, `lib/supabase/*`
+**Файлы:** `lib/storage.ts`, `lib/sync.ts`, `lib/host-secret.ts`, `lib/realtime.ts`, `lib/game-mapper.ts`, `lib/supabase/*`
 
 - `storage.ts` — localStorage-ключи: `killerpool_current_game`, `killerpool_game_history` (последние 50, completed и abandoned), `killerpool_guest_id`, `killerpool_roster`, `killerpool_pending_sync` + `killerpool_pending_sync_meta` (очередь и попытки), `killerpool_deleted_games` (надгробия), `killerpool_shared_game` (id расшаренной игры); `killerpool_rematch_players` — в sessionStorage. Историю страница `/history` читает как внешний стор через `useSyncExternalStore` (`subscribeToGameHistory` + `readGameHistorySnapshot`): `saveGameHistory` оповещает своё окно событием, другие вкладки узнают из `storage`
 - `sync.ts` — `syncFinishedGame` (completed или abandoned, через очередь), `syncActiveGameToSupabase` (любой статус, для live sharing, без очереди), `retryPendingSyncs` (дренаж очереди), `mergeGamesWithSupabase` (кнопка Sync на `/history`), `loadGamesFromSupabase`, `isSupabaseAvailable`. Массовой выгрузки всей истории (`syncAllGamesToSupabase`) больше нет: невыгруженное ждёт в очереди
+- `host-secret.ts` — секрет хоста (00016): `createHostSecret` (зовёт `startGame`), `getHostSecret`, `hashHostSecret`, ключ `killerpool_host_secrets` (последние 50 игр). Секрет есть только у игры, начатой на этом устройстве; `upsertGameRow` кладёт его SHA-256 в строку и сам секрет — в заголовок `x-host-secret`, см. [Владелец строки](#владелец-строки-и-порядок-записей)
 - `realtime.ts` — `subscribeToGame` / `unsubscribeFromGame`: только для зрителя, уникальный топик на каждую подписку
-- `game-mapper.ts` — единственная точка конверсии строки `games` ↔ `Game` (snake_case ↔ camelCase, фолбэк `currentPlayerIndex` для старых строк, `ruleset = DEFAULT_RULESET`); его же использует realtime-обработчик
+- `game-mapper.ts` — единственная точка конверсии строки `games` ↔ `Game` (snake_case ↔ camelCase, фолбэк `currentPlayerIndex` для старых строк, `ruleset = DEFAULT_RULESET`); его же использует realtime-обработчик. `host_secret_hash` в `Game` не попадает: объект игры уходит в историю, экспорт и к зрителям
 
 ### Layer 4: Infrastructure
 
@@ -336,7 +344,7 @@ export async function proxy(request: NextRequest) {
 
 ## Потоки данных
 
-**Кто вошёл.** `GameProvider.currentUserId` следует за `onAuthStateChange`: `undefined`, пока сессия не прочитана, `null` у гостя, uid у вошедшего — и меняется сразу при входе, выходе или смене аккаунта в другой вкладке. Из него `/game/new` берёт, под кем создать игру, а экран победителя — «это я выиграл?» и какие плашки показывать (пока `undefined`, не показывает ни одной). Под кем уходит запись в Supabase, решает отдельный кеш личности в `lib/sync.ts`, который сверяется с сервером.
+**Кто вошёл.** `GameProvider.currentUserId` следует за `onAuthStateChange`: `undefined`, пока сессия не прочитана, `null` у гостя, uid у вошедшего — и меняется сразу при входе, выходе или смене аккаунта в другой вкладке. Из него `/game/new` берёт, под кем создать игру, экран победителя — «это я выиграл?» и какие плашки показывать (пока `undefined`, не показывает ни одной), а главная — показать Sign In или Profile. Под кем уходит запись в Supabase, решает отдельный кеш личности в `lib/sync.ts`, который сверяется с сервером.
 
 ### 1. Локальная игра (без шаринга)
 
@@ -348,7 +356,9 @@ createGame(игроки с id из ростера, DEFAULT_RULESET, userId «э�
         │
         ▼
 GameProvider.startGame(game)          ← шаринг выключен; идущая игра,
-        │                                если была, уходит в abandoned
+        │                                если была, уходит в abandoned;
+        │                                createHostSecret(game.id) — секрет
+        │                                хоста в killerpool_host_secrets
         ▼
 performAction('miss'|'pot'|'pot_black')   ← свайп, кнопка или стрелка
         │
@@ -373,24 +383,37 @@ UI re-render (optimistic, мгновенно, офлайн работает)
 
 ### 2. Live sharing / зритель
 
-**Хост** (`enableSharing()` в game-context):
+**Хост** (`InviteModal` → `enableSharing()` в game-context):
 
 ```
+Invite Players (components/game/invite-modal.tsx)
+   │                                 ссылки и QR ещё нет: «Enabling live sharing...»
+   ▼
 enableSharing()
    │
    ▼
 syncActiveGameToSupabase(game)    ← upsert ПОЛНОЙ строки games (onConflict: 'id');
-   │                                 строка должна существовать до того,
-   │                                 как ссылка попадёт к зрителю
+   │                                 в строке host_secret_hash = sha256(секрет),
+   │                                 первый INSERT его фиксирует; сам секрет —
+   │                                 в заголовке x-host-secret
+   ├─ не удалось → «Live sharing couldn't be turned on» + Try again; ссылки нет
    ▼
 markCurrentGameShared(game.id)    ← killerpool_shared_game: переживает перезагрузку
-setIsSharingEnabled(true)
+setIsSharingEnabled(true)         ← только теперь модалка показывает ссылку и QR
    │
    ▼
 Каждое новое состояние игры (ход, undo, новый игрок)
-   → эффект шаринга → syncActiveGameToSupabase(game)
+   → эффект шаринга → syncActiveGameToSupabase(game), с тем же заголовком
      (завершённое состояние пишет конвейер завершения, см. ниже)
 ```
+
+Ссылка ждёт первой записи по двум причинам. Зрителю без строки показывать
+нечего. И главное — вставка в `games` открыта, а хеш секрета задаёт первая
+строка с этим id: покажи модалка ссылку раньше, кто-то успел бы вставить строку
+с этим id первым и забрать игру себе (со своим хешем — записи хоста отвергаются,
+без хеша — игра открыта любому). Пока запись в пути или если она не удалась
+(офлайн), ссылки и QR нет. Зритель, открывший модалку, видит ссылку сразу —
+его игра уже в базе.
 
 Хост **не подписан** на свою строку: он единственный её писатель, а прежняя
 подписка вливала каждое эхо обратно в локальное состояние, и запоздавшее эхо
@@ -525,6 +548,26 @@ Postgres (`42501`, `42703`, `22P02`, `22001`, `22003`, `22007`, `22008`,
 (`getUser` кешируется и сбрасывается на смену аккаунта), профиль
 `player_profiles` создаётся один раз на аккаунт.
 
+**Секрет хоста (00016, `lib/host-secret.ts`).** `startGame` создаёт для игры
+32 случайных байта и кладёт их в localStorage `killerpool_host_secrets`
+(`{ [gameId]: secret }`, последние 50; повторный старт той же игры секрет не
+меняет). `upsertGameRow` берёт секрет игры (`getHostSecret`), кладёт в строку
+`host_secret_hash = hex(sha256(секрет))` (`hashHostSecret`, Web Crypto) и шлёт
+сам секрет заголовком `x-host-secret` — на этот запрос, а не на общий клиент:
+браузерный клиент один на всё приложение, а секрет принадлежит одной игре.
+`games_update_anon` пускает запись `anon` в строку с хешем только с верным
+секретом; хеш неизменяем после INSERT (триггер `games_keep_host_secret`).
+
+Секрета нет у игры, которую начал старый бандл, у игры аккаунта, пришедшей с
+другого устройства через merge, и там, где секрет не сохранить или не
+захешировать (нет localStorage, нет `crypto.subtle` вне secure context): такая
+игра пишется без хеша и защищена так же, как до 00016. Если база ещё без
+колонки (миграция не применена или PostgREST не перечитал схему), запись
+получает `PGRST204` с именем `host_secret_hash`; клиент один раз повторяет её
+без колонки, иначе завершённая игра ушла бы из очереди как отвергнутая.
+Потерянный секрет (очищены данные сайта посреди партии) запирает хоста: его
+гостевую игру с хешем больше не записать, отказ `42501` окончателен.
+
 **Порядок (`writeGameRow`).** Для одной игры в полёте не больше одной записи;
 всё, что пришло за это время, ждёт, и уходит только последнее ожидающее
 состояние — каждая запись это полная строка, промежуточные ничего не добавляют.
@@ -630,7 +673,7 @@ Supabase не существует, и ключ, обходящий RLS, в пр
 
 ## Схема базы данных и RLS
 
-Миграции: `supabase/migrations/00001–00015`. Подробности по каждой — в [supabase/README.md](./supabase/README.md).
+Миграции: `supabase/migrations/00001–00016`. Подробности по каждой — в [supabase/README.md](./supabase/README.md#-миграции-все-16), порядок выкладки — в разделе [Деплой](#деплой).
 
 ### Таблицы
 
@@ -652,6 +695,7 @@ CREATE TABLE games (
     CONSTRAINT valid_history CHECK (jsonb_typeof(history) = 'array')
 );
 -- + current_player_index INTEGER DEFAULT 0 (миграция 00010, для spectator sync)
+-- + host_secret_hash TEXT (миграция 00016, секрет хоста)
 ```
 
 Что добавила `00015`:
@@ -660,11 +704,16 @@ CREATE TABLE games (
 - **Размер и победитель** (CHECK): `games_participants_max` (≤ 32 участника), `games_history_max` (≤ 1000 записей), `games_payload_size` (`participants` + `history` ≤ 512 КиБ JSON-текста), `games_winner_is_participant` (`winner_id` — NULL или id участника). Нарушение — `23514`, клиент считает его окончательным
 - **Удаление аккаунта** (`ON DELETE SET NULL`) не считается записью: даты сохраняются, незаконченные игры становятся `abandoned`
 
+Что добавила `00016`:
+
+- **`host_secret_hash`** — `hex(sha256(секрет хоста))`, CHECK `games_host_secret_hash_format` (NULL или 64 символа `[0-9a-f]`). Пишет его первый INSERT с устройства хоста; триггер `games_keep_host_secret` (BEFORE UPDATE) на каждом UPDATE возвращает старое значение, так что хеш нельзя ни подменить, ни стереть, ни поставить на строку, вставленную без него. `NULL` — игра старого клиента или браузера без `crypto.subtle`
+- **`games_update_anon`** — условия 00015 плюс совпадение хеша с заголовком `x-host-secret` (см. таблицу ниже)
+
 - **player_profiles** — `user_id → auth.users`, `display_name`, `avatar_url`; создаётся лениво при первой записи под аккаунтом (`ensurePlayerProfile` в `lib/sync.ts`)
 - **rulesets** — JSONB `params`; дефолтный сид "Classic Killer Pool" после миграции 00011: `starting_lives: 3, miss: -1, pot: 0, pot_black: 1, max_lives: 6` (совпадает с `DEFAULT_RULESET` в `lib/types.ts`); с 00015 дефолтный ruleset ровно один (уникальный индекс `idx_rulesets_one_default`)
 - **user_achievements** (00007) — `UNIQUE(user_id, achievement_type)`, `game_id` nullable
 
-### Финальные RLS-политики games (00009, ужесточены в 00014 и 00015)
+### Финальные RLS-политики games (00009, ужесточены в 00014, 00015 и 00016)
 
 | Политика | Операция | Роли | Условие |
 |----------|----------|------|---------|
@@ -672,12 +721,12 @@ CREATE TABLE games (
 | `games_insert_authenticated` | INSERT | authenticated | `WITH CHECK (created_by = auth.uid())` |
 | `games_insert_anon` | INSERT | anon | `WITH CHECK (created_by IS NULL)` |
 | `games_update_authenticated` | UPDATE | authenticated | `USING` и `WITH CHECK`: `created_by = auth.uid()` |
-| `games_update_anon` | UPDATE | anon | `USING (created_by IS NULL AND created_at > now() - interval '24 hours' AND (status = 'active' OR updated_at > now() - interval '1 hour'))`, `WITH CHECK (created_by IS NULL)` |
+| `games_update_anon` | UPDATE | anon | `USING (created_by IS NULL AND created_at > now() - interval '24 hours' AND (status = 'active' OR updated_at > now() - interval '1 hour') AND (host_secret_hash IS NULL OR host_secret_hash = <sha256 заголовка x-host-secret из request.headers>))`, `WITH CHECK (created_by IS NULL)` |
 | `games_delete_authenticated` | DELETE | authenticated | `USING (created_by = auth.uid())` |
 
 Публикация `supabase_realtime` включает `games` начиная с 00009.
 
-Что закрыли 00014 и 00015 и почему именно так — в SECURITY.md. Коротко: до 00014
+Что закрыли 00014–00016 и почему именно так — в [SECURITY.md](./SECURITY.md#row-level-security-rls). Коротко: до 00014
 любой залогиненный пользователь одним запросом присваивал себе чужую гостевую
 игру, и её настоящий хост, будучи `anon`, терял доступ навсегда. С 00015 гостевая
 игра записываема для `anon` не дольше суток от серверного `created_at`, а
@@ -686,6 +735,12 @@ CREATE TABLE games (
 после победы легальна, поэтому жёсткое «завершённую не трогать» сломало бы
 нормальный ход партии. Заливка офлайн-игры через несколько дней — это INSERT, на
 него ограничения не действуют.
+
+С 00016 внутри этого окна гостевую игру с хешем пишет только устройство хоста:
+хост и зритель — одна роль с одной ссылкой, разделяет их только секрет. Открытыми
+остаются игры без хеша (до конца своих суток) и первый INSERT: вставка не
+ограничена, и первая строка с данным id задаёт хеш. Поэтому invite modal
+показывает ссылку только после первой записи хоста (см. [Live sharing](#2-live-sharing--зритель)).
 
 ### RLS user_achievements (после миграции 00011)
 
@@ -838,19 +893,20 @@ Service worker регистрирует **только next-pwa** — скрип
 
 ## Тестирование
 
-Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **35 сьютов, 487 тестов** (`npm test`, 2026-10-16):
+Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **37 сьютов, 533 теста** (`npm test`, 2026-10-16):
 
 | Область | Файлы |
 |---------|-------|
 | Игровая логика | `lib/__tests__/game-logic.test.ts` |
 | Хранилище, ростер, очередь синка | `lib/__tests__/storage.test.ts` |
-| Синк с Supabase (владелец, порядок записей, ретраи) | `lib/__tests__/sync.test.ts` |
+| Синк с Supabase (владелец, порядок записей, ретраи, заголовок и хеш секрета, фолбэк на `PGRST204`) | `lib/__tests__/sync.test.ts` |
+| Секрет хоста (хранение, вытеснение, SHA-256 как в политике) | `lib/__tests__/host-secret.test.ts` |
 | Realtime | `lib/__tests__/realtime.test.ts`, `hooks/__tests__/use-realtime-game.test.tsx` |
 | Машина состояний игры | `contexts/__tests__/game-context.test.tsx` |
 | Маппер БД (в обе стороны) | `lib/__tests__/game-mapper.test.ts` |
 | Ачивки | `lib/__tests__/achievements.test.ts`, `components/achievements/__tests__/` |
 | Экспорт, install-промпт, утилиты | `lib/__tests__/{export,pwa-install,utils}.test.ts` |
-| Страницы | `app/{auth,game,history,profile,stats}/__tests__/`, `app/__tests__/` (страница ошибки) |
+| Страницы | `app/{auth,game,history,profile,stats}/__tests__/`, `app/__tests__/` (главная, страница ошибки) |
 | Тема | `components/__tests__/theme.test.tsx` (инлайн-скрипт и модуль согласованы) |
 | UI- и игровые компоненты | `components/ui/__tests__/`, `components/game/__tests__/`, `components/leaderboard/__tests__/` |
 | Гейт Sentry | `__tests__/instrumentation.test.ts` |
@@ -858,8 +914,8 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **35 сь
 Линтер (`npm run lint`) выдаёт одно предупреждение, и оно обосновано в `eslint.config.mjs`: `react-hooks/set-state-in-effect` на восстановлении игры из localStorage в `GameProvider` после гидрации. Чтения хранилища, которые лишь отображают его (история, тема), идут через `useSyncExternalStore`, как и состояние сети.
 
 Покрытие (`npm run test:coverage`, по строкам): `game-logic` 97%, `storage` 94%,
-`sync` 93%, `game-context` 94%, `realtime` 95%; по всему проекту, вместе с
-`app/**`, — около 72%.
+`sync` 94%, `game-context` 95%, `realtime` 95%, `host-secret` 100%; по всему
+проекту, вместе с `app/**`, — около 75%.
 
 `jest.setup.ts` не подменяет `localStorage` и `sessionStorage` — jsdom даёт оба
 по-настоящему и раздельно, они лишь очищаются перед каждым тестом. Инъекция
@@ -883,7 +939,8 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **35 сь
 - `npm run build` (prebuild-хук генерирует иконки: `scripts/generate-icons.js`)
 - Security headers — из `vercel.json` (см. выше)
 - Node 22 (`engines`)
-- Supabase — отдельный managed-проект, слинкованный через Supabase CLI. 00001–00014 исторически применялись вручную через SQL Editor, поэтому журнала миграций на проде нет: перед первым `supabase db push` его заводят `supabase migration repair --linked --status applied 00001 … 00014`. Порядок — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду), подробности о деплое — в [DEPLOYMENT.md](./DEPLOYMENT.md)
+- Supabase — отдельный managed-проект, слинкованный через Supabase CLI. 00001–00014 исторически применялись вручную через SQL Editor, поэтому журнала миграций на проде нет: перед первым `supabase db push` его заводят `supabase migration repair --linked --status applied 00001 … 00014`
+- **Порядок выкладки 00015 и 00016: сначала база, потом клиент.** `repair` 00001–00014 → `migration list` → `db push --dry-run` (ровно две: 00015 и 00016) → `db push` → проверка `convalidated` после 00015 → проверка gateway для 00016 (три curl-запроса: доходит ли `x-host-secret` до PostgREST) → только потом merge `dev` в `main`, то есть деплой клиента. Новый клиент шлёт колонку `host_secret_hash`: на старой схеме он получит `PGRST204` и, повторив запись без неё, выложит игры без защиты, а если gateway теряет заголовок, первая же запись запрёт каждого гостя-хоста в его игре. Старый клиент на новой схеме работает как прежде. Команды — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду), подробности о деплое — в [DEPLOYMENT.md](./DEPLOYMENT.md#supabase-cli)
 
 ---
 
@@ -900,11 +957,12 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **35 сь
 7. **Расширения лидерборда** — недельные/месячные таблицы, рейтинги среди друзей
 8. **Push-уведомления** о приглашениях в игру
 9. **Кастомные rulesets в UI** — таблица `rulesets` есть, но клиент всегда использует `DEFAULT_RULESET` (classic), а INSERT в неё с 00015 закрыт
-10. **Секрет хоста для расшаренной игры** — пока партия идёт, хост и зритель на уровне БД неразличимы (см. SECURITY.md): зритель может править идущую гостевую игру. Отличить их может только секрет, которого у зрителя нет
-11. **Остаток подделки лидерборда** — 00015 закрыла её для аккаунтов, но гостевая идентичность подделывается по-прежнему (guest-UUID и id участников видны в любой публичной строке), а залогиненный может накрутить себе статистику собственными играми
-12. **Ограничение числа анонимных вставок** — CHECK-ограничения 00015 ограничивают размер строки, но не их количество; rate limiting нет
-13. **Склейка гостевой и аккаунтной личности в облаке** — `/stats` на устройстве считает и гостевые, и аккаунтные игры, но гостевые игры не восстанавливаются из облака на другом устройстве (`created_by` у них `NULL`)
-14. **Системные диалоги вне игрового экрана** — история (удаление игры, экспорт) и скачивание QR в invite modal ещё используют `alert`/`confirm`
+10. **Остаток подделки лидерборда** — 00015 закрыла её для аккаунтов, но гостевая идентичность подделывается по-прежнему (guest-UUID и id участников видны в любой публичной строке), а залогиненный может накрутить себе статистику собственными играми
+11. **Ограничение числа анонимных вставок** — CHECK-ограничения 00015 ограничивают размер строки, но не их количество; rate limiting нет
+12. **Склейка гостевой и аккаунтной личности в облаке** — `/stats` на устройстве считает и гостевые, и аккаунтные игры, но гостевые игры не восстанавливаются из облака на другом устройстве (`created_by` у них `NULL`)
+13. **Остаток после секрета хоста** — гостевые игры без хеша (старый бандл, браузер без `crypto.subtle`) переписывает любой, у кого есть id, до конца их суток; первая строка с данным id задаёт хеш, а id выбирает клиент — invite modal это окно сужает, но закрыл бы его только id, выданный сервером (см. [SECURITY.md](./SECURITY.md#planned--not-implemented))
+
+Сделано из прежнего списка: секрет хоста для расшаренной игры (00016, см. [Владелец строки](#владелец-строки-и-порядок-записей)) и уход от системных `alert`/`confirm` в истории и invite modal (см. [Layer 1](#layer-1-presentation-ui)).
 
 ---
 
