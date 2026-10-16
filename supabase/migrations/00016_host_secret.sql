@@ -116,8 +116,15 @@
 --    anyone for their 24 hours.
 --  * Inserting is still open: anyone may INSERT a new game with any id they
 --    pick, and with any participants (00015, "a GUEST identity is still
---    forgeable"). An id is generated on the host's device and is not public
---    before that device's first write, which already carries the hash.
+--    forgeable"). That includes the id of a game whose first write has not
+--    landed yet. The id is minted on the host's device, but the invite modal
+--    shows the link while that write is in flight, and still shows it when
+--    it failed (offline). Whoever INSERTs the id first decides its hash: with
+--    their own, the host's writes are refused from then on (one game lost to
+--    the server, not a running game taken over); with none, the game is
+--    unprotected as before 00016. It takes a deliberate request in that
+--    window. Closing it is client work: show the link only once sharing
+--    succeeded.
 --  * The secret is a bearer token: whoever reads the host's localStorage, or
 --    a log that records request headers, can write the game until its
 --    24 hours are up.
