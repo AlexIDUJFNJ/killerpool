@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'motion/react'
@@ -23,10 +23,14 @@ export default function ProfilePage() {
   const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
 
-  const loadUser = useCallback(async () => {
-    const supabase = createClient()
-    try {
+  useEffect(() => {
+    // Nothing is set once the page has gone: the profile request can outlive it
+    let cancelled = false
+
+    const loadUser = async () => {
+      const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
+      if (cancelled) return
 
       if (!user) {
         router.push('/auth')
@@ -41,6 +45,7 @@ export default function ProfilePage() {
         .select('*')
         .eq('user_id', user.id)
         .single()
+      if (cancelled) return
 
       if (profile) {
         setDisplayName(profile.display_name)
@@ -58,17 +63,24 @@ export default function ProfilePage() {
             onConflict: 'user_id',
           })
       }
-    } catch (err: unknown) {
-      console.error('Error loading user:', err)
-      setError('Failed to load profile')
-    } finally {
-      setLoading(false)
+    }
+
+    // loadUser sets state only after an await, so none of it lands while the
+    // effect itself runs
+    loadUser()
+      .catch((err: unknown) => {
+        if (cancelled) return
+        console.error('Error loading user:', err)
+        setError('Failed to load profile')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
     }
   }, [router])
-
-  useEffect(() => {
-    loadUser()
-  }, [loadUser])
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
