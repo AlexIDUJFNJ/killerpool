@@ -9,6 +9,7 @@ import { motion } from 'motion/react'
 import { Play, History, Trophy, Users, CircleUser, LogIn, Award } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { PWAInstallButton } from '@/components/pwa-install-button'
+import { ThemeToggle } from '@/components/theme-toggle'
 import type { User } from '@supabase/supabase-js'
 import { ACTION_STYLES, formatLivesDelta } from '@/components/game/action-styles'
 import { DEFAULT_RULESET, type GameAction } from '@/lib/types'
@@ -201,6 +202,15 @@ export default function Home() {
         >
           <PWAInstallButton className="w-full h-14" />
         </motion.div>
+
+        <motion.footer
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+          className="mt-8 flex justify-center"
+        >
+          <ThemeToggle />
+        </motion.footer>
       </div>
     </main>
   )

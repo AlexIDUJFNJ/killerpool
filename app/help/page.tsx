@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Play, Users, Trophy, QrCode, Cloud, Share2, Sun } from 'lucide-react'
 import type { Metadata } from 'next'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { cn } from '@/lib/utils'
 import { ACTION_STYLES } from '@/components/game/action-styles'
 
@@ -122,11 +123,12 @@ export default function HelpPage() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Sun className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Theme Switcher</h3>
+                <h3 className="font-semibold">Theme</h3>
               </div>
-              <p className="text-muted-foreground ml-7">
-                The app uses a dark theme by default. If you have not chosen one, it follows your system setting.
+              <p className="text-muted-foreground ml-7 mb-3">
+                Killerpool starts in dark mode. Pick Light, Dark or System here or at the bottom of the home screen — System follows your device and switches with it. The choice is remembered on this device.
               </p>
+              <ThemeToggle className="ml-7" />
             </div>
           </CardContent>
         </Card>
