@@ -273,7 +273,7 @@ Coverage is collected from `app/`, `lib/`, `components/`, `hooks/` and
 `contexts/` (`collectCoverageFrom` in `jest.config.ts`). `contexts/` was added
 deliberately: the state machine that lives there is where the real bugs were,
 and for a long time it was not even measured. Pages under `app/` have tests of
-their own now (auth, new game, game screen, history, stats).
+their own now (auth, new game, game screen, history, stats, profile, the error page).
 
 New code under `lib/` is expected to come with tests. Pure logic is the priority
 — the game rules in `lib/__tests__/game-logic.test.ts` are, in practice, the

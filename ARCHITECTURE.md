@@ -90,7 +90,7 @@ Killerpool — это **client-first** приложение на Next.js 16 App 
 | **TypeScript** | 5.9 (strict) | Type safety |
 | **Tailwind CSS** | 4.3 | Utility-first CSS, токены через `@theme` в `app/globals.css` |
 | **shadcn/ui** | — | UI компоненты (Radix UI + CVA) |
-| **Motion** | 12 | Анимации (`motion/react`, бывший Framer Motion); `MotionConfig reducedMotion="user"` |
+| **Motion** | 12 | Анимации (`motion/react`, бывший Framer Motion); `MotionConfig reducedMotion="user"`, CSS-анимации гасит `@media (prefers-reduced-motion: reduce)` в `app/globals.css` |
 | **Lucide React** | 0.577 | Иконки |
 | **qrcode** | 1.5 | QR-код в invite modal |
 | **html2canvas-pro** | 2.5 | Экспорт скриншота игры (импортируется динамически) |
@@ -204,7 +204,7 @@ killerpool/
 │   ├── leaderboard/              # leaderboard-card, leaderboard-list
 │   ├── theme.ts                  # Тема: THEME_SCRIPT, чтение/запись выбора
 │   ├── theme-toggle.tsx          # Переключатель Light / Dark / System
-│   ├── motion-provider.tsx       # prefers-reduced-motion для всех анимаций
+│   ├── motion-provider.tsx       # prefers-reduced-motion для motion-компонентов
 │   ├── pwa-init.tsx              # retryPendingSyncs + install-промпт
 │   └── pwa-install-button.tsx    # Кнопка установки (на главной)
 │
@@ -295,6 +295,8 @@ export function addPlayerToGame(
 ): Game
 ```
 
+`createGame` и `addPlayerToGame` бросают ошибку сверх `MAX_PLAYERS = 32` игроков (выбывшие считаются): столько допускает CHECK `games_participants_max` в 00015, и игра крупнее никогда бы не выгрузилась. Форма новой игры и экран игры отключают добавление у предела.
+
 `applyAction` меняет жизни по правилам ruleset (`miss: -1`, `pot: 0`, `pot_black: +1`), ограничивает их `max_lives` (6), помечает элиминацию при `lives <= 0`, пишет запись в `history` и определяет победителя (последний неэлиминированный игрок → `status: 'completed'`). На неактивной игре бросает `'Game is not active'`. `abandonGame` переводит активную игру в `'abandoned'` со свежим `updatedAt`.
 
 Две разные «личности» в `createGame`:
@@ -304,7 +306,7 @@ export function addPlayerToGame(
 
 ```typescript
 // app/game/new/page.tsx
-const userId = user?.id || getGuestId()
+const userId = currentUserId || getGuestId()   // currentUserId из useGame()
 const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId, userId)
 ```
 
@@ -312,8 +314,8 @@ const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : user
 
 **Файлы:** `lib/storage.ts`, `lib/sync.ts`, `lib/realtime.ts`, `lib/game-mapper.ts`, `lib/supabase/*`
 
-- `storage.ts` — localStorage-ключи: `killerpool_current_game`, `killerpool_game_history` (последние 50, completed и abandoned), `killerpool_guest_id`, `killerpool_roster`, `killerpool_pending_sync` + `killerpool_pending_sync_meta` (очередь и попытки), `killerpool_deleted_games` (надгробия), `killerpool_shared_game` (id расшаренной игры); `killerpool_rematch_players` — в sessionStorage
-- `sync.ts` — `syncFinishedGame` (completed или abandoned, через очередь), `syncActiveGameToSupabase` (любой статус, для live sharing, без очереди), `retryPendingSyncs` (дренаж очереди), `mergeGamesWithSupabase` (кнопка Sync на `/history`), `loadGamesFromSupabase`, `isSupabaseAvailable`; `syncAllGamesToSupabase` экспортируется, но из UI больше не вызывается
+- `storage.ts` — localStorage-ключи: `killerpool_current_game`, `killerpool_game_history` (последние 50, completed и abandoned), `killerpool_guest_id`, `killerpool_roster`, `killerpool_pending_sync` + `killerpool_pending_sync_meta` (очередь и попытки), `killerpool_deleted_games` (надгробия), `killerpool_shared_game` (id расшаренной игры); `killerpool_rematch_players` — в sessionStorage. Историю страница `/history` читает как внешний стор через `useSyncExternalStore` (`subscribeToGameHistory` + `readGameHistorySnapshot`): `saveGameHistory` оповещает своё окно событием, другие вкладки узнают из `storage`
+- `sync.ts` — `syncFinishedGame` (completed или abandoned, через очередь), `syncActiveGameToSupabase` (любой статус, для live sharing, без очереди), `retryPendingSyncs` (дренаж очереди), `mergeGamesWithSupabase` (кнопка Sync на `/history`), `loadGamesFromSupabase`, `isSupabaseAvailable`. Массовой выгрузки всей истории (`syncAllGamesToSupabase`) больше нет: невыгруженное ждёт в очереди
 - `realtime.ts` — `subscribeToGame` / `unsubscribeFromGame`: только для зрителя, уникальный топик на каждую подписку
 - `game-mapper.ts` — единственная точка конверсии строки `games` ↔ `Game` (snake_case ↔ camelCase, фолбэк `currentPlayerIndex` для старых строк, `ruleset = DEFAULT_RULESET`); его же использует realtime-обработчик
 
@@ -333,6 +335,8 @@ export async function proxy(request: NextRequest) {
 ---
 
 ## Потоки данных
+
+**Кто вошёл.** `GameProvider.currentUserId` следует за `onAuthStateChange`: `undefined`, пока сессия не прочитана, `null` у гостя, uid у вошедшего — и меняется сразу при входе, выходе или смене аккаунта в другой вкладке. Из него `/game/new` берёт, под кем создать игру, а экран победителя — «это я выиграл?» и какие плашки показывать (пока `undefined`, не показывает ни одной). Под кем уходит запись в Supabase, решает отдельный кеш личности в `lib/sync.ts`, который сверяется с сервером.
 
 ### 1. Локальная игра (без шаринга)
 
@@ -834,7 +838,7 @@ Service worker регистрирует **только next-pwa** — скрип
 
 ## Тестирование
 
-Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **33 сьюта, 437 тестов** (`npm test`, 2026-10-16):
+Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **35 сьютов, 487 тестов** (`npm test`, 2026-10-16):
 
 | Область | Файлы |
 |---------|-------|
@@ -846,14 +850,16 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **33 сь
 | Маппер БД (в обе стороны) | `lib/__tests__/game-mapper.test.ts` |
 | Ачивки | `lib/__tests__/achievements.test.ts`, `components/achievements/__tests__/` |
 | Экспорт, install-промпт, утилиты | `lib/__tests__/{export,pwa-install,utils}.test.ts` |
-| Страницы | `app/{auth,game,history,stats}/__tests__/` |
+| Страницы | `app/{auth,game,history,profile,stats}/__tests__/`, `app/__tests__/` (страница ошибки) |
 | Тема | `components/__tests__/theme.test.tsx` (инлайн-скрипт и модуль согласованы) |
 | UI- и игровые компоненты | `components/ui/__tests__/`, `components/game/__tests__/`, `components/leaderboard/__tests__/` |
 | Гейт Sentry | `__tests__/instrumentation.test.ts` |
 
-Покрытие (`npm run test:coverage`, по строкам): `game-logic` 87%, `storage` 93%,
-`sync` 94%, `game-context` 91%, `realtime` 95%; по всему проекту, вместе с
-`app/**`, — около 68%.
+Линтер (`npm run lint`) выдаёт одно предупреждение, и оно обосновано в `eslint.config.mjs`: `react-hooks/set-state-in-effect` на восстановлении игры из localStorage в `GameProvider` после гидрации. Чтения хранилища, которые лишь отображают его (история, тема), идут через `useSyncExternalStore`, как и состояние сети.
+
+Покрытие (`npm run test:coverage`, по строкам): `game-logic` 97%, `storage` 94%,
+`sync` 93%, `game-context` 94%, `realtime` 95%; по всему проекту, вместе с
+`app/**`, — около 72%.
 
 `jest.setup.ts` не подменяет `localStorage` и `sessionStorage` — jsdom даёт оба
 по-настоящему и раздельно, они лишь очищаются перед каждым тестом. Инъекция

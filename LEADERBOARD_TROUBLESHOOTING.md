@@ -22,7 +22,7 @@
 1. **Создание игры** — `app/game/new/page.tsx`. Каждому имени сопоставляется
    идентификатор из локального ростера:
    ```typescript
-   const userId = user?.id || getGuestId()
+   const userId = currentUserId || getGuestId()   // currentUserId из useGame()
    const entries = validPlayers.map(p => ({
      name: p.name.trim(),
      avatar: p.avatar,

@@ -366,7 +366,7 @@ Content-Security-Policy:
 
 ### Input validation
 
-Схемной валидации (zod) нет — ограничения задаются только CHECK-констрейнтами БД: `display_name_length`, `valid_participants`, `valid_history`, `valid_params` (00001) и `games_participants_max`, `games_history_max`, `games_payload_size`, `games_winner_is_participant` (00015). Форма новой игры проверяет на клиенте минимум двух игроков и уникальность имён.
+Схемной валидации (zod) нет — ограничения задаются только CHECK-констрейнтами БД: `display_name_length`, `valid_participants`, `valid_history`, `valid_params` (00001) и `games_participants_max`, `games_history_max`, `games_payload_size`, `games_winner_is_participant` (00015). Форма новой игры проверяет на клиенте минимум двух игроков, уникальность имён и предел в 32 игрока (`MAX_PLAYERS`, им же ограничены `createGame` и `addPlayerToGame`) — тот же, что у `games_participants_max`.
 
 ### Прочее
 

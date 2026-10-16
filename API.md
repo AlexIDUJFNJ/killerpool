@@ -207,6 +207,14 @@ export function createPlayer(
 ): Player
 ```
 
+### MAX_PLAYERS
+
+```typescript
+export const MAX_PLAYERS = 32
+```
+
+Предел игроков в одной игре, выбывшие тоже считаются. Совпадает с CHECK `games_participants_max` (миграция 00015): база отвергает строку с большим числом участников окончательно, такая игра никогда бы не выгрузилась, поэтому её не дают даже начать. Форма новой игры и экран игры отключают добавление сверх предела и показывают это.
+
 ### createGame
 
 ```typescript
@@ -225,13 +233,15 @@ export function createGame(
 ): Game
 ```
 
+Бросает `'A game can have at most 32 players'`, если игроков больше `MAX_PLAYERS`.
+
 **`userId`** получает **только помеченный игрок** (`isOwner`), а не первый по счёту. Позиция ничего не значит: форма умеет перемешивать строки и отбрасывает безымянные, поэтому раньше личность создателя доставалась случайному игроку — вместе с его ачивками и местом в лидерборде. Без метки происходит откат на индекс 0, чтобы старые вызовы и тесты продолжали работать. Остальные игроки создаются с `userId = null` и агрегируются в лидерборде по `participants[].id` — постоянному id из ростера устройства.
 
 **`createdBy`** уходит в `Game.createdBy` и по умолчанию равен `userId`. Они расходятся, когда «это я» не отмечен никто: форма передаёт `userId = null`, но `createdBy` — всё равно uid аккаунта или guest-UUID, и по нему выгрузка решает, каким аккаунтом можно писать игру (`rowOwner` в [Sync API](#sync-api)).
 
 ```typescript
 // app/game/new/page.tsx
-const userId = user?.id || getGuestId()
+const userId = currentUserId || getGuestId()   // currentUserId из useGame()
 const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId, userId)
 ```
 
@@ -286,7 +296,7 @@ export function addPlayerToGame(
 ): Game
 ```
 
-Добавляет игрока в активную игру с минимальным количеством жизней среди активных игроков; `userId` у него всегда `null`. Бросает ошибку, если игра не `active`, активных игроков нет или такой id уже есть среди участников.
+Добавляет игрока в активную игру с минимальным количеством жизней среди активных игроков; `userId` у него всегда `null`. Бросает ошибку, если игра не `active`, активных игроков нет, такой id уже есть среди участников или в игре уже `MAX_PLAYERS` игроков (выбывшие остаются в строке и считаются).
 
 ---
 
@@ -457,12 +467,19 @@ export function isCurrentGameShared(gameId: string): boolean
 export const MAX_HISTORY_GAMES = 50
 export function saveGameHistory(games: Game[]): void   // единственный писатель ключа истории, режет до 50
 export function saveToHistory(game: Game): void        // completed или abandoned, остальные игнорируются
-export function loadGameHistory(): Game[]
+export function loadGameHistory(): Game[]              // свежая копия, её можно менять
+
+// Стор для useSyncExternalStore (страница /history)
+export const HISTORY_CHANGE_EVENT = 'killerpool-history-change'
+export function subscribeToGameHistory(onChange: () => void): () => void
+export function readGameHistorySnapshot(): readonly Game[]
 export function getGameFromHistory(gameId: string): Game | null
 export function deleteGameFromHistory(gameId: string): void
 ```
 
 `saveToHistory` пишет игру в начало списка; статусы, кроме `completed` и `abandoned`, игнорируются. Брошенные игры раньше отбрасывались здесь же, и досрочное окончание стирало игру бесследно; победителя у них нет, ачивки и лидерборд по-прежнему считают только `completed`. Запись с тем же `id` **заменяется**, а не дублируется: одна и та же игра может завершиться дважды, если отменить победу и доиграть. Она же снимает надгробие — явное добавление важнее прежнего удаления.
+
+`saveGameHistory` после записи шлёт в своё окно событие `HISTORY_CHANGE_EVENT` (браузерное `storage` доходит только до других вкладок); `subscribeToGameHistory` слушает оба. `readGameHistorySnapshot` возвращает один и тот же массив, пока сохранённая строка не изменилась — иначе `useSyncExternalStore` перерисовывал бы бесконечно, — поэтому снимок нельзя мутировать: для изменений есть `loadGameHistory`.
 
 `deleteGameFromHistory` ставит надгробие и убирает игру из очереди синка: без надгробия следующий `mergeGamesWithSupabase` вернул бы её из облака, потому что там `updated_at` всегда свежее.
 
@@ -613,20 +630,7 @@ export async function isSupabaseAvailable(): Promise<boolean>     // факти�
 
 `mergeGamesWithSupabase` скачивает игры пользователя и сливает с локальной историей по `updatedAt`, пропуская те, у которых стоит надгробие. Игры, удалённые из истории, иначе возвращались бы при каждом слиянии: сервер ставит `updated_at = now()` на каждую запись (триггер `games_server_timestamps`, 00015), поэтому облачная копия заведомо свежее локальной.
 
-### syncAllGamesToSupabase
-
-```typescript
-export async function syncAllGamesToSupabase(): Promise<{
-  success: number
-  skipped: number       // не completed — выгружать нечего, это не ошибка
-  refused: number
-  failed: number
-  otherAccount: number  // созданы под аккаунтом, который не вошёл
-  total: number
-}>
-```
-
-Выгружает все `completed` игры истории через `syncFinishedGame`. Страница `/sync`, которая её вызывала, удалена; в UI функция больше не используется.
+Массовой выгрузки всей истории нет: `syncAllGamesToSupabase` удалена вместе со страницей `/sync`. Всё, что не выгрузилось, лежит в очереди, и её дренирует `retryPendingSyncs` — в том числе с кнопки Sync на `/history`.
 
 ---
 
@@ -692,7 +696,8 @@ interface GameContextValue {
   isLoading: boolean
   isSpectatorMode: boolean
   isSharingEnabled: boolean
-  currentUserId: string | null
+  /** Вошедший аккаунт: undefined, пока сессия не прочитана; null у гостя */
+  currentUserId: string | null | undefined
   /** Исход выгрузки завершённой игры на экране; null — её нет, или это зритель */
   resultSync: ResultSyncState | null
   newAchievements: AchievementType[]
@@ -714,7 +719,8 @@ export function useGame(): GameContextValue
 
 Ключевое поведение:
 
-- **Персист:** игра сохраняется в localStorage на каждое изменение (кроме spectator mode); при монтировании восстанавливается активная игра, а вместе с ней — шаринг, если `isCurrentGameShared(id)`.
+- **Персист:** игра сохраняется в localStorage на каждое изменение (кроме spectator mode); после гидрации восстанавливается активная игра, а вместе с ней — шаринг, если `isCurrentGameShared(id)`. Это чтение — единственное оставшееся предупреждение `react-hooks/set-state-in-effect` (обоснование — в `eslint.config.mjs`): игра — собственное состояние провайдера, а первый клиентский рендер обязан совпасть с серверным, где хранилища нет.
+- **currentUserId:** следует за `onAuthStateChange` (первое значение приносит `INITIAL_SESSION`): вход, выход и смена аккаунта в другой вкладке видны сразу. До чтения сессии — `undefined`, у гостя — `null`. Его читают `/game/new` (под кем создаётся игра) и `/game/[id]` («это я выиграл?», какие плашки показывать); раньше обе страницы спрашивали `getUser()` сами, один раз, и держали прежний аккаунт. Под кем уходит запись, решает не он, а кеш личности в `lib/sync.ts`, сверенный с сервером.
 - **Завершение игры:** когда `status` становится `'completed'` (один раз на завершение): `saveToHistory(game)` → `syncFinishedGame(game)` → исход в `resultSync` → при успехе `checkAchievementsForGame(game)`; новые ачивки попадают в `newAchievements` и показываются тостами (`dismissAchievement` убирает первую из очереди). Тосты рендерит сам провайдер, поэтому ачивка, пришедшая после ухода с экрана победителя, тоже видна. `resultSync` — `'saving'`, пока исход именно этого завершения неизвестен.
 - **performAction / undoAction / addPlayer:** применяют чистую функцию из `lib/game-logic.ts`; в режиме зрителя ничего не делают. Синк при шаринге — не в них, а в эффекте, который отправляет каждое новое состояние (кроме `completed` — его пишет конвейер завершения).
 - **undoAction на завершённой игре:** победа отменяется, игра снова `active`, конвейер завершения перевзводится. Если он уже отработал для этой игры (победа могла уйти в Supabase) и шаринга нет, откатившееся состояние уходит в строку через `syncActiveGameToSupabase` — при шаринге его и так отправляет эффект шаринга.
@@ -1077,7 +1083,7 @@ const { data, error } = await supabase.rpc('check_achievements', {
 
 ## Error Handling
 
-Соглашение в кодовой базе: функции `lib/*` **не бросают** ошибки наружу при сбоях сети/БД — логируют в консоль и возвращают безопасное значение (`false`, `[]`, `null` или `UpsertOutcome` с `ok: false`). Исключения бросают: `applyAction`/`abandonGame`/`addPlayerToGame` (невалидное состояние игры), `useGame` вне провайдера, фабрики Supabase-клиентов без env-переменных, а также `generateInviteQRCode`/`downloadQRCode` (`lib/invite.ts`) и `exportScreenshot` (`lib/export.ts`) — их вызывающие обязаны ловить ошибки сами.
+Соглашение в кодовой базе: функции `lib/*` **не бросают** ошибки наружу при сбоях сети/БД — логируют в консоль и возвращают безопасное значение (`false`, `[]`, `null` или `UpsertOutcome` с `ok: false`). Исключения бросают: `createGame` (больше `MAX_PLAYERS` игроков), `applyAction`/`abandonGame`/`addPlayerToGame` (невалидное состояние игры, предел игроков), `useGame` вне провайдера, фабрики Supabase-клиентов без env-переменных, а также `generateInviteQRCode`/`downloadQRCode` (`lib/invite.ts`) и `exportScreenshot` (`lib/export.ts`) — их вызывающие обязаны ловить ошибки сами.
 
 ### Частые коды ошибок Supabase/PostgREST
 
