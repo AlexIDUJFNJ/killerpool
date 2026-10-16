@@ -14,7 +14,6 @@ import { motion, AnimatePresence } from 'motion/react'
 import { ArrowLeft, RotateCcw, Home, Play, UsersRound, QrCode, Trophy, LogIn, UserPlus } from 'lucide-react'
 import { haptics } from '@/lib/haptic'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { saveRematchPlayers } from '@/lib/storage'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -63,7 +62,6 @@ export default function GamePage() {
   const [currentPlayerKey, setCurrentPlayerKey] = React.useState(0)
   const [showAddPlayer, setShowAddPlayer] = React.useState(false)
   const [newPlayerName, setNewPlayerName] = React.useState('')
-  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
   const [isLoadingFromSupabase, setIsLoadingFromSupabase] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [showBlackCelebration, setShowBlackCelebration] = React.useState(false)
@@ -152,14 +150,6 @@ export default function GamePage() {
       }
     }
   }, [clearSpectatorGame])
-
-  // Check authentication status
-  React.useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setIsAuthenticated(!!user)
-    })
-  }, [])
 
   // Watch for pot_black actions (spectator mode — detect from realtime updates)
   // Only trigger when history grows by exactly 1 (a single new realtime action),
@@ -305,6 +295,10 @@ export default function GamePage() {
     // Only the creator carries a userId, so this is true exactly when the
     // signed-in user is the one who actually won
     const didIWin = !!currentUserId && winner?.userId === currentUserId
+    // From the provider, which follows signing in and out. This page used to
+    // ask once on its own, and kept offering "Sign in" to someone who just had.
+    // null while the session is still being read: neither message yet.
+    const isSignedIn = currentUserId === undefined ? null : currentUserId !== null
 
     return (
       <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
@@ -332,7 +326,7 @@ export default function GamePage() {
           </motion.div>
 
           {/* Authentication Info */}
-          {isAuthenticated === false && (
+          {isSignedIn === false && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -372,7 +366,7 @@ export default function GamePage() {
               flashing the wrong message at the actual winner. Claimed only once
               the upload is confirmed: this used to say "saved" the moment the
               screen appeared, whatever the network did. */}
-          {isAuthenticated === true && currentUserId !== null && didIWin && !isSpectatorMode && resultSync === 'saved' && (
+          {isSignedIn && didIWin && !isSpectatorMode && resultSync === 'saved' && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -395,7 +389,7 @@ export default function GamePage() {
             </motion.div>
           )}
 
-          {isAuthenticated === true && currentUserId !== null && !didIWin && !isSpectatorMode && (
+          {isSignedIn && !didIWin && !isSpectatorMode && (
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -415,7 +409,7 @@ export default function GamePage() {
             </motion.div>
           )}
 
-          {isAuthenticated === true && !isSpectatorMode && resultSync && resultSync !== 'saved' && (
+          {isSignedIn && !isSpectatorMode && resultSync && resultSync !== 'saved' && (
             <p className="mb-6 text-xs sm:text-sm text-muted-foreground" role="status">
               {RESULT_SYNC_NOTES[resultSync]}
             </p>

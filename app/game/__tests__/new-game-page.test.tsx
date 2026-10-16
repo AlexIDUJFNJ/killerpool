@@ -11,13 +11,14 @@ import { Game } from '@/lib/types';
 
 const mockPush = jest.fn();
 const mockStartGame = jest.fn();
+let mockCurrentUserId: string | null | undefined = null;
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
 jest.mock('@/contexts/game-context', () => ({
-  useGame: () => ({ startGame: mockStartGame }),
+  useGame: () => ({ startGame: mockStartGame, currentUserId: mockCurrentUserId }),
 }));
 
 jest.mock('@/lib/supabase/client', () => ({
@@ -47,6 +48,7 @@ function typeName(index: number, name: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockCurrentUserId = null;
 });
 
 describe('NewGamePage', () => {
@@ -107,6 +109,23 @@ describe('NewGamePage', () => {
     expect(game.players.every(p => !p.userId)).toBe(true);
     expect(game.createdBy).toBe(getGuestId());
     expect(mockPush).toHaveBeenCalledWith(`/game/${game.id}`);
+  });
+
+  it('should create the game for the account signed in now', async () => {
+    // The id comes from the provider, which follows signing in and out
+    mockCurrentUserId = '0a0a0a0a-0000-4000-8000-00000000000a';
+    const { rerender } = render(<NewGamePage />);
+    await waitFor(() => expect(screen.getByPlaceholderText('Player 1 name')).toBeInTheDocument());
+
+    mockCurrentUserId = '0b0b0b0b-0000-4000-8000-00000000000b';
+    rerender(<NewGamePage />);
+    typeName(0, 'Anna');
+    typeName(1, 'Boris');
+    fireEvent.click(screen.getByRole('button', { name: /start game/i }));
+
+    const game: Game = mockStartGame.mock.calls[0][0];
+    expect(game.createdBy).toBe('0b0b0b0b-0000-4000-8000-00000000000b');
+    expect(game.players[0].userId).toBe('0b0b0b0b-0000-4000-8000-00000000000b');
   });
 
   describe('player limit', () => {

@@ -22,12 +22,6 @@ jest.mock('@/contexts/game-context', () => ({
   useGame: () => mockContext,
 }));
 
-jest.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    auth: { getUser: () => Promise.resolve({ data: { user: mockUser } }) },
-  }),
-}));
-
 jest.mock('@/lib/haptic', () => ({
   haptics: { tap: jest.fn(), victory: jest.fn() },
 }));
@@ -152,6 +146,39 @@ describe('winner screen', () => {
     render(<GamePage />);
 
     expect(await screen.findByText(/uploads automatically/i)).toBeInTheDocument();
+    expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('who is signed in', () => {
+  it('should follow the account the provider reports', async () => {
+    // The page used to read the session once on its own: after signing in in
+    // another tab it still offered "Sign in", next to the provider's account
+    setUp(wonBy(myGame(), 0), { currentUserId: null });
+    const { rerender } = render(<GamePage />);
+    expect(await screen.findByText(/compete on the leaderboard/i)).toBeInTheDocument();
+
+    mockContext = { ...mockContext, currentUserId: ME };
+    rerender(<GamePage />);
+
+    expect(screen.queryByText(/compete on the leaderboard/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/your win is saved to your stats/i)).toBeInTheDocument();
+  });
+
+  it('should show neither message while the session is still being read', async () => {
+    setUp(wonBy(myGame(), 0), { currentUserId: undefined });
+    render(<GamePage />);
+
+    await screen.findByText(/wins!/i);
+    expect(screen.queryByText(/compete on the leaderboard/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
+  });
+
+  it('should not congratulate an account that did not win', async () => {
+    setUp(wonBy(myGame(), 0), { currentUserId: '0b0b0b0b-0000-4000-8000-00000000000b' });
+    render(<GamePage />);
+
+    expect(await screen.findByText(/me takes this one/i)).toBeInTheDocument();
     expect(screen.queryByText(/your win is saved/i)).not.toBeInTheDocument();
   });
 });

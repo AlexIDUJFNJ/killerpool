@@ -41,7 +41,11 @@ interface GameContextValue {
   isLoading: boolean
   isSpectatorMode: boolean
   isSharingEnabled: boolean
-  currentUserId: string | null
+  /**
+   * The signed-in account: undefined until the session has been read, null
+   * for a guest. Follows signing in and out, in this tab or another.
+   */
+  currentUserId: string | null | undefined
   /** Upload state of the completed game on screen; null if there is none, or for a spectator */
   resultSync: ResultSyncState | null
   newAchievements: AchievementType[]
@@ -99,7 +103,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSpectatorMode, setIsSpectatorMode] = React.useState(false)
   const [isSharingEnabled, setIsSharingEnabled] = React.useState(false)
-  const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = React.useState<string | null | undefined>(undefined)
   const [newAchievements, setNewAchievements] = React.useState<AchievementType[]>([])
   const [completionOutcome, setCompletionOutcome] = React.useState<{
     key: string
@@ -130,12 +134,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false)
   }, [])
 
-  // Get current user ID
+  // Who is signed in, followed rather than read once at mount: signing in or
+  // out, or switching accounts in another tab, used to leave the previous
+  // account's id here, so the winner screen judged "did I win" for it and the
+  // next game was created under it. INITIAL_SESSION brings the first value.
+  //
+  // lib/sync.ts listens on the same (singleton) client to drop its cached
+  // identity. That one decides whom a write goes out as and is checked with
+  // the server; this one only tells the screens who is looking at them.
   React.useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setCurrentUserId(user?.id || null)
+    const {
+      data: { subscription },
+    } = createClient().auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user.id ?? null)
     })
+    return () => subscription.unsubscribe()
   }, [])
 
   // Achievements for games that synced late (retryPendingSyncs runs from

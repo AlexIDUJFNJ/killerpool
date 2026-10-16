@@ -20,7 +20,6 @@ import { cn, shuffle } from '@/lib/utils'
 import { motion } from 'motion/react'
 import { Plus, Trash2, ArrowLeft, Play, Shuffle } from 'lucide-react'
 import Link from 'next/link'
-import type { User } from '@supabase/supabase-js'
 
 /**
  * A row in the form. `rowId` is a stable identity so that Shuffle, removal and
@@ -37,7 +36,9 @@ interface PlayerDraft {
 
 export default function NewGamePage() {
   const router = useRouter()
-  const { startGame } = useGame()
+  // Followed by the provider through sign-in and sign-out; this form used to
+  // keep a second subscription of its own for the same answer
+  const { startGame, currentUserId } = useGame()
 
   const [players, setPlayers] = React.useState<PlayerDraft[]>([
     { rowId: 'p0', name: '', avatar: DEFAULT_AVATARS[0] },
@@ -48,7 +49,6 @@ export default function NewGamePage() {
   // it is tracked by row id, never by position.
   const [meRowId, setMeRowId] = React.useState<string | null>('p0')
   const [selectedRowId, setSelectedRowId] = React.useState<string | null>(null)
-  const [user, setUser] = React.useState<User | null>(null)
   const [playerSuggestions, setPlayerSuggestions] = React.useState<string[]>([])
   const [activeSuggestionRowId, setActiveSuggestionRowId] = React.useState<string | null>(null)
   const [filteredSuggestions, setFilteredSuggestions] = React.useState<string[]>([])
@@ -78,7 +78,6 @@ export default function NewGamePage() {
     }
 
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      setUser(user)
       if (!user || usedRematch) return
 
       const { data: profile } = await supabase
@@ -94,16 +93,9 @@ export default function NewGamePage() {
       }
     })
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
     // Load player name suggestions from history
     const suggestions = getPlayerNamesSuggestions()
     setPlayerSuggestions(suggestions)
-
-    return () => subscription.unsubscribe()
   }, [])
 
   const handleAddPlayer = () => {
@@ -191,7 +183,7 @@ export default function NewGamePage() {
     }
 
     // Use userId if authenticated, otherwise use stable guest_id
-    const userId = user?.id || getGuestId()
+    const userId = currentUserId || getGuestId()
     const entries = validPlayers.map(p => ({
       name: p.name.trim(),
       avatar: p.avatar,
