@@ -19,6 +19,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Eye } from 'lucide-react'
 import { BlackBallCelebration } from '@/components/game/black-ball-celebration'
+import { CommentaryBanner, DuelOverlay } from '@/components/game/commentary-layer'
+import { FinalDuelStrip } from '@/components/game/final-duel-strip'
+import { AudioSettingsMenu } from '@/components/game/audio-settings-menu'
+import { useGameCommentary } from '@/hooks/use-game-commentary'
 import type { ResultSyncState } from '@/contexts/game-context'
 
 /** get_leaderboard's min_games default (supabase/migrations/00013) */
@@ -177,6 +181,13 @@ export default function GamePage() {
       haptics.victory()
     }
   }, [wonGameId])
+
+  // Sound, the commentator and the final-duel overlay, worked out from each
+  // state of the game to the next (hooks/use-game-commentary.ts). Up here
+  // rather than in one of the screens below: the winner screen replaces the
+  // game screen on the very shot the commentator has to announce. Lines wait
+  // for the black-ball celebration instead of showing on top of it.
+  const commentary = useGameCommentary(game, { held: showBlackCelebration })
 
   // Show loading state
   if (isLoading || isLoadingFromSupabase) {
@@ -452,6 +463,9 @@ export default function GamePage() {
           open={showInviteModal}
           onOpenChange={setShowInviteModal}
         />
+
+        {/* The commentator calls the win here: this screen is up from that shot on */}
+        <CommentaryBanner queue={commentary} className="fixed inset-x-0 top-4 z-40" />
       </main>
     )
   }
@@ -476,7 +490,9 @@ export default function GamePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Sound effects and the commentator's voice, for host and spectators alike */}
+            <AudioSettingsMenu />
             {/* QR/Share button - available for both admin and spectators */}
             <Button
               variant="ghost"
@@ -532,6 +548,12 @@ export default function GamePage() {
             </div>
           </div>
         )}
+
+        <FinalDuelStrip game={game} />
+
+        {/* Hangs just below the header, whatever its height, clear of the
+            shot buttons further down */}
+        <CommentaryBanner queue={commentary} className="absolute inset-x-0 top-full mt-2" />
       </div>
 
       {/* Main Content */}
@@ -742,6 +764,8 @@ export default function GamePage() {
         show={showBlackCelebration}
         onComplete={dismissCelebration}
       />
+
+      <DuelOverlay queue={commentary} />
     </main>
   )
 }
