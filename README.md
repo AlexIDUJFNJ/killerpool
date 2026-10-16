@@ -38,40 +38,45 @@
 ## ✨ Возможности
 
 ### Игровой процесс
-- Свайп-управление (влево = промах, вправо = забил, вверх = чёрный)
+- Свайп по карточке игрока (влево = промах, вправо = забил, вверх = чёрный), а также кнопки Miss / Black / Pot и стрелки клавиатуры
 - Haptic feedback на мобильных
 - Добавление игрока прямо во время игры
-- Undo действий
-- Экран победителя с анимациями
+- Undo действий, в том числе на экране победителя (победа отменяется, игра продолжается)
+- Экран победителя с анимациями и плашкой о сохранении результата — она отражает фактический исход выгрузки
 - Празднование при забитии чёрного шара ("CHYORNY!" fiesta)
+- Брошенная игра (End Game или новая игра поверх идущей) не пропадает: если в ней был хотя бы один ход, она сохраняется в историю со статусом `abandoned`
+- Подтверждения и ошибки — в интерфейсе (BottomSheet, inline-сообщения), без системных `alert`/`confirm` на игровом экране
 
 ### Live Sharing (Spectator Mode)
 - QR-код и ссылка для зрителей прямо из игры
-- Realtime-трансляция всех действий через WebSocket
+- Realtime-трансляция всех действий через WebSocket (`postgres_changes`)
+- Трансляция переживает перезагрузку страницы у хоста
 - Зрители могут пере-шарить ссылку другим (цепочка спектаторов)
 - Работает без авторизации
 - Цвета жизней (красный/жёлтый/зелёный) одинаковы у хоста и зрителей
 
 ### PWA
 - Установка на iOS/Android (кнопка на главной; в Safari — подсказка про «На экран Домой»)
-- Service Worker для офлайн-режима
-- Догон синхронизации при возврате в сеть
+- Service Worker для офлайн-режима (регистрирует `@ducanh2912/next-pwa`)
+- Очередь выгрузки: завершённая или брошенная игра ставится в очередь до первой попытки и догоняется при возврате в сеть (до 14 дней)
 - localStorage для оффлайн-игр
 
 ### Аккаунт и статистика
 - Google OAuth / Magic Link
 - Глобальный лидерборд (топ-15; в рейтинг попадают сыгравшие от 3 партий)
 - Постоянные игроки: знакомое имя сохраняет статистику между играми
-- Детальная статистика игроков
+- Детальная статистика игроков (гостевые игры этого устройства учитываются и после входа)
 - Система достижений (10 типов бейджей)
-- Экспорт данных (CSV, JSON, Screenshot)
-- Синхронизация localStorage → Supabase
+- Экспорт игры: CSV, скриншот (PNG), текстовая сводка в буфер обмена, Web Share
+- Кнопка Sync в истории (для вошедших): сначала выгружает очередь, потом подтягивает игры аккаунта из облака
 
 ### UI/UX
-- Mobile-first адаптивный дизайн
-- Тёмная тема по умолчанию, применяется до первой отрисовки (без вспышки)
+- Mobile-first адаптивный дизайн, интерфейс на английском (`lang="en"`)
+- Тема Light / Dark / System (по умолчанию тёмная), применяется до первой отрисовки (без вспышки)
+- Масштабирование страницы не запрещено; анимации уважают «уменьшить движение» в системе
 - Bottom sheet, анимированные карточки
 - Скроллируемые модальные окна на маленьких экранах
+- Страница правил и жестов `/help` (ссылка с главной)
 
 ## 📦 Быстрый старт
 
@@ -90,7 +95,7 @@ npm run dev
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Необязательные: `NEXT_PUBLIC_APP_URL` (иначе метаданные и sitemap возьмут домен из окружения Vercel), `NEXT_PUBLIC_SENTRY_DSN` и сборочный `SENTRY_AUTH_TOKEN` (карты исходников). Локально Sentry молчит в любом случае.
+Необязательные: `NEXT_PUBLIC_APP_URL` (иначе метаданные и sitemap возьмут домен деплоя Vercel, а вне Vercel — `https://killerpool.app`), `NEXT_PUBLIC_SENTRY_DSN` и сборочный `SENTRY_AUTH_TOKEN` (карты исходников). Sentry шлёт события только из сборок Vercel (production и preview): `npm run dev` и локальная `npm run build && npm run start` молчат даже с DSN в `.env.local`.
 
 Подробная настройка Supabase: [supabase/README.md](./supabase/README.md)
 
@@ -101,31 +106,40 @@ killerpool/
 ├── app/                    # Next.js App Router (pages)
 │   ├── game/[id]/          # Игровой экран (хост + спектатор)
 │   ├── game/new/           # Создание игры
-│   ├── history/            # История игр
+│   ├── history/            # История игр (+ [id] — детали и экспорт)
 │   ├── leaderboard/        # Лидерборд
 │   ├── stats/              # Статистика
-│   ├── auth/               # Авторизация
+│   ├── auth/               # Авторизация (+ callback/route.ts)
 │   ├── profile/            # Профиль
+│   ├── help/               # Правила и жесты
+│   ├── offline/            # Офлайн-фолбэк service worker'а
 │   └── globals.css         # Tailwind v4 (@theme)
 ├── components/
 │   ├── game/               # Игровые компоненты
 │   │   ├── swipeable-player-card.tsx
 │   │   ├── player-card.tsx
+│   │   ├── action-styles.ts   # Цвета и иконки ходов, общие для всех экранов
 │   │   ├── invite-modal.tsx
 │   │   └── black-ball-celebration.tsx
+│   ├── theme.ts / theme-toggle.tsx  # Тема Light / Dark / System
 │   └── ui/                 # shadcn/ui компоненты
 ├── contexts/
-│   └── game-context.tsx    # Глобальный стейт + realtime sync
+│   └── game-context.tsx    # Глобальный стейт, персист, выгрузка, шаринг
+├── hooks/                  # useRealtimeGame, useInstallPrompt
 ├── lib/
 │   ├── supabase/           # Supabase клиенты
 │   ├── game-logic.ts       # Игровая логика
+│   ├── game-mapper.ts      # Game ↔ строка games
+│   ├── storage.ts          # localStorage: игры, ростер, очередь выгрузки
 │   ├── realtime.ts         # Realtime подписки
 │   ├── sync.ts             # Синхронизация с Supabase
 │   ├── invite.ts           # QR-код и ссылки
 │   └── types.ts            # TypeScript типы
 ├── supabase/
-│   ├── migrations/         # SQL миграции (14 шт.)
+│   ├── migrations/         # SQL миграции (15 шт.)
+│   ├── debug/              # Отладочные запросы (leaderboard.sql)
 │   └── test/               # Локальный Postgres + проверка RLS под ролями
+├── docs/archive/           # Исторические материалы (PDF техдока, скриншот)
 ├── proxy.ts                # Next.js proxy (auth)
 ├── eslint.config.mjs       # ESLint 9 flat config
 └── postcss.config.js       # @tailwindcss/postcss
@@ -134,14 +148,16 @@ killerpool/
 ## 🛠 Команды
 
 ```bash
-npm run dev          # Dev server
-npm run build        # Production build
-npm run start        # Production server
-npm run lint         # ESLint проверка
-npm run lint:fix     # ESLint auto-fix
-npm test             # Запустить тесты
+npm run dev           # Dev server (Turbopack)
+npm run build         # Production build (webpack; prebuild генерирует иконки)
+npm run start         # Production server
+npm run lint          # ESLint проверка
+npm run lint:fix      # ESLint auto-fix
+npm test              # Запустить тесты
 npm run test:coverage # Тесты с покрытием
-npm run format       # Prettier
+npm run format        # Prettier
+npm run format:check  # Prettier без записи
+npm run size          # Сборка + отчёт о размере .next/static
 ```
 
 ## 📚 Документация
@@ -157,6 +173,8 @@ npm run format       # Prettier
 | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | Частые проблемы |
 | [LEADERBOARD_TROUBLESHOOTING.md](./LEADERBOARD_TROUBLESHOOTING.md) | Почему лидерборд пустой или в нём нет знакомых имён |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Как вносить изменения |
+
+Исторические материалы, которые **не** описывают текущий код: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md) (план MVP, снимок ноября 2025) и [docs/archive/](./docs/archive/) (PDF техдокументации и скриншот игрового экрана).
 
 ## 📝 License
 
