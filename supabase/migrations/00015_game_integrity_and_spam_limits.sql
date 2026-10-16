@@ -186,7 +186,7 @@
 -- renames them (the forged game becomes their newest, and the fallback name
 -- comes from it).
 --
--- A registered identity is now believed only where the row vouches for it.
+-- An account's identity is now believed only where the row vouches for it.
 -- That costs honest data nothing, because in the client
 --   * a game created under an account is written only by that account
 --     (rowOwner in lib/sync.ts; otherwise it stays queued), so created_by is
@@ -194,31 +194,36 @@
 --   * only the host carries a userId (createGame marks one player; addPlayer
 --     passes null).
 -- So:
---   * get_leaderboard v6 (PART 6) takes participants[].userId as the player's
---     identity only when it equals the row's created_by. Otherwise the
---     participant is a guest, grouped by participants[].id like every guest.
---   * A guest whose participant id IS an account's identity (a profile's
---     user_id, or a userId some row vouches for) is dropped. Otherwise the
---     forger just moves the victim's uid from userId to id, and the guest row
---     merges with the victim's and takes their profile name.
+--   * get_leaderboard v6 (PART 6): a userId that is an ACCOUNT's uid groups
+--     the player only when it equals the row's created_by; otherwise the
+--     participant is grouped by participants[].id. A userId that is no
+--     account — the device guest id — still groups the player, as since
+--     00005, so a guest host's games add up across games, including those
+--     from before the device roster, when every game minted fresh
+--     participant ids. "An account" = a uid in player_profiles.user_id or
+--     games.created_by (PART 6 says why not auth.users).
+--   * A participant grouped by its id where that id IS an account's uid is
+--     dropped. Otherwise the forger just moves the victim's uid from userId
+--     to id, and the row merges with the victim's and takes their profile
+--     name.
 --   * check_achievements v3 (PART 5) counts only games with created_by =
 --     p_user_id: the game it is called for, total wins, the streak and the
 --     social count.
 --
 -- What moves for existing rows:
---   * a guest game adopted on its first INSERT after signing in (created_by =
---     uid, the host's userId = the device's guest id) does not join the
---     account: it keeps counting as a guest game, grouped by the host's
---     participant id;
---   * a guest host (userId = guest id, created_by NULL) used to be grouped by
---     the guest id and is now grouped by participant id, like every other
---     guest. With the device roster that id is stable per name; for games from
---     before the roster, when every game minted fresh ids, a guest's games no
---     longer add up;
+--   * nothing for guests. A guest game adopted on its first INSERT after
+--     signing in (created_by = uid, host userId = the device's guest id) keeps
+--     counting with that device's other guest games, under the guest id; it
+--     does not join the account, and grants it no achievements;
 --   * a game created under an account but written anonymously or under another
 --     account (possible before rowOwner) no longer counts for that account;
---   * the games of a deleted account (created_by set NULL, profile gone) stop
---     counting for it; its host rows become guest rows.
+--   * a deleted account's uid is in neither table any more (profile cascaded,
+--     created_by set NULL), so its old games group under it like a guest id —
+--     what 00013 did.
+--
+-- What remains: an account that has written nothing yet (no profile, no game)
+-- is indistinguishable from a guest id, so a game forged in its name groups
+-- under its uid until its first write.
 --
 -- WHAT THIS DELIBERATELY DOES NOT FIX
 --
@@ -227,9 +232,9 @@
 --    a secret the host holds can separate them (new column + RPC + client).
 --  * A GUEST identity is still forgeable: a participant id and a guest id are
 --    printed in every public game row, so anon can insert games under them and
---    move that guest's leaderboard row. Registered users are covered by
---    section 8; a signed-in user can of course still write anything into
---    their own games.
+--    move that guest's leaderboard row. Accounts are covered by section 8
+--    (except one that has written nothing yet); a signed-in user can of
+--    course still write anything into their own games.
 --  * The number of anon INSERTs is not bounded — Postgres has no rate limit;
 --    the size limits bound each row, not the table.
 --  * Profiles already created with user_id NULL, and rulesets created through
@@ -634,12 +639,32 @@ GRANT EXECUTE ON FUNCTION check_achievements(UUID, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION check_achievements(UUID, UUID) TO service_role;
 
 -- ====================================
--- PART 6 — get_leaderboard v6: a registered identity needs the row's word
+-- PART 6 — get_leaderboard v6: an account's identity needs the row's word
 -- ====================================
 -- Same signature as v5 (00013), so CREATE OR REPLACE swaps the body and keeps
--- the grants. Everything but participant_rows.user_key, the registered CTE and
--- the guest filter in stable_rows is v5 verbatim: no casts of client JSON, the
--- single ::uuid regex-guarded, wins per distinct game, both clamps, min_games.
+-- the grants. Everything but the accounts / keyed_rows CTEs and the filter in
+-- stable_rows is v5 verbatim: no casts of client JSON, the single ::uuid
+-- regex-guarded, wins per distinct game, both clamps, min_games.
+--
+-- A participant's grouping key:
+--   userId empty / not a uuid               -> participants[].id
+--   userId is not an account (a guest id)   -> userId, as in 00012/00013, so a
+--                                              guest host's games from before
+--                                              the device roster add up
+--   userId is an account, created_by = it   -> userId: the account's own game
+--   userId is an account, created_by is not -> participants[].id: a forgery,
+--                                              or a write by someone else
+-- and a participant keyed by participants[].id that IS an account's id drops
+-- out (otherwise the forger moves the victim's uid from userId to id).
+--
+-- "An account" is a uid in player_profiles.user_id or games.created_by — both
+-- foreign keys to auth.users, so each value proves an account, and both are
+-- in public: the function needs no access to the auth schema, which would take
+-- the whole leaderboard down if the owner ever lost SELECT on auth.users. Every
+-- account that has written a game or a profile is in it (ensurePlayerProfile
+-- runs before every signed-in write). An account that has written nothing yet
+-- is not: a game forged in its name groups under its uid like a guest id until
+-- its first write, then falls back to participants[].id.
 
 CREATE OR REPLACE FUNCTION get_leaderboard(
     limit_count INTEGER DEFAULT 15,
@@ -666,7 +691,19 @@ AS $$
                                     -- names; always prefer the column
 BEGIN
     RETURN QUERY
-    WITH participant_rows AS (
+    WITH accounts AS (
+        -- Every uid known to be an account (see above). Text, so the joins
+        -- below compare text with text and nothing from client JSON is cast;
+        -- referenced twice, so Postgres computes it once per call.
+        SELECT pp.user_id::text AS key
+        FROM player_profiles pp
+        WHERE pp.user_id IS NOT NULL
+        UNION
+        SELECT g.created_by::text
+        FROM games g
+        WHERE g.created_by IS NOT NULL
+    ),
+    participant_rows AS (
         -- One row per (completed game x participant). No casts of client JSON.
         SELECT
             g.id                                    AS game_id,
@@ -674,18 +711,12 @@ BEGIN
             lower(g.winner_id::text)                AS winner_key,
             lower(participant->>'id')               AS player_key,
             nullif(btrim(participant->>'name'), '') AS player_name,
-            -- v6: a userId is the player's identity only when the row was
-            -- written by that very account. Anyone may INSERT a game naming
-            -- someone else's uid; nobody but the account can make created_by
-            -- equal it (games_insert_authenticated, 00014). Anything else — a
-            -- forged uid, the device guest id, an adopted guest game whose
-            -- host still carries the guest id — makes the participant a guest.
+            g.created_by::text                      AS writer_key,
             CASE
                 WHEN participant->>'userId' ~*
                      '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-                 AND lower(participant->>'userId') = g.created_by::text
                 THEN lower(participant->>'userId')
-            END                                     AS user_key
+            END                                     AS claimed_key
         FROM games g
         CROSS JOIN LATERAL jsonb_array_elements(
             CASE WHEN jsonb_typeof(g.participants) = 'array'
@@ -694,38 +725,46 @@ BEGIN
         ) AS participant
         WHERE g.status = 'completed'
     ),
-    registered AS (
-        -- Identities that belong to accounts: every profile, and every userId
-        -- some row vouches for. Kept as text, so nothing here is cast.
-        SELECT pp.user_id::text AS key
-        FROM player_profiles pp
-        WHERE pp.user_id IS NOT NULL
-        UNION
-        SELECT pr.user_key
+    keyed_rows AS (
+        -- v6: user_key is the userId when it may group the player, NULL when
+        -- the player falls back to participants[].id. Only the account itself
+        -- can make created_by equal its uid (games_insert_authenticated,
+        -- 00014); anyone can INSERT a game naming it in userId.
+        SELECT
+            pr.*,
+            CASE
+                WHEN pr.claimed_key IS NULL
+                    THEN NULL                   -- no userId: by id
+                WHEN NOT EXISTS (SELECT 1 FROM accounts a WHERE a.key = pr.claimed_key)
+                    THEN pr.claimed_key         -- a guest id: by it
+                WHEN pr.claimed_key = pr.writer_key
+                    THEN pr.claimed_key         -- the account's own game
+                ELSE NULL                       -- an account named by another
+                                                -- writer: by id
+            END AS user_key
         FROM participant_rows pr
-        WHERE pr.user_key IS NOT NULL
     ),
     stable_rows AS (
-        -- Grouping key: a vouched userId, else the participant id
+        -- Grouping key: the userId where it counts, else the participant id
         SELECT *
         FROM (
             SELECT
-                pr.*,
-                COALESCE(pr.user_key, pr.player_key) AS stable_key
-            FROM participant_rows pr
+                kr.*,
+                COALESCE(kr.user_key, kr.player_key) AS stable_key
+            FROM keyed_rows kr
         ) s
         -- Guard for the single ::uuid below. A participant with a junk id and
-        -- no vouched userId cannot be represented in the player_id UUID column
+        -- no usable userId cannot be represented in the player_id UUID column
         -- anyway, so it drops out rather than aborting the whole call.
         WHERE s.stable_key ~
               '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-          -- v6: a guest whose participant id IS an account's identity drops
-          -- out. Without this the forger moves the victim's uid from userId to
-          -- id, and the guest row merges with the victim's and takes their
-          -- profile name. Honest participant ids come from crypto.randomUUID()
-          -- and never collide with an account.
+          -- v6: a participant keyed by its id where that id IS an account's
+          -- drops out. Without this the forger moves the victim's uid from
+          -- userId to id, and the row merges with the victim's and takes
+          -- their profile name. Honest participant ids come from
+          -- crypto.randomUUID() and never collide with an account.
           AND (s.user_key IS NOT NULL
-               OR NOT EXISTS (SELECT 1 FROM registered r WHERE r.key = s.player_key))
+               OR NOT EXISTS (SELECT 1 FROM accounts a WHERE a.key = s.player_key))
     ),
     action_rows AS (
         -- Actions counted once per (game, playerId), however many participants
@@ -860,4 +899,4 @@ COMMENT ON FUNCTION check_achievements IS
 'Checks and grants achievements after game completion (v3: only games with created_by = p_user_id count — the game itself, total wins, streak, social; perfect_game needs at least one history entry by the winner. v2: caller must be auth.uid(), fixed casts, winner stats, streaks).';
 
 COMMENT ON FUNCTION get_leaderboard IS
-'Returns top N players ranked by win rate, among those who have played at least min_games (default 3). v6: participants[].userId groups a player only when it equals the row''s created_by; otherwise the participant is a guest grouped by participants[].id, and a guest whose id is an account''s identity is dropped. No casts of client-controlled JSON; the single ::uuid is regex-guarded in CTE stable_rows.';
+'Returns top N players ranked by win rate, among those who have played at least min_games (default 3). v6: a participants[].userId that is an account (player_profiles.user_id or games.created_by) groups the player only when it equals the row''s created_by, else the participant is grouped by participants[].id; a userId that is no account (a device guest id) groups the player as before; a participant grouped by an id that is an account is dropped. No casts of client-controlled JSON; the single ::uuid is regex-guarded in CTE stable_rows.';

@@ -734,12 +734,14 @@ SELECT expect('G7 a guest game adopted at its first INSERT after sign-in', rls_t
 SELECT expect('G-setup Frank''s first game as himself     ', rls_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
         mk_upsert('6d000000-0000-4000-8000-000000000003', 'completed', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
                   'f0000000-0000-4000-8000-000000000001', :'frank_players', '[]', now() - interval '1 hour')), 'ALLOWED (rows=1)');
-SELECT expect_eq('G8 ...it still counts as a guest game, by participant id, with his other guest game',
+-- the guest id is no account (in neither player_profiles nor created_by), so
+-- it keeps grouping him, as in 00013
+SELECT expect_eq('G8 ...it still counts as a guest game, with his other one, under the device guest id',
   (SELECT display_name || ' ' || total_games || '/' || games_won
-     FROM get_leaderboard(100, 1) WHERE player_id = 'f0000000-0000-4000-8000-000000000001'),
+     FROM get_leaderboard(100, 1) WHERE player_id = 'f9999999-9999-4999-8999-999999999999'),
   'Frank 2/2');
-SELECT expect_eq('G9 ...not under the device guest id',
-  (SELECT count(*)::text FROM get_leaderboard(100, 1) WHERE player_id = 'f9999999-9999-4999-8999-999999999999'), '0');
+SELECT expect_eq('G9 ...not split off under his participant id',
+  (SELECT count(*)::text FROM get_leaderboard(100, 1) WHERE player_id = 'f0000000-0000-4000-8000-000000000001'), '0');
 SELECT expect_eq('G10 his account has exactly the game he played signed in',
   (SELECT display_name || ' ' || total_games || '/' || games_won
      FROM get_leaderboard(100, 1) WHERE player_id = 'ffffffff-ffff-4fff-8fff-ffffffffffff'),
@@ -751,6 +753,24 @@ SELECT expect_eq('G12 ...his signed-in game does',
   ach_try('authenticated', 'ffffffff-ffff-4fff-8fff-ffffffffffff', 'ffffffff-ffff-4fff-8fff-ffffffffffff', '6d000000-0000-4000-8000-000000000003'),
   'first_win');
 
+-- Gina is a guest host from before the device roster: one guest id, but every
+-- game minted fresh participant ids. The guest id is what adds her games up.
+SELECT expect('G-setup Gina''s guest game, participant id #1', rls_try('anon', NULL,
+        mk_upsert('6d000000-0000-4000-8000-000000000011', 'completed', NULL, 'ab000000-0000-4000-8000-000000000001',
+                  '[{"id":"ab000000-0000-4000-8000-000000000001","name":"Gina","userId":"abababab-abab-4bab-8bab-abababababab"},{"id":"ab000000-0000-4000-8000-000000000002","name":"Pal"}]',
+                  '[]', now() - interval '20 hours')), 'ALLOWED (rows=1)');
+SELECT expect('G-setup Gina''s guest game, participant id #2', rls_try('anon', NULL,
+        mk_upsert('6d000000-0000-4000-8000-000000000012', 'completed', NULL, 'ab000000-0000-4000-8000-000000000012',
+                  '[{"id":"ab000000-0000-4000-8000-000000000011","name":"Gina","userId":"abababab-abab-4bab-8bab-abababababab"},{"id":"ab000000-0000-4000-8000-000000000012","name":"Pal"}]',
+                  '[]', now() - interval '10 hours')), 'ALLOWED (rows=1)');
+SELECT expect_eq('G18 a guest host with one guest id and two participant ids is one row',
+  (SELECT display_name || ' ' || total_games || '/' || games_won
+     FROM get_leaderboard(100, 1) WHERE player_id = 'abababab-abab-4bab-8bab-abababababab'),
+  'Gina 2/1');
+SELECT expect_eq('G19 ...with no stray rows under either participant id',
+  (SELECT count(*)::text FROM get_leaderboard(100, 1)
+    WHERE player_id IN ('ab000000-0000-4000-8000-000000000001', 'ab000000-0000-4000-8000-000000000011')), '0');
+
 -- the RPC's contract is unchanged
 SELECT expect_eq('G13 get_leaderboard keeps its signature',
   pg_get_function_identity_arguments('get_leaderboard'::regproc), 'limit_count integer, min_games integer');
@@ -759,7 +779,7 @@ SELECT expect_true('G14 ...SECURITY DEFINER with a pinned search_path',
 SELECT expect('G15 ...callable by anon', rls_try('anon', NULL, 'SELECT * FROM get_leaderboard(15)'), 'ALLOWED (rows=');
 SELECT expect_true('G16 ...min_games still defaults to 3: Erin (5) in, Frank''s guest row (2) out',
   EXISTS (SELECT 1 FROM get_leaderboard(100) WHERE player_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')
-  AND NOT EXISTS (SELECT 1 FROM get_leaderboard(100) WHERE player_id = 'f0000000-0000-4000-8000-000000000001'));
+  AND NOT EXISTS (SELECT 1 FROM get_leaderboard(100) WHERE player_id = 'f9999999-9999-4999-8999-999999999999'));
 SELECT expect_eq('G17 ...and limit_count is still clamped to 0..100',
   (SELECT count(*)::text FROM get_leaderboard(-5, 1)), '0');
 
