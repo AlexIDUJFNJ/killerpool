@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { haptics } from '@/lib/haptic'
 import { ACTION_STYLES } from './action-styles'
+import { StreakBadge, ON_FIRE_CARD, isOnFire } from './streak-badge'
+import { STREAK_BADGE_MIN } from '@/lib/game-insights'
 
 export type SwipeAction = 'miss' | 'pot' | 'pot_black'
 
@@ -19,6 +21,8 @@ export interface SwipeablePlayerCardProps {
   maxLives?: number
   onSwipe: (action: SwipeAction) => void
   disabled?: boolean
+  /** Pots in a row, see getCurrentStreak: a badge from 2, the on-fire look from 3 */
+  streak?: number
 }
 
 const SWIPE_THRESHOLD = 100
@@ -70,6 +74,7 @@ export function SwipeablePlayerCard({
   maxLives = 6,
   onSwipe,
   disabled = false,
+  streak = 0,
 }: SwipeablePlayerCardProps) {
   const x = useMotionValue(0)
   const y = useMotionValue(0)
@@ -198,6 +203,8 @@ export function SwipeablePlayerCard({
   }
 
   const livesLabel = `${lives} ${lives === 1 ? 'life' : 'lives'} remaining`
+  const hasStreak = streak >= STREAK_BADGE_MIN
+  const onFire = isOnFire(streak)
 
   return (
     <div className="w-full max-w-md mx-auto" onKeyDown={handleKeyDown}>
@@ -231,7 +238,7 @@ export function SwipeablePlayerCard({
         <motion.div
           ref={cardRef}
           role="group"
-          aria-label={`${name}, ${livesLabel}`}
+          aria-label={`${name}, ${livesLabel}${hasStreak ? `, ${streak} pots in a row` : ''}`}
           aria-describedby={hintId}
           tabIndex={inactive ? -1 : 0}
           drag={!inactive}
@@ -247,10 +254,15 @@ export function SwipeablePlayerCard({
             disabled && 'cursor-not-allowed opacity-50'
           )}
         >
-          <Card className="overflow-hidden border-2 border-primary/20 shadow-2xl">
+          <Card className={cn('overflow-hidden border-2 border-primary/20 shadow-2xl', onFire && ON_FIRE_CARD)}>
             <CardContent className="p-0">
               {/* Card Content */}
-              <div className="relative bg-linear-to-br from-background via-background to-primary/5 p-6 sm:p-8">
+              <div
+                className={cn(
+                  'relative bg-linear-to-br from-background via-background p-6 sm:p-8',
+                  onFire ? 'to-orange-500/10' : 'to-primary/5'
+                )}
+              >
                 {/* Active Indicator */}
                 {swipeDirection && (
                   <motion.div
@@ -282,9 +294,21 @@ export function SwipeablePlayerCard({
                 </div>
 
                 {/* Player Name */}
-                <h2 className="text-2xl sm:text-4xl font-bold text-center mb-6 sm:mb-8">
+                <h2
+                  className={cn(
+                    'text-2xl sm:text-4xl font-bold text-center',
+                    hasStreak ? 'mb-3' : 'mb-6 sm:mb-8'
+                  )}
+                >
                   {name}
                 </h2>
+
+                {/* Streak: under the name, where the whole table can see it */}
+                {hasStreak && (
+                  <div className="flex justify-center mb-5 sm:mb-6">
+                    <StreakBadge streak={streak} />
+                  </div>
+                )}
 
                 {/* Lives Display */}
                 <div className="space-y-2 sm:space-y-3">
