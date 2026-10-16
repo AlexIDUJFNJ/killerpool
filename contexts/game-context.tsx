@@ -23,6 +23,7 @@ import {
   rememberRosterPlayers,
 } from '@/lib/storage'
 import { syncFinishedGame, syncActiveGameToSupabase, type UpsertOutcome } from '@/lib/sync'
+import { createHostSecret } from '@/lib/host-secret'
 import { checkAchievementsForGame, onUnlockedAchievements } from '@/lib/achievements'
 import { AchievementToasts } from '@/components/achievements/achievement-toast'
 import { mapDbGameToGame } from '@/lib/game-mapper'
@@ -218,6 +219,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (game && !isSpectatorMode && game.status === 'active' && game.id !== newGame.id) {
       recordAbandonedGame(game, isSharingEnabled)
     }
+
+    // This device is the game's host from now on, and the secret is how it
+    // proves that to the database (lib/host-secret.ts). Before the first
+    // write, which carries its hash; a game started again keeps its secret.
+    createHostSecret(newGame.id)
 
     // Reset per-game modes so a new game doesn't inherit sharing/spectator
     // state from the previous one

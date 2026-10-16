@@ -18,6 +18,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * set from the keys of the payload, so a payload whose shape varies between
  * call sites makes the upsert itself behave differently — which is how three
  * copies of this object ended up writing three different column sets.
+ *
+ * The one exception is host_secret_hash, present only for a game this device
+ * holds a host secret for (lib/host-secret.ts). Without one the payload is the
+ * one every client before 00016 sent. In the SET list it changes nothing: the
+ * row keeps the hash its INSERT gave it (trigger games_keep_host_secret).
  */
 export interface DbGameUpsertRow {
   id: string
@@ -30,9 +35,14 @@ export interface DbGameUpsertRow {
   history: GameHistoryEntry[]
   created_by: string | null
   current_player_index: number
+  host_secret_hash?: string
 }
 
-export function mapGameToDbRow(game: Game, createdBy: string | null): DbGameUpsertRow {
+export function mapGameToDbRow(
+  game: Game,
+  createdBy: string | null,
+  hostSecretHash: string | null = null
+): DbGameUpsertRow {
   return {
     id: game.id,
     created_at: game.createdAt,
@@ -48,6 +58,7 @@ export function mapGameToDbRow(game: Game, createdBy: string | null): DbGameUpse
     current_player_index: Number.isInteger(game.currentPlayerIndex)
       ? game.currentPlayerIndex
       : 0,
+    ...(hostSecretHash ? { host_secret_hash: hostSecretHash } : {}),
   }
 }
 

@@ -2,7 +2,7 @@
  * Tests for mapping Supabase games rows to the client Game type
  */
 
-import { mapDbGameToGame } from '../game-mapper';
+import { mapDbGameToGame, mapGameToDbRow } from '../game-mapper';
 import { DEFAULT_RULESET, Player } from '../types';
 
 function makePlayer(overrides: Partial<Player> = {}): Player {
@@ -85,5 +85,27 @@ describe('mapDbGameToGame', () => {
   it('should default null history to an empty array', () => {
     const game = mapDbGameToGame(makeRow({ history: null }));
     expect(game.history).toEqual([]);
+  });
+
+  it('should not carry host_secret_hash into the game', () => {
+    // The hash is public, but nothing on the client reads it back
+    const game = mapDbGameToGame({ ...makeRow(), host_secret_hash: 'a'.repeat(64) } as never);
+    expect(game).not.toHaveProperty('host_secret_hash');
+    expect(game).not.toHaveProperty('hostSecretHash');
+  });
+});
+
+describe('mapGameToDbRow', () => {
+  const game = mapDbGameToGame(makeRow());
+  const HASH = 'a2a39130ba3c12f39309c51c06ebb04b5dfaa7d5eeb8e998707222135563304c';
+
+  it('should leave host_secret_hash out when there is none', () => {
+    // The payload every client before 00016 sent
+    expect(mapGameToDbRow(game, null)).not.toHaveProperty('host_secret_hash');
+    expect(mapGameToDbRow(game, null, null)).not.toHaveProperty('host_secret_hash');
+  });
+
+  it('should add the hash when given one', () => {
+    expect(mapGameToDbRow(game, null, HASH)).toMatchObject({ id: 'game-1', host_secret_hash: HASH });
   });
 });

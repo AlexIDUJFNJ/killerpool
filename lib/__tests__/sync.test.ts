@@ -24,6 +24,7 @@ import {
   BACKOFF_MAX_MS,
 } from '../storage';
 import { createGame } from '../game-logic';
+import { createHostSecret, hashHostSecret } from '../host-secret';
 import { Game } from '../types';
 
 jest.mock('@/lib/supabase/client', () => ({
@@ -56,7 +57,26 @@ function mockSupabase({
   upsertError = null,
   remoteGames = [],
 }: MockOptions = {}) {
-  const gamesUpsert = jest.fn().mockResolvedValue({ error: upsertError });
+  // Every games upsert, with the headers set on that one request. The request
+  // is what postgrest-js returns: awaitable, with setHeader returning itself.
+  type UpsertRequest = Promise<{ error: unknown }> & {
+    setHeader: (name: string, value: string) => UpsertRequest;
+  };
+  const gameWrites: Array<{ row: Record<string, unknown>; headers: Record<string, string> }> = [];
+  // Errors for the next upserts, ahead of upsertError
+  const nextErrors: unknown[] = [];
+  const gamesUpsert: jest.Mock = jest.fn((row: Record<string, unknown>, _options?: unknown) => {
+    const write = { row, headers: {} as Record<string, string> };
+    gameWrites.push(write);
+    const error = nextErrors.length > 0 ? nextErrors.shift() : upsertError;
+    const request: UpsertRequest = Object.assign(Promise.resolve({ error }), {
+      setHeader: (name: string, value: string) => {
+        write.headers[name] = value;
+        return request;
+      },
+    });
+    return request;
+  });
   const profilesUpsert = jest.fn().mockResolvedValue({ error: null });
   let authListener: ((event: string) => void) | null = null;
 
@@ -86,6 +106,10 @@ function mockSupabase({
 
   return {
     gamesUpsert,
+    gameWrites,
+    failNextUpsertWith(error: { message: string; code?: string }) {
+      nextErrors.push(error);
+    },
     profilesUpsert,
     from,
     auth,
@@ -701,5 +725,188 @@ describe('retryPendingSyncs', () => {
     expect(gamesUpsert).toHaveBeenCalledTimes(1);
     upsert.resolve({ error: null });
     await first;
+  });
+});
+
+describe('the host secret (00016)', () => {
+  const HEADER = 'x-host-secret';
+
+  /** A game this device started: GameProvider.startGame mints its secret */
+  function hostedGame(id: string, createdBy?: string | null): { game: Game; secret: string } {
+    const secret = createHostSecret(id);
+    if (!secret) throw new Error('no secret minted');
+    return { game: completedGame(id, createdBy), secret };
+  }
+
+  // Every way a game row leaves this device
+  const writePaths: Array<[string, (game: Game) => Promise<unknown>]> = [
+    [
+      'the live share and an undone win (syncActiveGameToSupabase)',
+      game => syncActiveGameToSupabase({ ...game, status: 'active', winnerId: undefined }),
+    ],
+    ['the completion (syncFinishedGame)', game => syncFinishedGame(game)],
+    [
+      'an abandoned game (syncFinishedGame)',
+      game => syncFinishedGame({ ...game, status: 'abandoned', winnerId: null }),
+    ],
+    [
+      'the retry queue (retryPendingSyncs)',
+      async game => {
+        saveToHistory(game);
+        markPendingSync(game.id);
+        await retryPendingSyncs();
+      },
+    ],
+    [
+      'the sync page (syncAllGamesToSupabase)',
+      async game => {
+        saveToHistory(game);
+        await syncAllGamesToSupabase();
+      },
+    ],
+  ];
+
+  it.each(writePaths)('should send the secret and its hash with %s', async (_path, write) => {
+    const { gameWrites } = mockSupabase({ userId: null });
+    const { game, secret } = hostedGame('game-1');
+
+    await write(game);
+
+    expect(gameWrites).toHaveLength(1);
+    expect(gameWrites[0].headers).toEqual({ [HEADER]: secret });
+    expect(gameWrites[0].row.host_secret_hash).toBe(await hashHostSecret(secret));
+  });
+
+  it.each(writePaths)('should write a game without a secret as before, with %s', async (_path, write) => {
+    // Started by an older bundle, or another device's game merged into history
+    const { gameWrites } = mockSupabase({ userId: null });
+
+    await write(completedGame('game-1'));
+
+    expect(gameWrites).toHaveLength(1);
+    expect(gameWrites[0].headers).toEqual({});
+    expect(gameWrites[0].row).not.toHaveProperty('host_secret_hash');
+  });
+
+  it('should send the same columns on every write of a hosted game', async () => {
+    const { gameWrites } = mockSupabase({ userId: null });
+    const { game } = hostedGame('game-1');
+
+    await syncActiveGameToSupabase({ ...game, status: 'active', winnerId: undefined });
+    await syncFinishedGame(game);
+
+    const shapes = gameWrites.map(w => Object.keys(w.row).sort().join(','));
+    expect(shapes).toHaveLength(2);
+    expect(shapes[0]).toBe(shapes[1]);
+    expect(shapes[0]).toContain('host_secret_hash');
+  });
+
+  it('should send it for a signed-in host too', async () => {
+    // Harmless to games_update_authenticated, and the game stays protected if
+    // the account is ever deleted and its row becomes a guest row
+    const { gameWrites } = mockSupabase({ userId: USER_A });
+    const { game, secret } = hostedGame('game-1', USER_A);
+
+    await syncFinishedGame(game);
+
+    expect(gameWrites[0].row.created_by).toBe(USER_A);
+    expect(gameWrites[0].headers[HEADER]).toBe(secret);
+  });
+
+  it('should never put the secret itself in the row', async () => {
+    const { gameWrites } = mockSupabase({ userId: null });
+    const { game, secret } = hostedGame('game-1');
+
+    await syncFinishedGame(game);
+
+    expect(JSON.stringify(gameWrites[0].row)).not.toContain(secret);
+  });
+
+  it('should send it with every coalesced write of the same game', async () => {
+    // Writes of one game are serialised and only the newest waiting state goes
+    // out; whichever that is carries the header
+    const { gameWrites } = mockSupabase({ userId: null });
+    const { game, secret } = hostedGame('game-1');
+    const active = { ...game, status: 'active' as const, winnerId: undefined };
+
+    await Promise.all([
+      syncActiveGameToSupabase(active),
+      syncActiveGameToSupabase({ ...active, history: [] }),
+      syncFinishedGame(game),
+    ]);
+
+    expect(gameWrites).toHaveLength(2);
+    gameWrites.forEach(w => expect(w.headers[HEADER]).toBe(secret));
+  });
+
+  it('should still send the secret where the hash cannot be computed', async () => {
+    // No crypto.subtle (not a secure context): the row goes in without a hash,
+    // unprotected as before 00016, and the header is simply ignored
+    const subtle = Object.getOwnPropertyDescriptor(crypto, 'subtle');
+    Object.defineProperty(crypto, 'subtle', { value: undefined, configurable: true });
+    try {
+      const { gameWrites } = mockSupabase({ userId: null });
+      const { game, secret } = hostedGame('game-1');
+
+      expect(await syncFinishedGame(game)).toEqual({ ok: true });
+
+      expect(gameWrites[0].row).not.toHaveProperty('host_secret_hash');
+      expect(gameWrites[0].headers[HEADER]).toBe(secret);
+    } finally {
+      if (subtle) Object.defineProperty(crypto, 'subtle', subtle);
+    }
+  });
+
+  it('should write without the hash against a database older than 00016', async () => {
+    // The client deployed before the migration: refusing would drop the
+    // finished game from the retry queue
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const supabase = mockSupabase({ userId: null });
+    supabase.failNextUpsertWith({
+      message: "Could not find the 'host_secret_hash' column of 'games' in the schema cache",
+      code: 'PGRST204',
+    });
+    const { game, secret } = hostedGame('game-1');
+
+    expect(await syncFinishedGame(game)).toEqual({ ok: true });
+
+    expect(supabase.gameWrites).toHaveLength(2);
+    expect(supabase.gameWrites[0].row).toHaveProperty('host_secret_hash');
+    expect(supabase.gameWrites[1].row).not.toHaveProperty('host_secret_hash');
+    expect(supabase.gameWrites[1].row).toMatchObject({ id: 'game-1', status: 'completed' });
+    expect(supabase.gameWrites[1].headers[HEADER]).toBe(secret);
+    expect(getPendingSyncIds()).toEqual([]);
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('should not take any other unknown column for that', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const supabase = mockSupabase({ userId: null });
+    supabase.failNextUpsertWith({ message: "Could not find the 'x' column", code: 'PGRST204' });
+    const { game } = hostedGame('game-1');
+
+    expect(await syncFinishedGame(game)).toMatchObject({ ok: false, failure: 'refused' });
+    expect(supabase.gameWrites).toHaveLength(1);
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('should take the refusal of a game whose secret is lost as final', async () => {
+    // Site data cleared mid-game: the row keeps its hash, this device has no
+    // secret any more, and RLS refuses with 42501. Retrying cannot help.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    mockSupabase({
+      userId: null,
+      upsertError: {
+        message: 'new row violates row-level security policy (USING expression)',
+        code: '42501',
+      },
+    });
+
+    expect(await syncFinishedGame(completedGame('game-1'))).toMatchObject({ failure: 'refused' });
+    expect(getPendingSyncIds()).toEqual([]);
+
+    consoleErrorSpy.mockRestore();
   });
 });
