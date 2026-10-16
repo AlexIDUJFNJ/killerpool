@@ -145,7 +145,9 @@
 -- that claim less than they guarantee. Nothing is deleted or rewritten to
 -- make old rows comply. A NOT VALID row is still checked when it is updated,
 -- so such a row can no longer be re-synced unchanged — it is frozen for anon
--- anyway, and for its owner /sync reports it as refused.
+-- anyway, and its owner's write fails with 23514, which lib/sync.ts treats as
+-- final ('refused'): the game leaves the retry queue, and if it is the game
+-- on screen, the winner screen says the server did not accept it.
 --
 -- 6. SPAM
 --
@@ -229,7 +231,8 @@
 --
 --  * A spectator can still rewrite a LIVE guest game whose id they know.
 --    Host and spectator are the same anon role with the same knowledge; only
---    a secret the host holds can separate them (new column + RPC + client).
+--    a secret the host holds can separate them. 00016_host_secret.sql does
+--    that (a column, a request header and the client, no RPC).
 --  * A GUEST identity is still forgeable: a participant id and a guest id are
 --    printed in every public game row, so anon can insert games under them and
 --    move that guest's leaderboard row. Accounts are covered by section 8
