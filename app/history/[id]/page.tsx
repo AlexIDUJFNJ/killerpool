@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { getGameFromHistory } from '@/lib/storage'
 import { createClient } from '@/lib/supabase/client'
-import { Game } from '@/lib/types'
+import { Game, GameAction } from '@/lib/types'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
 import { mapDbGameToGame } from '@/lib/game-mapper'
 import { motion } from 'motion/react'
 import {
@@ -16,9 +18,6 @@ import {
   Trophy,
   Users,
   Clock,
-  TrendingDown,
-  TrendingUp,
-  Minus,
   Share2,
   Calendar,
   FileText,
@@ -26,6 +25,11 @@ import {
   Check
 } from 'lucide-react'
 import { exportGameToCSV, exportScreenshot, shareGame, copyGameSummary } from '@/lib/export'
+
+function ActionIcon({ action }: { action: GameAction }) {
+  const { icon: Icon, text } = ACTION_STYLES[action]
+  return <Icon className={cn('h-4 w-4', text)} />
+}
 
 export default function GameDetailsPage() {
   const params = useParams()
@@ -190,45 +194,6 @@ export default function GameDetailsPage() {
     return `${minutes}m ${seconds}s`
   }
 
-  const getActionIcon = (action: string) => {
-    switch (action) {
-      case 'miss':
-        return <TrendingDown className="h-4 w-4 text-red-500" />
-      case 'pot':
-        return <Minus className="h-4 w-4 text-yellow-500" />
-      case 'pot_black':
-        return <TrendingUp className="h-4 w-4 text-green-500" />
-      default:
-        return null
-    }
-  }
-
-  const getActionLabel = (action: string) => {
-    switch (action) {
-      case 'miss':
-        return 'MISS'
-      case 'pot':
-        return 'POT'
-      case 'pot_black':
-        return 'BLACK POT'
-      default:
-        return action
-    }
-  }
-
-  const getActionColor = (action: string) => {
-    switch (action) {
-      case 'miss':
-        return 'bg-red-500/10 text-red-500 border-red-500/20'
-      case 'pot':
-        return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-      case 'pot_black':
-        return 'bg-green-500/10 text-green-500 border-green-500/20'
-      default:
-        return 'bg-muted'
-    }
-  }
-
   // Calculate player statistics
   const getPlayerStats = (playerId: string) => {
     const playerHistory = game.history.filter(h => h.playerId === playerId)
@@ -372,16 +337,16 @@ export default function GameDetailsPage() {
                           <div className="font-bold">{stats.totalActions}</div>
                           <div className="text-xs text-muted-foreground">Actions</div>
                         </div>
-                        <div className="bg-red-500/10 rounded-md p-2">
-                          <div className="font-bold text-red-500">{stats.misses}</div>
+                        <div className={cn('rounded-md border p-2', ACTION_STYLES.miss.surface)}>
+                          <div className={cn('font-bold', ACTION_STYLES.miss.text)}>{stats.misses}</div>
                           <div className="text-xs text-muted-foreground">Misses</div>
                         </div>
-                        <div className="bg-yellow-500/10 rounded-md p-2">
-                          <div className="font-bold text-yellow-500">{stats.pots}</div>
+                        <div className={cn('rounded-md border p-2', ACTION_STYLES.pot.surface)}>
+                          <div className={cn('font-bold', ACTION_STYLES.pot.text)}>{stats.pots}</div>
                           <div className="text-xs text-muted-foreground">Pots</div>
                         </div>
-                        <div className="bg-green-500/10 rounded-md p-2">
-                          <div className="font-bold text-green-500">{stats.blackPots}</div>
+                        <div className={cn('rounded-md border p-2', ACTION_STYLES.pot_black.surface)}>
+                          <div className={cn('font-bold', ACTION_STYLES.pot_black.text)}>{stats.blackPots}</div>
                           <div className="text-xs text-muted-foreground">Blacks</div>
                         </div>
                       </div>
@@ -415,16 +380,18 @@ export default function GameDetailsPage() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: Math.min(index * 0.02, 0.5) }}
-                    className={`flex items-center gap-3 p-3 rounded-lg border ${getActionColor(entry.action)}`}
+                    className={cn('flex items-center gap-3 p-3 rounded-lg border', ACTION_STYLES[entry.action].surface)}
                   >
                     <div className="shrink-0">
-                      {getActionIcon(entry.action)}
+                      <ActionIcon action={entry.action} />
                     </div>
                     <div className="grow">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{entry.playerName}</span>
-                        <span className="text-sm text-muted-foreground">•</span>
-                        <span className="text-sm font-medium">{getActionLabel(entry.action)}</span>
+                        <span className="text-sm text-muted-foreground" aria-hidden="true">•</span>
+                        <span className={cn('text-sm font-medium', ACTION_STYLES[entry.action].text)}>
+                          {ACTION_STYLES[entry.action].name}
+                        </span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {entry.livesBefore} → {entry.livesAfter} lives

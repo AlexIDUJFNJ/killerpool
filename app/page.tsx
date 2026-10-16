@@ -10,6 +10,11 @@ import { Play, History, Trophy, Users, CircleUser, LogIn, Award } from 'lucide-r
 import { createClient } from '@/lib/supabase/client'
 import { PWAInstallButton } from '@/components/pwa-install-button'
 import type { User } from '@supabase/supabase-js'
+import { ACTION_STYLES, formatLivesDelta } from '@/components/game/action-styles'
+import { DEFAULT_RULESET, type GameAction } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+const RULE_ACTIONS: GameAction[] = ['miss', 'pot', 'pot_black']
 
 export default function Home() {
   const { game, isLoading } = useGame()
@@ -170,22 +175,18 @@ export default function Home() {
           <Card>
             <CardContent className="p-4 sm:p-6">
               <h3 className="font-semibold mb-3 text-sm sm:text-base">Classic Rules</h3>
-              <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-red-500">-1</div>
-                  <div className="text-xs text-muted-foreground">MISS</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-slate-400">0</div>
-                  <div className="text-xs text-muted-foreground">POT</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-emerald-500">+1</div>
-                  <div className="text-xs text-muted-foreground">POT BLACK</div>
-                </div>
-              </div>
+              <dl className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                {RULE_ACTIONS.map((action) => (
+                  <div key={action} className="flex flex-col-reverse">
+                    <dt className="text-xs text-muted-foreground">{ACTION_STYLES[action].name}</dt>
+                    <dd className={cn('text-xl sm:text-2xl font-bold', ACTION_STYLES[action].text)}>
+                      {formatLivesDelta(DEFAULT_RULESET.params[action])}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
               <p className="text-xs sm:text-sm text-muted-foreground mt-4 text-center">
-                3 starting lives • Last player standing wins
+                {DEFAULT_RULESET.params.starting_lives} starting lives • Last player standing wins
               </p>
             </CardContent>
           </Card>

@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { loadGameHistory, getGuestId } from '@/lib/storage'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
 
 interface PlayerStats {
   totalGames: number
@@ -273,15 +275,15 @@ export default function StatsPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Misses</span>
-                  <Badge variant="destructive">{stats.totalMisses}</Badge>
+                  <Badge variant="outline" className={cn(ACTION_STYLES.miss.surface, ACTION_STYLES.miss.text)}>{stats.totalMisses}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Pots</span>
-                  <Badge>{stats.totalPots}</Badge>
+                  <Badge variant="outline" className={cn(ACTION_STYLES.pot.surface, ACTION_STYLES.pot.text)}>{stats.totalPots}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Black Pots</span>
-                  <Badge className="bg-green-500">{stats.totalBlackPots}</Badge>
+                  <Badge variant="outline" className={cn(ACTION_STYLES.pot_black.surface, ACTION_STYLES.pot_black.text)}>{stats.totalBlackPots}</Badge>
                 </div>
               </CardContent>
             </Card>

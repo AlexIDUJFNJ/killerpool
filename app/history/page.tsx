@@ -11,6 +11,8 @@ import { Game } from '@/lib/types'
 import { motion } from 'motion/react'
 import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check, Search, Filter } from 'lucide-react'
 import { mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
 
 type DateFilter = 'all' | 'today' | 'week' | 'month'
 type StatusFilter = 'all' | 'completed' | 'abandoned'
@@ -391,7 +393,7 @@ export default function HistoryPage() {
                         <div className="text-xs text-muted-foreground">Players</div>
                       </div>
                       <div className="bg-muted rounded-md p-2">
-                        <div className="font-bold">
+                        <div className={cn('font-bold', ACTION_STYLES.pot_black.text)}>
                           {game.history.filter(h => h.action === 'pot_black').length}
                         </div>
                         <div className="text-xs text-muted-foreground">Black Pots</div>

@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Play, Users, Trophy, QrCode, Cloud, Share2, Sun } from 'lucide-react'
 import type { Metadata } from 'next'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
 
 export const metadata: Metadata = {
   title: 'Help & Documentation',
@@ -53,9 +55,9 @@ export default function HelpPage() {
             <div>
               <h3 className="font-semibold mb-2">🎱 Actions</h3>
               <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
-                <li><strong>MISS</strong> - You missed your shot: <span className="text-red-500 font-semibold">-1 life</span></li>
-                <li><strong>POT</strong> - You potted a colored ball: <span className="text-yellow-500 font-semibold">No change</span></li>
-                <li><strong>POT BLACK</strong> - You potted the black ball: <span className="text-green-500 font-semibold">+1 life</span></li>
+                <li><strong>MISS</strong> - You missed your shot: <span className={cn('font-semibold', ACTION_STYLES.miss.text)}>-1 life</span></li>
+                <li><strong>POT</strong> - You potted a colored ball: <span className={cn('font-semibold', ACTION_STYLES.pot.text)}>No change</span></li>
+                <li><strong>POT BLACK</strong> - You potted the black ball: <span className={cn('font-semibold', ACTION_STYLES.pot_black.text)}>+1 life</span></li>
               </ul>
             </div>
 
