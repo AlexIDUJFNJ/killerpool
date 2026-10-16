@@ -124,15 +124,29 @@ describe('HistoryPage', () => {
     expect(screen.getByText('Showing 1 of 2 games')).toBeInTheDocument();
   });
 
-  it('should drop a deleted game from the list', async () => {
-    jest.spyOn(window, 'confirm').mockReturnValue(true);
+  it('should drop a deleted game from the list once the user confirms', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm');
     const user = userEvent.setup();
     render(<HistoryPage />);
 
     const [first] = await screen.findAllByRole('button', { name: /^delete game from/i });
     await user.click(first);
+    const sheet = screen.getByRole('dialog', { name: 'Delete this game?' });
+    await user.click(within(sheet).getByRole('button', { name: 'Delete' }));
 
     expect(screen.getAllByRole('button', { name: /^delete game from/i })).toHaveLength(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('should keep the game when the user changes their mind', async () => {
+    const user = userEvent.setup();
+    render(<HistoryPage />);
+
+    const [first] = await screen.findAllByRole('button', { name: /^delete game from/i });
+    await user.click(first);
+    await user.click(screen.getByRole('button', { name: 'Keep it' }));
+
+    expect(screen.getAllByRole('button', { name: /^delete game from/i })).toHaveLength(2);
   });
 
   it('should show what Sync brought down', async () => {

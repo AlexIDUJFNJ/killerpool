@@ -3,6 +3,8 @@
  */
 
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { copyGameSummary, exportScreenshot, shareGame } from '@/lib/export';
 import GameDetailsPage from '../[id]/page';
 import { saveGameHistory } from '@/lib/storage';
 import { DEFAULT_RULESET, Game, GameHistoryEntry } from '@/lib/types';
@@ -83,5 +85,35 @@ describe('GameDetailsPage', () => {
 
     expect(await screen.findByText('Winner')).toBeInTheDocument();
     expect(screen.queryByText('Game Abandoned')).not.toBeInTheDocument();
+  });
+
+  it('should explain a failed screenshot on the page instead of in alert()', async () => {
+    saveGameHistory([makeGame()]);
+    (exportScreenshot as jest.Mock).mockRejectedValueOnce(new Error('canvas'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(<GameDetailsPage />);
+
+    await user.click(await screen.findByRole('button', { name: /screenshot/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/screenshot couldn.t be created/i);
+    expect(alertSpy).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+
+  it('should say the summary was copied when sharing is unavailable', async () => {
+    saveGameHistory([makeGame()]);
+    (shareGame as jest.Mock).mockResolvedValueOnce(false);
+    (copyGameSummary as jest.Mock).mockResolvedValueOnce(true);
+    const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(<GameDetailsPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^share$/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/copied to the clipboard/i);
+    expect(alertSpy).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
   });
 });

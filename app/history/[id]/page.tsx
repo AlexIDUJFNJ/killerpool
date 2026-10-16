@@ -39,6 +39,8 @@ export default function GameDetailsPage() {
   const [notFound, setNotFound] = React.useState(false)
   const [isExporting, setIsExporting] = React.useState(false)
   const [exportStatus, setExportStatus] = React.useState<'idle' | 'csv' | 'screenshot' | 'share'>('idle')
+  // Outcome of the last export, shown under the buttons instead of in alert()
+  const [exportMessage, setExportMessage] = React.useState<{ tone: 'error' | 'info'; text: string } | null>(null)
 
   React.useEffect(() => {
     const loadGame = async () => {
@@ -86,6 +88,7 @@ export default function GameDetailsPage() {
     if (!game) return
 
     setIsExporting(true)
+    setExportMessage(null)
     setExportStatus('csv')
 
     try {
@@ -96,6 +99,7 @@ export default function GameDetailsPage() {
       }, 2000)
     } catch (error) {
       console.error('Failed to export CSV:', error)
+      setExportMessage({ tone: 'error', text: 'The CSV file couldn\'t be created. Please try again.' })
       setExportStatus('idle')
       setIsExporting(false)
     }
@@ -103,6 +107,7 @@ export default function GameDetailsPage() {
 
   const handleExportScreenshot = async () => {
     setIsExporting(true)
+    setExportMessage(null)
     setExportStatus('screenshot')
 
     try {
@@ -113,7 +118,10 @@ export default function GameDetailsPage() {
       }, 2000)
     } catch (error) {
       console.error('Failed to export screenshot:', error)
-      alert('Screenshot export failed. This feature requires a modern browser.')
+      setExportMessage({
+        tone: 'error',
+        text: 'The screenshot couldn\'t be created. Try again, or use Export CSV or Share instead.',
+      })
       setExportStatus('idle')
       setIsExporting(false)
     }
@@ -123,14 +131,19 @@ export default function GameDetailsPage() {
     if (!game) return
 
     setIsExporting(true)
+    setExportMessage(null)
     setExportStatus('share')
 
     try {
       const success = await shareGame(game)
       if (!success) {
         // Fallback to copying summary
-        await copyGameSummary(game)
-        alert('Summary copied to clipboard!')
+        const copied = await copyGameSummary(game)
+        setExportMessage(
+          copied
+            ? { tone: 'info', text: 'Sharing isn\'t available here, so the summary was copied to the clipboard.' }
+            : { tone: 'error', text: 'This browser can\'t share or copy the summary.' }
+        )
       }
     } catch (error) {
       console.error('Failed to share game:', error)
@@ -474,6 +487,15 @@ export default function GameDetailsPage() {
             Share
           </Button>
         </motion.div>
+        <p
+          role={exportMessage?.tone === 'error' ? 'alert' : 'status'}
+          className={cn(
+            'mt-3 min-h-5 text-center text-sm',
+            exportMessage?.tone === 'error' ? 'text-destructive' : 'text-muted-foreground'
+          )}
+        >
+          {exportMessage?.text}
+        </p>
       </div>
     </main>
   )

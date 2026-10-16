@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { deleteGameFromHistory, readGameHistorySnapshot, subscribeToGameHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
 import { motion } from 'motion/react'
@@ -98,6 +99,8 @@ export default function HistoryPage() {
   const [dateFilter, setDateFilter] = React.useState<DateFilter>('all')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
   const [syncStatus, setSyncStatus] = React.useState<SyncStatus>('idle')
+  // Game waiting for the user to confirm its deletion
+  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null)
   // isSupabaseAvailable() answers "is someone signed in", not "is there a
   // network" — the two used to share one flag, which showed every guest
   // "Offline"
@@ -131,10 +134,9 @@ export default function HistoryPage() {
     setTimeout(() => setSyncStatus('idle'), 3000)
   }
 
-  const handleDelete = (gameId: string) => {
-    if (confirm('Delete this game from history?')) {
-      deleteGameFromHistory(gameId)
-    }
+  const confirmDelete = () => {
+    if (pendingDeleteId) deleteGameFromHistory(pendingDeleteId)
+    setPendingDeleteId(null)
   }
 
   const clearFilters = () => {
@@ -338,7 +340,7 @@ export default function HistoryPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDelete(game.id)}
+                          onClick={() => setPendingDeleteId(game.id)}
                           aria-label={`Delete game from ${formatDate(game.createdAt)}`}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
@@ -396,6 +398,27 @@ export default function HistoryPage() {
           </div>
         )}
       </div>
+
+      <BottomSheet
+        isOpen={pendingDeleteId !== null}
+        onClose={() => setPendingDeleteId(null)}
+        title="Delete this game?"
+      >
+        <div className="p-4 sm:p-6 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            It is removed from this device&apos;s history and stats. If it was already uploaded,
+            it still counts on the leaderboard.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button variant="destructive" className="w-full sm:flex-1" onClick={confirmDelete}>
+              Delete
+            </Button>
+            <Button variant="outline" className="w-full sm:flex-1" onClick={() => setPendingDeleteId(null)}>
+              Keep it
+            </Button>
+          </div>
+        </div>
+      </BottomSheet>
     </main>
   )
 }
