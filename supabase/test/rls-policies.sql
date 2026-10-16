@@ -210,6 +210,60 @@ BEGIN
   SET LOCAL session_replication_role = origin;
 END $$;
 
+-- rls_try with the request headers PostgREST would set. PostgREST puts them
+-- into request.headers as one JSON object, names lower-cased, transaction-
+-- local — and so does this, so nothing leaks into the next case.
+CREATE OR REPLACE FUNCTION rls_try_h(p_role text, p_uid text, p_headers text, p_sql text)
+RETURNS text LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM set_config('request.headers', p_headers, true);
+  RETURN rls_try(p_role, p_uid, p_sql);
+END $$;
+
+-- What request.headers holds for a supabase-js write: the usual headers, plus
+-- x-host-secret when there is a secret (NULL: the header is not sent at all)
+CREATE OR REPLACE FUNCTION pgrst_headers(p_secret text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT (jsonb_build_object(
+            'accept', '*/*', 'content-type', 'application/json',
+            'prefer', 'resolution=merge-duplicates', 'x-client-info', 'supabase-ssr/0.9.0')
+          || CASE WHEN p_secret IS NULL THEN '{}'::jsonb
+                  ELSE jsonb_build_object('x-host-secret', p_secret) END)::text;
+$$;
+
+-- The upsert of the client from 00016 on: mk_upsert's statement plus the
+-- host_secret_hash column, in the payload and so in the SET list
+CREATE OR REPLACE FUNCTION mk_upsert_h(
+  p_id           uuid,
+  p_status       text,
+  p_hash         text,
+  p_created_by   text  DEFAULT NULL,
+  p_winner       text  DEFAULT NULL,
+  p_participants jsonb DEFAULT NULL   -- NULL: Host + Guest
+) RETURNS text LANGUAGE sql STABLE AS $$
+  SELECT format($f$
+    INSERT INTO games (id, created_at, updated_at, status, participants,
+                       winner_id, ruleset_id, history, created_by,
+                       current_player_index, host_secret_hash)
+    VALUES (%L, now(), now(), %L, %L::jsonb, %L::uuid, NULL, '[]'::jsonb, %L::uuid, 0, %L)
+    ON CONFLICT (id) DO UPDATE SET
+      id = EXCLUDED.id, created_at = EXCLUDED.created_at,
+      updated_at = EXCLUDED.updated_at, status = EXCLUDED.status,
+      participants = EXCLUDED.participants, winner_id = EXCLUDED.winner_id,
+      ruleset_id = EXCLUDED.ruleset_id, history = EXCLUDED.history,
+      created_by = EXCLUDED.created_by,
+      current_player_index = EXCLUDED.current_player_index,
+      host_secret_hash = EXCLUDED.host_secret_hash
+  $f$,
+    p_id,
+    p_status,
+    coalesce(p_participants,
+             '[{"id":"11111111-1111-4111-8111-000000000001","name":"Host"},
+               {"id":"22222222-2222-4222-8222-000000000002","name":"Guest"}]'::jsonb),
+    p_winner,
+    p_created_by,
+    p_hash);
+$$;
+
 -- Results. A temp table: it lives exactly as long as this run.
 CREATE TEMP TABLE kp_results (
   n        serial PRIMARY KEY,
@@ -415,9 +469,11 @@ SELECT expect('D5 undo, play on   ', rls_try('authenticated', 'aaaaaaaa-aaaa-4aa
 
 \echo
 \echo '=== T. the server owns the dates (00015, part 1) ==='
+-- (00016 adds games_keep_host_secret, which keeps no time; section H)
 SELECT expect_eq('T0 one timestamp trigger on games, the new one',
-  (SELECT string_agg(tgname, ',') FROM pg_trigger WHERE tgrelid = 'games'::regclass AND NOT tgisinternal),
-  'games_server_timestamps');
+  (SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger
+    WHERE tgrelid = 'games'::regclass AND NOT tgisinternal),
+  'games_keep_host_secret,games_server_timestamps');
 SELECT expect_true('T0 update_updated_at_column has a pinned search_path',
   (SELECT 'search_path=public, pg_temp' = ANY(proconfig) FROM pg_proc WHERE proname = 'update_updated_at_column'));
 SELECT expect('T1 anon creates a game dated 2999', rls_try('anon', NULL,
@@ -815,6 +871,164 @@ SELECT expect('F3 ...an upsert of the same row raises      ', rls_try('anon', NU
         'DENIED   new row violates row-level security policy (USING expression)');
 
 \echo
+\echo '=== H. only the host''s device writes a protected guest game (00016) ==='
+-- The host's secret and a stranger's, with their hex(sha256). The same vector
+-- is in lib/__tests__/host-secret.test.ts, so client and server agree on it.
+\set h_secret 'e6acbb288743b67ec54c1718729bba1b22a731427f59cda0251c7503d153ab98'
+\set h_hash   'a2a39130ba3c12f39309c51c06ebb04b5dfaa7d5eeb8e998707222135563304c'
+\set o_secret '1d0ddc552d357bb296ce1dccdc11b4fc40e5473252a9f6d7f44cee31fd2012ed'
+\set o_hash   'd5339cad1d2a65565094808319fe25879ccf93a8ac47b87566464fdde9aaffcc'
+SELECT expect_eq('H0 the built-in sha256 gives the client''s hash',
+  encode(sha256(convert_to(:'h_secret', 'UTF8')), 'hex'), :'h_hash');
+SELECT expect_true('H0 host_secret_hash is a text column with a format check',
+  (SELECT format_type(atttypid, atttypmod) = 'text' AND NOT attnotnull FROM pg_attribute
+    WHERE attrelid = 'games'::regclass AND attname = 'host_secret_hash')
+  AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'games'::regclass
+                 AND conname = 'games_host_secret_hash_format' AND convalidated));
+SELECT expect_true('H0 games_keep_host_secret is BEFORE UPDATE, per row',
+  (SELECT tgtype = (1 | 2 | 16)::int2   -- ROW | BEFORE | UPDATE
+     FROM pg_trigger WHERE tgrelid = 'games'::regclass AND tgname = 'games_keep_host_secret'));
+SELECT expect_true('H0 ...and its function is off the callable surface',
+  NOT has_function_privilege('anon', 'games_keep_host_secret()', 'EXECUTE')
+  AND NOT has_function_privilege('authenticated', 'games_keep_host_secret()', 'EXECUTE'));
+
+-- the host's flow, every write the new client makes, with the secret
+SELECT expect('H1 the host shares a new game: INSERT with its hash   ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000001', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+SELECT expect_eq('H1 ...the row keeps it',
+  (SELECT host_secret_hash FROM games WHERE id = '8a000000-0000-4000-8000-000000000001'), :'h_hash');
+SELECT expect('H2 a shot                                            ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000001', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+SELECT expect('H3 the winning shot (performAction)                  ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000001', 'completed', :'h_hash', NULL, '11111111-1111-4111-8111-000000000001')), 'ALLOWED (rows=1)');
+SELECT expect('H4 ...the completion''s second write                  ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000001', 'completed', :'h_hash', NULL, '11111111-1111-4111-8111-000000000001')), 'ALLOWED (rows=1)');
+SELECT expect('H5 ...and a PATCH of status and winner               ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        $$UPDATE games SET status = 'completed', winner_id = '11111111-1111-4111-8111-000000000001'
+           WHERE id = '8a000000-0000-4000-8000-000000000001'$$), 'ALLOWED (rows=1)');
+SELECT expect('H6 undo the win                                      ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000001', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+SELECT expect('H7 replay, another winner                            ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000001', 'completed', :'h_hash', NULL, '22222222-2222-4222-8222-000000000002')), 'ALLOWED (rows=1)');
+SELECT expect_eq('H8 the replayed result is what the database holds',
+  (SELECT status || ' ' || winner_id FROM games WHERE id = '8a000000-0000-4000-8000-000000000001'),
+  'completed 22222222-2222-4222-8222-000000000002');
+
+-- a running protected game, and everybody who is not its host
+\set vandal_players '[{"id":"11111111-1111-4111-8111-000000000001","name":"Vandal"},{"id":"22222222-2222-4222-8222-000000000002","name":"Guest"}]'
+SELECT expect('H-setup a running game with a hash', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+SELECT expect('H9  the spectator: no x-host-secret                ', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H10 ...a plain PATCH is filtered                   ', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        $$UPDATE games SET participants = '[{"id":"11111111-1111-4111-8111-000000000001","name":"Vandal"},{"id":"22222222-2222-4222-8222-000000000002","name":"Guest"}]'
+           WHERE id = '8a000000-0000-4000-8000-000000000002'$$), 'ALLOWED (rows=0)');
+SELECT expect('H11 ...an upsert sending the host''s hash, too      ', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'h_hash', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+-- ''::json would raise 22P02; the policy must refuse, not error
+SELECT expect('H12 request.headers empty                          ', rls_try_h('anon', NULL, '',
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H13 request.headers as the session left it         ', rls_try('anon', NULL,
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H14 a wrong secret                                 ', rls_try_h('anon', NULL, pgrst_headers(:'o_secret'),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H15 an empty x-host-secret                         ', rls_try_h('anon', NULL, pgrst_headers(''),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+-- the hash is in every public row; it is not the secret
+SELECT expect('H16 the public hash sent as the secret             ', rls_try_h('anon', NULL, pgrst_headers(:'h_hash'),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H17 the secret with different case                 ', rls_try_h('anon', NULL, pgrst_headers(upper(:'h_secret')),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active', NULL, NULL, :'vandal_players')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect_eq('H18 ...and the game is still the host''s',
+  (SELECT participants->0->>'name' || ' ' || status FROM games WHERE id = '8a000000-0000-4000-8000-000000000002'),
+  'Host active');
+SELECT expect('H19 the host plays on                              ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+
+-- the bundle in production today: no hash, no header
+SELECT expect('H20 an old client creates a game, no hash          ', rls_try('anon', NULL,
+        mk_upsert('8a000000-0000-4000-8000-000000000003', 'active')), 'ALLOWED (rows=1)');
+SELECT expect('H21 ...and goes on writing it, no header           ', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        mk_upsert('8a000000-0000-4000-8000-000000000003', 'active')), 'ALLOWED (rows=1)');
+SELECT expect('H22 ...a stray header changes nothing              ', rls_try_h('anon', NULL, pgrst_headers(:'o_secret'),
+        mk_upsert('8a000000-0000-4000-8000-000000000003', 'active')), 'ALLOWED (rows=1)');
+
+-- the hash cannot be replaced, erased or planted
+SELECT expect('H23 the host''s upsert carries another hash         ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'o_hash')), 'ALLOWED (rows=1)');
+SELECT expect('H24 ...a PATCH erases it                           ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        $$UPDATE games SET host_secret_hash = NULL WHERE id = '8a000000-0000-4000-8000-000000000002'$$), 'ALLOWED (rows=1)');
+SELECT expect_eq('H25 ...the hash is the one it was created with',
+  (SELECT host_secret_hash FROM games WHERE id = '8a000000-0000-4000-8000-000000000002'), :'h_hash');
+SELECT expect('H26 the stranger''s secret still does not work      ', rls_try_h('anon', NULL, pgrst_headers(:'o_secret'),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H27 a stranger plants a hash on the legacy game    ', rls_try_h('anon', NULL, pgrst_headers(:'o_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000003', 'active', :'o_hash')), 'ALLOWED (rows=1)');
+SELECT expect('H28 ...by PATCH                                    ', rls_try_h('anon', NULL, pgrst_headers(:'o_secret'),
+        $$UPDATE games SET host_secret_hash = 'd5339cad1d2a65565094808319fe25879ccf93a8ac47b87566464fdde9aaffcc'
+           WHERE id = '8a000000-0000-4000-8000-000000000003'$$), 'ALLOWED (rows=1)');
+SELECT expect_true('H29 ...it stays unprotected rather than taken',
+  (SELECT host_secret_hash IS NULL FROM games WHERE id = '8a000000-0000-4000-8000-000000000003'));
+SELECT expect('H30 ...so its own host is not locked out           ', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        mk_upsert('8a000000-0000-4000-8000-000000000003', 'active')), 'ALLOWED (rows=1)');
+SELECT expect('H31 Alice creates her own game with a hash         ', rls_try_h('authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', pgrst_headers(:'o_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000004', 'active', :'o_hash', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')), 'ALLOWED (rows=1)');
+SELECT expect('H32 ...the owner replaces the hash                 ', rls_try('authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        mk_upsert_h('8a000000-0000-4000-8000-000000000004', 'active', :'h_hash', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')), 'ALLOWED (rows=1)');
+SELECT expect('H33 ...and erases it                               ', rls_try('authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        $$UPDATE games SET host_secret_hash = NULL WHERE id = '8a000000-0000-4000-8000-000000000004'$$), 'ALLOWED (rows=1)');
+SELECT expect_eq('H34 ...neither stuck',
+  (SELECT host_secret_hash FROM games WHERE id = '8a000000-0000-4000-8000-000000000004'), :'o_hash');
+SELECT expect('H35 a malformed hash                               ', rls_try('anon', NULL,
+        mk_upsert_h('8a000000-0000-4000-8000-000000000008', 'active', 'not-a-sha256')),
+        'ERROR 23514 new row for relation "games" violates check constraint "games_host_secret_hash_format"');
+SELECT expect('H36 a hash in upper case                           ', rls_try('anon', NULL,
+        mk_upsert_h('8a000000-0000-4000-8000-000000000009', 'active', upper(:'h_hash'))),
+        'ERROR 23514 new row for relation "games" violates check constraint "games_host_secret_hash_format"');
+
+-- a signed-in user is not affected: created_by decides, as since 00014
+SELECT expect('H37 Alice writes her hashed game without the header', rls_try_h('authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', pgrst_headers(NULL),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000004', 'completed', :'o_hash', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                    '11111111-1111-4111-8111-000000000001')), 'ALLOWED (rows=1)');
+SELECT expect('H38 Mallory, with Alice''s secret, writes her game  ', rls_try_h('authenticated', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', pgrst_headers(:'o_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000004', 'active', :'o_hash', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')),
+        'DENIED   new row violates row-level security policy');
+SELECT expect('H39 ...adopts a hashed guest game with its secret  ', rls_try_h('authenticated', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'h_hash', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')),
+        'DENIED   new row violates row-level security policy');
+SELECT expect('H40 ...or writes it as unowned                     ', rls_try_h('authenticated', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'h_hash')),
+        'DENIED   new row violates row-level security policy');
+
+-- the secret opens nothing 00015 has closed
+SELECT expect('H-setup hashed: started 25 h ago', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000005', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+SELECT age_game('8a000000-0000-4000-8000-000000000005', '25 hours', '1 minute') IS NULL AS aged \gset
+SELECT expect('H-setup hashed: finished 90 min ago', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000006', 'completed', :'h_hash', NULL, '11111111-1111-4111-8111-000000000001')), 'ALLOWED (rows=1)');
+SELECT age_game('8a000000-0000-4000-8000-000000000006', '2 hours', '90 minutes') IS NULL AS aged \gset
+SELECT expect('H-setup hashed: finished 5 min ago', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000007', 'completed', :'h_hash', NULL, '11111111-1111-4111-8111-000000000001')), 'ALLOWED (rows=1)');
+SELECT age_game('8a000000-0000-4000-8000-000000000007', '2 hours', '5 minutes') IS NULL AS aged \gset
+SELECT expect('H41 the right secret, a game started 25 h ago      ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000005', 'active', :'h_hash')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H42 ...a game finished 90 min ago                  ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000006', 'active', :'h_hash')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+SELECT expect('H43 ...a game finished 5 min ago: the undo         ', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000007', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+
+\echo
 \echo '=== M. 00015 again, on a database that needs it ==='
 -- Legacy rows the data fix and NOT VALID exist for, planted the only way they
 -- still can be: around the trigger, and with the constraint out of the way.
@@ -874,6 +1088,31 @@ SELECT expect_true('M10 once the row is gone, the next run validates all four',
                       'games_winner_is_participant')));
 SELECT expect('M11 and the host flow still works after three runs', rls_try('anon', NULL,
         mk_upsert('11111111-1111-4111-8111-11111111111b', 'active')), 'ALLOWED (rows=1)');
+
+\echo
+\echo '=== N. 00016 again, after 00015 was re-run ==='
+-- PART 2 of 00015 recreates games_update_anon without the secret, and section
+-- M ran it twice. That is the documented kill switch; this proves it works,
+-- and that re-running 00016 puts the check back.
+SELECT expect('N1 with 00015 re-run, the spectator writes the hashed game again (kill switch)', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active')), 'ALLOWED (rows=1)');
+SELECT expect_true('N2 ...while the hashes stayed put (00015 does not touch them)',
+  (SELECT host_secret_hash = :'h_hash' FROM games WHERE id = '8a000000-0000-4000-8000-000000000002')
+  AND (SELECT host_secret_hash IS NULL FROM games WHERE id = '8a000000-0000-4000-8000-000000000003'));
+\ir ../migrations/00016_host_secret.sql
+SELECT expect('N3 re-running 00016 locks the spectator out again', rls_try_h('anon', NULL, pgrst_headers(NULL),
+        mk_upsert('8a000000-0000-4000-8000-000000000002', 'active')),
+        'DENIED   new row violates row-level security policy (USING expression)');
+\ir ../migrations/00016_host_secret.sql
+SELECT expect('N4 ...and after one more run the host still plays', rls_try_h('anon', NULL, pgrst_headers(:'h_secret'),
+        mk_upsert_h('8a000000-0000-4000-8000-000000000002', 'active', :'h_hash')), 'ALLOWED (rows=1)');
+SELECT expect_true('N5 ...with one column, one format check, one trigger and the hashes intact',
+  (SELECT count(*) = 1 FROM pg_attribute WHERE attrelid = 'games'::regclass AND attname = 'host_secret_hash' AND NOT attisdropped)
+  AND (SELECT count(*) = 1 FROM pg_constraint WHERE conrelid = 'games'::regclass AND conname = 'games_host_secret_hash_format')
+  AND (SELECT count(*) = 1 FROM pg_trigger WHERE tgrelid = 'games'::regclass AND tgname = 'games_keep_host_secret')
+  AND (SELECT host_secret_hash = :'h_hash' FROM games WHERE id = '8a000000-0000-4000-8000-000000000001'));
+SELECT expect('N6 ...and an old client''s game is still writable', rls_try('anon', NULL,
+        mk_upsert('8a000000-0000-4000-8000-000000000003', 'active')), 'ALLOWED (rows=1)');
 
 \pset tuples_only off
 \pset format aligned
