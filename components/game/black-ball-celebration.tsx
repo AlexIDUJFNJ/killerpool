@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { shuffle } from '@/lib/utils'
 
 const PHRASES = [
@@ -93,38 +93,69 @@ export function BlackBallCelebration({
   show: boolean
   onComplete: () => void
 }) {
-  const [key, setKey] = React.useState(0)
-  const [texts, setTexts] = React.useState<FlyingText[]>([])
-  const [sparks, setSparks] = React.useState<Spark[]>([])
+  // One burst per show. Rolled in the effect, not during render (rendering has
+  // to stay pure), and rendered only once rolled: bumping a separate key on an
+  // overlay that was already mounted made AnimatePresence play two of them
+  const [burst, setBurst] = React.useState<{
+    id: number
+    texts: FlyingText[]
+    sparks: Spark[]
+  } | null>(null)
+  // A full-screen flash with particles flying in every direction is exactly
+  // what "reduce motion" asks to avoid; those players get one calm caption
+  const reduceMotion = useReducedMotion()
 
   React.useEffect(() => {
     if (show) {
-      setKey((k) => k + 1)
-      setTexts(generateTexts())
-      setSparks(generateSparks(25))
+      setBurst((previous) => ({
+        id: (previous?.id ?? 0) + 1,
+        texts: reduceMotion ? [] : generateTexts(),
+        sparks: reduceMotion ? [] : generateSparks(25),
+      }))
       const timer = setTimeout(onComplete, DURATION)
       return () => clearTimeout(timer)
     }
-  }, [show, onComplete])
+  }, [show, onComplete, reduceMotion])
+
+  const texts = burst?.texts ?? []
+  const sparks = burst?.sparks ?? []
 
   return (
-    <AnimatePresence>
-      {show && (
+    // Dropping the finished burst means the next show cannot flash the old
+    // one for a frame before its own is rolled
+    <AnimatePresence onExitComplete={() => setBurst(null)}>
+      {show && burst && (
         <motion.div
-          key={key}
+          key={burst.id}
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50 pointer-events-none select-none overflow-hidden"
           aria-hidden
         >
+          {reduceMotion && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 1, 0] }}
+              transition={{ duration: 1.6, times: [0, 0.15, 0.8, 1] }}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+            >
+              <span className="text-4xl sm:text-6xl font-black text-emerald-500 drop-shadow-lg">
+                {PHRASES[0]}
+              </span>
+              <span className="text-lg sm:text-xl font-bold text-foreground">+1 LIFE</span>
+            </motion.div>
+          )}
+
           {/* Quick dark flash */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 0.5, 0] }}
-            transition={{ duration: 0.4, times: [0, 0.15, 1] }}
-            className="absolute inset-0 bg-black pointer-events-none"
-          />
+          {!reduceMotion && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 0.5, 0] }}
+              transition={{ duration: 0.4, times: [0, 0.15, 1] }}
+              className="absolute inset-0 bg-black pointer-events-none"
+            />
+          )}
 
           {/* Spark particles */}
           {sparks.map((s) => {

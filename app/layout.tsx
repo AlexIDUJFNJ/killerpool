@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { GameProvider } from '@/contexts/game-context'
 import { PWAInit } from '@/components/pwa-init'
+import { MotionProvider } from '@/components/motion-provider'
 import { getBaseUrl } from '@/lib/site'
 
 export const metadata: Metadata = {
@@ -93,7 +94,9 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased overflow-x-hidden">
         <PWAInit />
-        <GameProvider>{children}</GameProvider>
+        <MotionProvider>
+          <GameProvider>{children}</GameProvider>
+        </MotionProvider>
       </body>
     </html>
   )
