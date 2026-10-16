@@ -152,6 +152,19 @@ describe('changes that are not a shot', () => {
     expect(result.current.getSnapshot()).toEqual({ line: null, duel: null });
   });
 
+  it('should withdraw a line still up about the shot taken back', () => {
+    const game = shots(newGame('Anna', 'Boris', 'Cleo', 'Dan'), 3, 'miss', 'miss');
+    const out = shoot(game, 3, 'miss');
+    const { result, rerender } = follow(game);
+    rerender({ game: out, held: false });
+    expect(line(result.current)).toContain('Dan');
+
+    rerender({ game: undoLastAction(out), held: false });
+
+    expect(line(result.current)).toBeNull();
+    expect(stopVoice).toHaveBeenCalled();
+  });
+
   it('should comment again on a shot taken after an undo', () => {
     // The host took the knockout back, and the player misses again for real
     const game = shots(newGame('Anna', 'Boris', 'Cleo', 'Dan'), 3, 'miss', 'miss');

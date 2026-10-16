@@ -88,18 +88,27 @@ export class CommentaryQueue {
     else this.advance()
   }
 
-  /** Take everything down and forget what was waiting */
-  clear(): void {
+  /**
+   * Take everything down and forget what was waiting — an undo has taken
+   * back the shot it was all about. A hold stays as it is: whatever holds
+   * the stage is still on screen.
+   */
+  dismiss(): void {
     if (this.lineTimer) clearTimeout(this.lineTimer)
     if (this.duelTimer) clearTimeout(this.duelTimer)
     this.lineTimer = null
     this.duelTimer = null
     this.waiting = []
-    this.held = false
     if (this.stage !== EMPTY_STAGE) {
       this.stage = EMPTY_STAGE
       this.emit()
     }
+  }
+
+  /** dismiss(), and the hold released too: the screen is going away */
+  clear(): void {
+    this.held = false
+    this.dismiss()
   }
 
   /** The line on screen goes back to the front of the queue */

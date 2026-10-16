@@ -15,6 +15,9 @@ const onOff = (on: boolean) => (on ? 'on' : 'off')
  * The game screen's sound switch: one header button opening a small menu
  * with the effects and the commentator's voice. The button's icon and name
  * say what is on, without opening it.
+ *
+ * The menu opens leftwards from the button's right edge, so the button goes
+ * at the right end of a header.
  */
 export function AudioSettingsMenu() {
   const settings = useAudioSettings()
@@ -90,7 +93,7 @@ export function AudioSettingsMenu() {
           id={menuId}
           role="group"
           aria-label="Sound settings"
-          className="absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+          className="absolute right-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
         >
           <SettingSwitch
             ref={firstSwitchRef}

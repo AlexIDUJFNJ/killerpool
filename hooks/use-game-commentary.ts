@@ -43,7 +43,8 @@ interface UseGameCommentaryOptions {
  * The first state seen is only remembered, so opening a game or a spectator
  * joining one sets nothing off. After that only a single new shot does (see
  * isSingleNewShot): an undo, or a reconnect catching up on several shots at
- * once, is silent.
+ * once, is silent — and an undo also withdraws a line still up or still
+ * being said about the shot it took back.
  *
  * Returns the queue the commentary components render from. Call it where it
  * stays mounted for the whole game — the winner screen replaces the game
@@ -79,6 +80,14 @@ export function useGameCommentary(game: Game | null, { held = false }: UseGameCo
   useEffect(() => {
     const previous = previousRef.current
     previousRef.current = game
+
+    // An undo: whatever is still on screen or being said about the shot
+    // taken back is no longer true ("Dan is out!" with Dan back in)
+    if (previous && game && previous.id === game.id && game.history.length < previous.history.length) {
+      queue.dismiss()
+      stopVoice()
+      return
+    }
 
     const transition = analyzeTransition(previous, game)
     if (!transition) return

@@ -496,8 +496,6 @@ export default function GamePage() {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* Sound effects and the commentator's voice, for host and spectators alike */}
-            <AudioSettingsMenu />
             {/* QR/Share button - available for both admin and spectators */}
             <Button
               variant="ghost"
@@ -527,6 +525,10 @@ export default function GamePage() {
             >
               <UsersRound className="h-5 w-5" />
             </Button>
+            {/* Sound effects and the commentator's voice, for host and
+                spectators alike. Last, so its menu opens from the screen's
+                edge and fits a narrow phone. */}
+            <AudioSettingsMenu />
           </div>
         </div>
 

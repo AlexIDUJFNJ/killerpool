@@ -180,6 +180,24 @@ describe('subscribers', () => {
   });
 });
 
+describe('dismiss', () => {
+  it('should take the line and the overlay down but keep a hold', () => {
+    const queue = new CommentaryQueue(now);
+    queue.say('eliminated', 'Dan is out!');
+    queue.showDuel(DUELLISTS);
+    queue.setHeld(true);
+
+    queue.dismiss();
+    expect(queue.getSnapshot()).toEqual({ line: null, duel: null });
+
+    // The celebration that holds the stage is still up
+    queue.say('last_life', 'Next shot');
+    expect(showing(queue)).toBeNull();
+    queue.setHeld(false);
+    expect(showing(queue)).toBe('Next shot');
+  });
+});
+
 describe('clear', () => {
   it('should take everything down and stop the timers', () => {
     const queue = new CommentaryQueue(now);
