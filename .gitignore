@@ -9,6 +9,8 @@
 # next.js
 /.next/
 /out/
+# SWC plugin cache, created when next/jest compiles the tests
+/.swc/
 
 # production
 /build
@@ -28,6 +30,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# supabase cli (project link state)
+supabase/.temp
 
 # typescript
 *.tsbuildinfo
@@ -49,3 +54,6 @@ next-env.d.ts
 
 # PWA offline fallback bundle (generated at build)
 **/public/fallback-*.js
+
+# Claude Code agent worktrees (full checkouts, removed when the agent ends)
+/.claude/worktrees/

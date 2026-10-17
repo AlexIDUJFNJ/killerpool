@@ -15,6 +15,14 @@ import {
 } from './types'
 
 /**
+ * Most players one game can have, counting the eliminated ones. The database
+ * refuses a game with more participants (a CHECK constraint, migration 00015)
+ * and that refusal is final, so a bigger game would never upload: it is
+ * stopped here, before it is played.
+ */
+export const MAX_PLAYERS = 32
+
+/**
  * Create a new player
  */
 export function createPlayer(
@@ -37,13 +45,26 @@ export function createPlayer(
 }
 
 /**
- * Create a new game
+ * Create a new game.
+ *
+ * `userId` goes to the player marked as the owner. `createdBy` records who
+ * created the game — an auth uid, or this device's guest id — and defaults to
+ * `userId`. They differ when nobody in the game is marked as "me": no player
+ * carries the userId then, but the sync still has to know which account the
+ * game belongs to (see rowOwner in lib/sync.ts).
+ *
+ * Throws above MAX_PLAYERS players.
  */
 export function createGame(
   players: NewGamePlayerInput[],
   ruleset: Ruleset = DEFAULT_RULESET,
-  userId?: string | null
+  userId?: string | null,
+  createdBy: string | null | undefined = userId
 ): Game {
+  if (players.length > MAX_PLAYERS) {
+    throw new Error(`A game can have at most ${MAX_PLAYERS} players`)
+  }
+
   // Only the marked player gets the userId; everyone else is tracked by their
   // per-game player id. Position means nothing here — the form shuffles rows
   // and drops unnamed ones. Falling back to index 0 keeps callers that pass no
@@ -70,7 +91,7 @@ export function createGame(
     ruleset,
     rulesetId: ruleset.id,
     history: [],
-    createdBy: userId,
+    createdBy,
   }
 }
 
@@ -176,13 +197,6 @@ export function getActivePlayers(game: Game): Player[] {
 }
 
 /**
- * Get eliminated players
- */
-export function getEliminatedPlayers(game: Game): Player[] {
-  return game.players.filter(p => p.eliminated)
-}
-
-/**
  * Get the next N players in the queue (after current player)
  */
 export function getNextPlayers(game: Game, count: number = 2): Player[] {
@@ -251,8 +265,27 @@ export function undoLastAction(game: Game): Game {
 }
 
 /**
+ * End a game before anybody has won. It keeps its players and history, so it
+ * can still be looked at, but there is no winner and nothing counts it.
+ */
+export function abandonGame(game: Game): Game {
+  if (game.status !== 'active') {
+    throw new Error('Only an active game can be abandoned')
+  }
+
+  return {
+    ...game,
+    status: 'abandoned',
+    // A fresh timestamp, like every other transition: the abandoned state is
+    // the newest version of this game, and the row in Supabase follows it
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+/**
  * Add a new player to an active game
- * The new player gets the minimum lives among all active players
+ * The new player gets the minimum lives among all active players.
+ * Throws once the game has MAX_PLAYERS players, eliminated ones included.
  */
 export function addPlayerToGame(
   game: Game,
@@ -272,6 +305,11 @@ export function addPlayerToGame(
 
   if (playerId && game.players.some(p => p.id === playerId)) {
     throw new Error('Player is already in this game')
+  }
+
+  // Eliminated players stay in the game, and in the row the database checks
+  if (game.players.length >= MAX_PLAYERS) {
+    throw new Error(`A game can have at most ${MAX_PLAYERS} players`)
   }
 
   // Get minimum lives among active players
@@ -297,29 +335,4 @@ export function getSortedPlayers(game: Game): Player[] {
   const activePlayers = game.players.filter(p => !p.eliminated)
   const eliminatedPlayers = game.players.filter(p => p.eliminated)
   return [...activePlayers, ...eliminatedPlayers]
-}
-
-/**
- * Calculate game statistics
- */
-export function calculateStats(game: Game) {
-  const totalActions = game.history.length
-  const totalMisses = game.history.filter(h => h.action === 'miss').length
-  const totalPots = game.history.filter(h => h.action === 'pot').length
-  const totalBlackPots = game.history.filter(h => h.action === 'pot_black').length
-
-  const duration = game.status === 'completed'
-    ? new Date(game.updatedAt).getTime() - new Date(game.createdAt).getTime()
-    : undefined
-
-  const winner = getWinner(game)
-
-  return {
-    totalActions,
-    totalMisses,
-    totalPots,
-    totalBlackPots,
-    duration,
-    winner,
-  }
 }

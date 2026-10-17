@@ -1,13 +1,16 @@
 'use client'
 
 import * as React from 'react'
-import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react'
+import { motion, useMotionValue, useTransform, useIsPresent, PanInfo } from 'motion/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { haptics } from '@/lib/haptic'
-import { X, Circle, Target } from 'lucide-react'
+import { ACTION_STYLES } from './action-styles'
+import { StreakBadge, ON_FIRE_CARD, isOnFire } from './streak-badge'
+import { STREAK_BADGE_MIN } from '@/lib/game-insights'
 
 export type SwipeAction = 'miss' | 'pot' | 'pot_black'
 
@@ -18,40 +21,51 @@ export interface SwipeablePlayerCardProps {
   maxLives?: number
   onSwipe: (action: SwipeAction) => void
   disabled?: boolean
+  /** Pots in a row, see getCurrentStreak: a badge from 2, the on-fire look from 3 */
+  streak?: number
 }
 
 const SWIPE_THRESHOLD = 100
 const SWIPE_VELOCITY_THRESHOLD = 500
 
-/**
- * One place for how each action looks. The big indicator, the badge and the
- * legend used to carry their own copy of these colours, and the badge's copy
- * had POT and BLACK the wrong way round.
- */
-const SWIPE_STYLES: Record<
-  SwipeAction,
-  { label: string; icon: typeof X; text: string; badge: string }
-> = {
-  miss: {
-    label: 'MISS',
-    icon: X,
-    text: 'text-red-500',
-    badge: 'border-red-500 bg-red-500/10',
-  },
-  pot: {
-    label: 'POT',
-    icon: Circle,
-    text: 'text-emerald-500',
-    badge: 'border-emerald-500 bg-emerald-500/10',
-  },
-  pot_black: {
-    label: 'BLACK',
-    icon: Target,
-    text: 'text-slate-900 dark:text-slate-100',
-    badge:
-      'border-slate-900 bg-slate-900/10 dark:border-slate-100 dark:bg-slate-100/10',
-  },
+const ACTION_HAPTICS: Record<SwipeAction, () => void> = {
+  miss: haptics.miss,
+  pot: haptics.pot,
+  pot_black: haptics.potBlack,
 }
+
+/** Buttons in the same left / up / right order as the swipe directions */
+const BUTTON_ORDER: SwipeAction[] = ['miss', 'pot_black', 'pot']
+
+const ARROWS: Record<SwipeAction, string> = {
+  miss: '←',
+  pot_black: '↑',
+  pot: '→',
+}
+
+const KEY_ACTIONS: Record<string, SwipeAction> = {
+  ArrowLeft: 'miss',
+  ArrowUp: 'pot_black',
+  ArrowRight: 'pot',
+}
+
+const KEY_SHORTCUTS: Record<SwipeAction, string> = {
+  miss: 'ArrowLeft',
+  pot_black: 'ArrowUp',
+  pot: 'ArrowRight',
+}
+
+type FocusTarget = SwipeAction | 'card'
+
+/**
+ * The game screen replaces this card after every shot (a new key per turn),
+ * which drops keyboard focus onto <body>. The next card picks focus back up
+ * from here, so a keyboard player can keep pressing the same control. Module
+ * scope because the two cards are different instances; time-limited so a card
+ * mounted much later never steals focus.
+ */
+let pendingFocus: { target: FocusTarget; at: number } | null = null
+const FOCUS_HANDOFF_MS = 2000
 
 export function SwipeablePlayerCard({
   name,
@@ -60,11 +74,33 @@ export function SwipeablePlayerCard({
   maxLives = 6,
   onSwipe,
   disabled = false,
+  streak = 0,
 }: SwipeablePlayerCardProps) {
   const x = useMotionValue(0)
   const y = useMotionValue(0)
   const [isDragging, setIsDragging] = React.useState(false)
   const [swipeDirection, setSwipeDirection] = React.useState<SwipeAction | null>(null)
+  const cardRef = React.useRef<HTMLDivElement>(null)
+  const buttonRefs = React.useRef<Partial<Record<SwipeAction, HTMLButtonElement | null>>>({})
+  const hintId = React.useId()
+
+  // While the card animates out after a shot it is still on screen and still
+  // clickable; acting on it then would record a second shot for this player
+  const isPresent = useIsPresent()
+  const inactive = disabled || !isPresent
+
+  React.useEffect(() => {
+    const handoff = pendingFocus
+    pendingFocus = null
+    if (!handoff || Date.now() - handoff.at > FOCUS_HANDOFF_MS) return
+
+    const active = document.activeElement
+    if (active && active !== document.body) return
+
+    const target =
+      handoff.target === 'card' ? cardRef.current : buttonRefs.current[handoff.target]
+    target?.focus({ preventScroll: true })
+  }, [])
 
   // Visual feedback during drag
   const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15])
@@ -79,14 +115,36 @@ export function SwipeablePlayerCard({
   const potOpacity = useTransform(x, [0, SWIPE_THRESHOLD, 200], [0, 0.7, 1])
   const blackOpacity = useTransform(y, [-200, -SWIPE_THRESHOLD, 0], [1, 0.7, 0])
 
+  /** The one way a shot leaves this card — swipe, button or key alike */
+  const play = (action: SwipeAction) => {
+    if (inactive) return
+
+    const active = document.activeElement
+    const focusTarget: FocusTarget | null =
+      active === cardRef.current
+        ? 'card'
+        : BUTTON_ORDER.find((a) => buttonRefs.current[a] === active) ?? null
+    pendingFocus = focusTarget ? { target: focusTarget, at: Date.now() } : null
+
+    ACTION_HAPTICS[action]()
+    onSwipe(action)
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    const action = KEY_ACTIONS[event.key]
+    if (!action || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    event.preventDefault()
+    play(action)
+  }
+
   const handleDragStart = () => {
-    if (disabled) return
+    if (inactive) return
     setIsDragging(true)
     haptics.swipeStart()
   }
 
   const handleDrag = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (disabled) return
+    if (inactive) return
 
     const currentX = info.offset.x
     const currentY = info.offset.y
@@ -112,10 +170,9 @@ export function SwipeablePlayerCard({
   }
 
   const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (disabled) {
-      setIsDragging(false)
-      return
-    }
+    setIsDragging(false)
+    setSwipeDirection(null)
+    if (inactive) return
 
     const offsetX = info.offset.x
     const offsetY = info.offset.y
@@ -129,192 +186,215 @@ export function SwipeablePlayerCard({
       // Left swipe (MISS)
       if (offsetX < -SWIPE_THRESHOLD || velocityX < -SWIPE_VELOCITY_THRESHOLD) {
         action = 'miss'
-        haptics.miss()
       }
       // Right swipe (POT)
       else if (offsetX > SWIPE_THRESHOLD || velocityX > SWIPE_VELOCITY_THRESHOLD) {
         action = 'pot'
-        haptics.pot()
       }
     }
     // Check vertical swipe (up for BLACK)
     else if (offsetY < -SWIPE_THRESHOLD || velocityY < -SWIPE_VELOCITY_THRESHOLD) {
       action = 'pot_black'
-      haptics.potBlack()
     }
 
     if (action) {
-      onSwipe(action)
+      play(action)
     }
-
-    // Reset
-    setIsDragging(false)
-    setSwipeDirection(null)
   }
 
+  const livesLabel = `${lives} ${lives === 1 ? 'life' : 'lives'} remaining`
+  const hasStreak = streak >= STREAK_BADGE_MIN
+  const onFire = isOnFire(streak)
+
   return (
-    <div className="relative w-full max-w-md mx-auto">
-      {/* Swipe Indicators */}
-      <motion.div
-        style={{ opacity: missOpacity }}
-        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-24 z-0"
-      >
-        <div className={cn('flex flex-col items-center gap-2', SWIPE_STYLES.miss.text)}>
-          <X className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">{SWIPE_STYLES.miss.label}</span>
-        </div>
-      </motion.div>
-
-      <motion.div
-        style={{ opacity: blackOpacity }}
-        className="absolute left-1/2 -translate-x-1/2 top-0 -translate-y-24 z-0"
-      >
-        <div className={cn('flex flex-col items-center gap-2', SWIPE_STYLES.pot_black.text)}>
-          <Target className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">{SWIPE_STYLES.pot_black.label}</span>
-        </div>
-      </motion.div>
-
-      <motion.div
-        style={{ opacity: potOpacity }}
-        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-24 z-0"
-      >
-        <div className={cn('flex flex-col items-center gap-2', SWIPE_STYLES.pot.text)}>
-          <Circle className="h-16 w-16" strokeWidth={3} />
-          <span className="text-xl font-bold">{SWIPE_STYLES.pot.label}</span>
-        </div>
-      </motion.div>
-
-      {/* Swipeable Card */}
-      <motion.div
-        drag={!disabled}
-        dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-        dragElastic={0.7}
-        onDragStart={handleDragStart}
-        onDrag={handleDrag}
-        onDragEnd={handleDragEnd}
-        style={{ x, y, rotate, opacity }}
-        className={cn(
-          'relative z-10 cursor-grab active:cursor-grabbing',
-          disabled && 'cursor-not-allowed opacity-50'
-        )}
-      >
-        <Card className="overflow-hidden border-2 border-primary/20 shadow-2xl">
-          <CardContent className="p-0">
-            {/* Card Content */}
-            <div className="relative bg-linear-to-br from-background via-background to-primary/5 p-6 sm:p-8">
-              {/* Active Indicator */}
-              {swipeDirection && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className={cn('absolute top-4 right-4', SWIPE_STYLES[swipeDirection].text)}
-                >
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-lg px-3 py-1 border-2',
-                      SWIPE_STYLES[swipeDirection].badge
-                    )}
-                  >
-                    {SWIPE_STYLES[swipeDirection].label}
-                  </Badge>
-                </motion.div>
-              )}
-
-              {/* Avatar */}
-              <div className="flex justify-center mb-4 sm:mb-6">
-                <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-primary/30 shadow-xl">
-                  <AvatarFallback className="text-6xl sm:text-8xl bg-primary/10">
-                    {avatar}
-                  </AvatarFallback>
-                </Avatar>
+    <div className="w-full max-w-md mx-auto" onKeyDown={handleKeyDown}>
+      <div className="relative">
+        {/* Swipe Indicators */}
+        {(
+          [
+            ['miss', missOpacity, 'left-0 top-1/2 -translate-y-1/2 -translate-x-24'],
+            ['pot_black', blackOpacity, 'left-1/2 -translate-x-1/2 top-0 -translate-y-24'],
+            ['pot', potOpacity, 'right-0 top-1/2 -translate-y-1/2 translate-x-24'],
+          ] as const
+        ).map(([action, indicatorOpacity, position]) => {
+          const style = ACTION_STYLES[action]
+          const Icon = style.icon
+          return (
+            <motion.div
+              key={action}
+              style={{ opacity: indicatorOpacity }}
+              className={cn('absolute z-0', position)}
+              aria-hidden="true"
+            >
+              <div className={cn('flex flex-col items-center gap-2', style.text)}>
+                <Icon className="h-16 w-16" strokeWidth={3} />
+                <span className="text-xl font-bold">{style.label.toUpperCase()}</span>
               </div>
+            </motion.div>
+          )
+        })}
 
-              {/* Player Name */}
-              <h2 className="text-2xl sm:text-4xl font-bold text-center mb-6 sm:mb-8">
-                {name}
-              </h2>
-
-              {/* Lives Display */}
-              <div className="space-y-2 sm:space-y-3">
-                <p className="text-xs sm:text-sm text-muted-foreground text-center uppercase tracking-wide">
-                  Lives Remaining
-                </p>
-                <div className="flex justify-center gap-2 sm:gap-3">
-                  {Array.from({ length: maxLives }).map((_, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ scale: 0 }}
-                      animate={{ scale: i < lives ? 1 : 0.5 }}
-                      transition={{ delay: i * 0.1 }}
-                      className={cn(
-                        'h-8 w-8 sm:h-12 sm:w-12 rounded-full border-2 sm:border-4 transition-all',
-                        i < lives
-                          ? lives === 1
-                            ? 'bg-red-500 border-red-400 shadow-lg shadow-red-500/50'
-                            : 'bg-emerald-500 border-emerald-400 shadow-lg shadow-emerald-500/50'
-                          : 'bg-muted border-muted-foreground/20'
-                      )}
-                    />
-                  ))}
-                  {lives > maxLives && (
-                    <Badge variant="secondary" className="text-lg sm:text-2xl px-3 sm:px-4 py-1.5 sm:py-2 ml-2">
-                      +{lives - maxLives}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-4xl sm:text-6xl font-bold text-center text-primary mt-3 sm:mt-4">
-                  {lives}
-                </p>
-              </div>
-
-              {/* Swipe Instructions */}
-              {!isDragging && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-border"
-                >
-                  <p className="text-[10px] sm:text-xs text-muted-foreground text-center uppercase tracking-widest mb-2 sm:mb-3">
-                    Swipe to play
-                  </p>
-                  <div className="grid grid-cols-3 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs">
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={SWIPE_STYLES.miss.text}>
-                        <X className="h-5 w-5 mx-auto" />
-                      </div>
-                      <span className="text-muted-foreground">← Miss</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={SWIPE_STYLES.pot_black.text}>
-                        <Target className="h-5 w-5 mx-auto" />
-                      </div>
-                      <span className="text-muted-foreground">↑ Black</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={SWIPE_STYLES.pot.text}>
-                        <Circle className="h-5 w-5 mx-auto" />
-                      </div>
-                      <span className="text-muted-foreground">Pot →</span>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Drag hint overlay */}
-      {isDragging && (
+        {/* Swipeable Card */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.1 }}
-          className="absolute inset-0 bg-primary rounded-lg pointer-events-none"
-        />
-      )}
+          ref={cardRef}
+          role="group"
+          aria-label={`${name}, ${livesLabel}${hasStreak ? `, ${streak} pots in a row` : ''}`}
+          aria-describedby={hintId}
+          tabIndex={inactive ? -1 : 0}
+          drag={!inactive}
+          dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+          dragElastic={0.7}
+          onDragStart={handleDragStart}
+          onDrag={handleDrag}
+          onDragEnd={handleDragEnd}
+          style={{ x, y, rotate, opacity }}
+          className={cn(
+            'relative z-10 cursor-grab active:cursor-grabbing rounded-xl',
+            'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            disabled && 'cursor-not-allowed opacity-50'
+          )}
+        >
+          <Card className={cn('overflow-hidden border-2 border-primary/20 shadow-2xl', onFire && ON_FIRE_CARD)}>
+            <CardContent className="p-0">
+              {/* Card Content */}
+              <div
+                className={cn(
+                  'relative bg-linear-to-br from-background via-background p-6 sm:p-8',
+                  onFire ? 'to-orange-500/10' : 'to-primary/5'
+                )}
+              >
+                {/* Active Indicator */}
+                {swipeDirection && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className={cn('absolute top-4 right-4', ACTION_STYLES[swipeDirection].text)}
+                    aria-hidden="true"
+                  >
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-lg px-3 py-1 border-2',
+                        ACTION_STYLES[swipeDirection].surface,
+                        ACTION_STYLES[swipeDirection].border
+                      )}
+                    >
+                      {ACTION_STYLES[swipeDirection].label.toUpperCase()}
+                    </Badge>
+                  </motion.div>
+                )}
+
+                {/* Avatar */}
+                <div className="flex justify-center mb-4 sm:mb-6" aria-hidden="true">
+                  <Avatar className="h-24 w-24 sm:h-32 sm:w-32 border-4 border-primary/30 shadow-xl">
+                    <AvatarFallback className="text-6xl sm:text-8xl bg-primary/10">
+                      {avatar}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+
+                {/* Player Name */}
+                <h2
+                  className={cn(
+                    'text-2xl sm:text-4xl font-bold text-center',
+                    hasStreak ? 'mb-3' : 'mb-6 sm:mb-8'
+                  )}
+                >
+                  {name}
+                </h2>
+
+                {/* Streak: under the name, where the whole table can see it */}
+                {hasStreak && (
+                  <div className="flex justify-center mb-5 sm:mb-6">
+                    <StreakBadge streak={streak} />
+                  </div>
+                )}
+
+                {/* Lives Display */}
+                <div className="space-y-2 sm:space-y-3">
+                  <p className="text-xs sm:text-sm text-muted-foreground text-center uppercase tracking-wide">
+                    Lives Remaining
+                  </p>
+                  <div className="flex justify-center gap-2 sm:gap-3" aria-hidden="true">
+                    {Array.from({ length: maxLives }).map((_, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: i < lives ? 1 : 0.5 }}
+                        transition={{ delay: i * 0.1 }}
+                        className={cn(
+                          'h-8 w-8 sm:h-12 sm:w-12 rounded-full border-2 sm:border-4 transition-all',
+                          i < lives
+                            ? lives === 1
+                              ? 'bg-red-500 border-red-400 shadow-lg shadow-red-500/50'
+                              : 'bg-emerald-500 border-emerald-400 shadow-lg shadow-emerald-500/50'
+                            : 'bg-muted border-muted-foreground/20'
+                        )}
+                      />
+                    ))}
+                    {lives > maxLives && (
+                      <Badge variant="secondary" className="text-lg sm:text-2xl px-3 sm:px-4 py-1.5 sm:py-2 ml-2">
+                        +{lives - maxLives}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-4xl sm:text-6xl font-bold text-center text-primary mt-3 sm:mt-4">
+                    {lives}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Drag hint overlay */}
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.1 }}
+            className="absolute inset-0 bg-primary rounded-lg pointer-events-none"
+          />
+        )}
+      </div>
+
+      {/* The same three shots without a swipe: for keyboards, switch access,
+          screen readers, and anyone who simply prefers to tap */}
+      <div className="mt-6 sm:mt-8">
+        <p className="text-[10px] sm:text-xs text-muted-foreground text-center uppercase tracking-widest mb-2 sm:mb-3">
+          Swipe or tap to play
+        </p>
+        <p id={hintId} className="sr-only">
+          Use the buttons below, or the arrow keys: left for Miss, up for Black, right for Pot.
+        </p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          {BUTTON_ORDER.map((action) => {
+            const style = ACTION_STYLES[action]
+            const Icon = style.icon
+            return (
+              <Button
+                key={action}
+                ref={(node) => {
+                  buttonRefs.current[action] = node
+                }}
+                type="button"
+                variant="outline"
+                disabled={inactive}
+                onClick={() => play(action)}
+                aria-keyshortcuts={KEY_SHORTCUTS[action]}
+                className={cn('h-14 flex-col gap-0.5 px-2 border', style.surface)}
+              >
+                <Icon className={cn('h-5 w-5', style.text)} />
+                {/* Arrow on the side it points to, as in "← Miss" and "Pot →" */}
+                <span className="text-xs sm:text-sm font-semibold">
+                  {action !== 'pot' && <span aria-hidden="true">{ARROWS[action]} </span>}
+                  {style.label}
+                  {action === 'pot' && <span aria-hidden="true"> {ARROWS[action]}</span>}
+                </span>
+              </Button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }

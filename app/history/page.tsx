@@ -6,130 +6,147 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { loadGameHistory, deleteGameFromHistory } from '@/lib/storage'
+import { BottomSheet } from '@/components/ui/bottom-sheet'
+import { deleteGameFromHistory, readGameHistorySnapshot, subscribeToGameHistory } from '@/lib/storage'
 import { Game } from '@/lib/types'
 import { motion } from 'motion/react'
 import { ArrowLeft, Trophy, Users, Clock, Trash2, CloudUpload, CloudOff, Cloud, Check, Search, Filter } from 'lucide-react'
-import { mergeGamesWithSupabase, isSupabaseAvailable } from '@/lib/sync'
+import { mergeGamesWithSupabase, isSupabaseAvailable, retryPendingSyncs } from '@/lib/sync'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
+import {
+  filterGames,
+  formatDuration,
+  getGameWinner,
+  isFinishedGame,
+  staggerDelay,
+  type DateFilter,
+  type StatusFilter,
+} from './history-utils'
 
-type DateFilter = 'all' | 'today' | 'week' | 'month'
-type StatusFilter = 'all' | 'completed' | 'abandoned'
+type SyncStatus = 'idle' | 'syncing' | 'success' | 'error'
+
+const DATE_FILTERS: Array<[DateFilter, string]> = [
+  ['all', 'All Time'],
+  ['today', 'Today'],
+  ['week', 'Last 7 Days'],
+  ['month', 'Last 30 Days'],
+]
+
+const STATUS_FILTERS: Array<[StatusFilter, string]> = [
+  ['all', 'All'],
+  ['completed', 'Completed'],
+  ['abandoned', 'Abandoned'],
+]
+
+const SYNC_ANNOUNCEMENTS: Record<SyncStatus, string> = {
+  idle: '',
+  syncing: 'Syncing your games…',
+  success: 'History is up to date',
+  error: 'Sync failed. Try again in a moment.',
+}
+
+// Module-level so useSyncExternalStore does not resubscribe on every render
+function subscribeToConnectivity(onStoreChange: () => void) {
+  window.addEventListener('online', onStoreChange)
+  window.addEventListener('offline', onStoreChange)
+  return () => {
+    window.removeEventListener('online', onStoreChange)
+    window.removeEventListener('offline', onStoreChange)
+  }
+}
+const getIsOnline = () => navigator.onLine
+const getIsOnlineServer = () => true
+// The server has no localStorage: it renders the page as not read yet, and
+// so does hydration, after which the stored list takes over
+const getHistoryOnServer = () => null
+
+function formatDate(dateString: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(dateString))
+}
+
+function BackHome() {
+  return (
+    <Button asChild variant="ghost" size="icon">
+      <Link href="/" aria-label="Back to home">
+        <ArrowLeft className="h-5 w-5" />
+      </Link>
+    </Button>
+  )
+}
 
 export default function HistoryPage() {
-  const [allGames, setAllGames] = React.useState<Game[]>([])
-  const [filteredGames, setFilteredGames] = React.useState<Game[]>([])
+  // Read from localStorage as an external store, so the list follows every
+  // change to it: a delete, a Sync, a game finished in another tab. null
+  // until it has been read, so an empty-state screen does not flash before
+  // the list on every visit.
+  const storedGames = React.useSyncExternalStore<readonly Game[] | null>(
+    subscribeToGameHistory,
+    readGameHistorySnapshot,
+    getHistoryOnServer
+  )
+  const allGames = React.useMemo(
+    () => (storedGames ? storedGames.filter(isFinishedGame) : null),
+    [storedGames]
+  )
   const [searchQuery, setSearchQuery] = React.useState('')
   const [dateFilter, setDateFilter] = React.useState<DateFilter>('all')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
-  const [isSyncing, setIsSyncing] = React.useState(false)
-  const [syncStatus, setSyncStatus] = React.useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
-  const [isOnline, setIsOnline] = React.useState(false)
+  const [syncStatus, setSyncStatus] = React.useState<SyncStatus>('idle')
+  // Game waiting for the user to confirm its deletion
+  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null)
+  // isSupabaseAvailable() answers "is someone signed in", not "is there a
+  // network" — the two used to share one flag, which showed every guest
+  // "Offline"
+  const [isSignedIn, setIsSignedIn] = React.useState<boolean | null>(null)
+  const isOnline = React.useSyncExternalStore(subscribeToConnectivity, getIsOnline, getIsOnlineServer)
+  const isSyncing = syncStatus === 'syncing'
 
-  // Load games on mount
   React.useEffect(() => {
-    const history = loadGameHistory()
-    setAllGames(history)
-    setFilteredGames(history)
-
-    // Check if Supabase is available
-    isSupabaseAvailable().then(setIsOnline)
+    isSupabaseAvailable().then(setIsSignedIn)
   }, [])
 
-  // Apply filters whenever search query or filters change
-  React.useEffect(() => {
-    let filtered = [...allGames]
+  const filteredGames = React.useMemo(
+    () => filterGames(allGames ?? [], { query: searchQuery, date: dateFilter, status: statusFilter }),
+    [allGames, searchQuery, dateFilter, statusFilter]
+  )
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(game =>
-        game.players.some(player =>
-          player.name.toLowerCase().includes(query)
-        )
-      )
-    }
-
-    // Apply date filter
-    if (dateFilter !== 'all') {
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-
-      filtered = filtered.filter(game => {
-        const gameDate = new Date(game.createdAt)
-
-        switch (dateFilter) {
-          case 'today':
-            return gameDate >= today
-          case 'week':
-            const weekAgo = new Date(today)
-            weekAgo.setDate(weekAgo.getDate() - 7)
-            return gameDate >= weekAgo
-          case 'month':
-            const monthAgo = new Date(today)
-            monthAgo.setMonth(monthAgo.getMonth() - 1)
-            return gameDate >= monthAgo
-          default:
-            return true
-        }
-      })
-    }
-
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(game => game.status === statusFilter)
-    }
-
-    setFilteredGames(filtered)
-  }, [searchQuery, dateFilter, statusFilter, allGames])
-
-  const handleMerge = async () => {
-    setIsSyncing(true)
+  const handleSync = async () => {
     setSyncStatus('syncing')
 
     try {
+      // Upload first: games that finished offline, or hit a network error,
+      // wait in the retry queue, and "Sync" used to only download
+      await retryPendingSyncs()
       await mergeGamesWithSupabase()
-      const history = loadGameHistory()
-      setAllGames(history)
       setSyncStatus('success')
-
-      setTimeout(() => {
-        setSyncStatus('idle')
-      }, 3000)
     } catch (error) {
-      console.error('Merge error:', error)
+      console.error('Sync error:', error)
       setSyncStatus('error')
-
-      setTimeout(() => {
-        setSyncStatus('idle')
-      }, 3000)
-    } finally {
-      setIsSyncing(false)
     }
+
+    setTimeout(() => setSyncStatus('idle'), 3000)
   }
 
-  const handleDelete = (gameId: string) => {
-    if (confirm('Delete this game from history?')) {
-      deleteGameFromHistory(gameId)
-      setAllGames(allGames.filter(g => g.id !== gameId))
-    }
+  const confirmDelete = () => {
+    if (pendingDeleteId) deleteGameFromHistory(pendingDeleteId)
+    setPendingDeleteId(null)
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date)
+  const clearFilters = () => {
+    setSearchQuery('')
+    setDateFilter('all')
+    setStatusFilter('all')
   }
 
-  const formatDuration = (start: string, end: string) => {
-    const duration = new Date(end).getTime() - new Date(start).getTime()
-    const minutes = Math.floor(duration / 60000)
-    const seconds = Math.floor((duration % 60000) / 1000)
-    return `${minutes}m ${seconds}s`
+  if (allGames === null) {
+    return <main className="min-h-screen p-4 sm:p-6" aria-busy="true" />
   }
 
   if (allGames.length === 0) {
@@ -137,11 +154,7 @@ export default function HistoryPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+            <BackHome />
             <h1 className="text-2xl sm:text-3xl font-bold">Game History</h1>
           </div>
 
@@ -149,11 +162,11 @@ export default function HistoryPage() {
             <Trophy className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h2 className="text-xl font-semibold mb-2">No games yet</h2>
             <p className="text-muted-foreground mb-6">
-              Complete your first game to see it here
+              Finish your first game to see it here
             </p>
-            <Link href="/game/new">
-              <Button size="lg">Start New Game</Button>
-            </Link>
+            <Button asChild size="lg">
+              <Link href="/game/new">Start New Game</Link>
+            </Button>
           </div>
         </div>
       </main>
@@ -163,43 +176,51 @@ export default function HistoryPage() {
   return (
     <main className="min-h-screen p-4 sm:p-6">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
           <div className="flex items-center gap-3 sm:gap-4">
-            <Link href="/">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
+            <BackHome />
             <h1 className="text-2xl sm:text-3xl font-bold">History</h1>
           </div>
 
-          {isOnline && (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleMerge}
-                disabled={isSyncing}
-              >
-                {syncStatus === 'syncing' ? (
-                  <CloudUpload className="h-4 w-4 mr-2 animate-pulse" />
-                ) : syncStatus === 'success' ? (
-                  <Check className="h-4 w-4 mr-2 text-green-500" />
-                ) : (
-                  <Cloud className="h-4 w-4 mr-2" />
-                )}
-                Sync
-              </Button>
+          {isSignedIn === false && (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/auth">
+                <Cloud className="h-4 w-4" />
+                Sign in to sync
+              </Link>
+            </Button>
+          )}
+
+          {isSignedIn && !isOnline && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CloudOff className="h-4 w-4" />
+              <span>Offline</span>
             </div>
           )}
 
-          {!isOnline && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CloudOff className="h-4 w-4" />
-              <span className="hidden sm:inline">Offline</span>
-            </div>
+          {isSignedIn && isOnline && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSync}
+              disabled={isSyncing}
+            >
+              {syncStatus === 'syncing' ? (
+                <CloudUpload className="h-4 w-4 mr-2 motion-safe:animate-pulse" />
+              ) : syncStatus === 'success' ? (
+                <Check className={cn('h-4 w-4 mr-2', ACTION_STYLES.pot_black.text)} />
+              ) : syncStatus === 'error' ? (
+                <CloudOff className="h-4 w-4 mr-2 text-destructive" />
+              ) : (
+                <Cloud className="h-4 w-4 mr-2" />
+              )}
+              Sync
+            </Button>
           )}
         </div>
+        <p className="sr-only" role="status">
+          {SYNC_ANNOUNCEMENTS[syncStatus]}
+        </p>
 
         {/* Search and Filters */}
         <div className="mb-4 sm:mb-6 space-y-3 sm:space-y-4">
@@ -207,8 +228,9 @@ export default function HistoryPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              type="text"
+              type="search"
               placeholder="Search by player name..."
+              aria-label="Search by player name"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -216,72 +238,45 @@ export default function HistoryPage() {
           </div>
 
           {/* Filter Buttons */}
-          <div className="flex flex-wrap gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by date">
+            <div className="flex items-center gap-2" aria-hidden="true">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Date:</span>
             </div>
-            <Button
-              variant={dateFilter === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setDateFilter('all')}
-            >
-              All Time
-            </Button>
-            <Button
-              variant={dateFilter === 'today' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setDateFilter('today')}
-            >
-              Today
-            </Button>
-            <Button
-              variant={dateFilter === 'week' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setDateFilter('week')}
-            >
-              Last 7 Days
-            </Button>
-            <Button
-              variant={dateFilter === 'month' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setDateFilter('month')}
-            >
-              Last 30 Days
-            </Button>
+            {DATE_FILTERS.map(([value, label]) => (
+              <Button
+                key={value}
+                variant={dateFilter === value ? 'default' : 'outline'}
+                size="sm"
+                aria-pressed={dateFilter === value}
+                onClick={() => setDateFilter(value)}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+            <div className="flex items-center gap-2" aria-hidden="true">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Status:</span>
             </div>
-            <Button
-              variant={statusFilter === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setStatusFilter('all')}
-            >
-              All
-            </Button>
-            <Button
-              variant={statusFilter === 'completed' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setStatusFilter('completed')}
-            >
-              Completed
-            </Button>
-            <Button
-              variant={statusFilter === 'abandoned' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setStatusFilter('abandoned')}
-            >
-              Abandoned
-            </Button>
+            {STATUS_FILTERS.map(([value, label]) => (
+              <Button
+                key={value}
+                variant={statusFilter === value ? 'default' : 'outline'}
+                size="sm"
+                aria-pressed={statusFilter === value}
+                onClick={() => setStatusFilter(value)}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
 
           {/* Results Count */}
           {(searchQuery || dateFilter !== 'all' || statusFilter !== 'all') && (
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground" role="status">
               Showing {filteredGames.length} of {allGames.length} games
             </div>
           )}
@@ -295,120 +290,135 @@ export default function HistoryPage() {
             <p className="text-muted-foreground mb-6">
               Try adjusting your filters or search query
             </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSearchQuery('')
-                setDateFilter('all')
-                setStatusFilter('all')
-              }}
-            >
+            <Button variant="outline" onClick={clearFilters}>
               Clear Filters
             </Button>
           </div>
         ) : (
           <div className="space-y-4">
             {filteredGames.map((game, index) => {
-            const winner = game.players.find(p => p.id === game.winnerId)
+              const winner = getGameWinner(game)
 
-            return (
-              <motion.div
-                key={game.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 mb-2">
-                          {winner && (
-                            <>
-                              <span className="text-2xl">{winner.avatar}</span>
-                              <span>{winner.name} Won!</span>
-                            </>
-                          )}
-                          {!winner && game.status === 'abandoned' && (
-                            <>
-                              <span className="text-2xl">⏸️</span>
-                              <span>Game Abandoned</span>
-                            </>
-                          )}
-                        </CardTitle>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4" />
-                            {formatDate(game.createdAt)}
-                          </div>
-                          {game.status === 'completed' && (
+              return (
+                <motion.div
+                  key={game.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: staggerDelay(index) }}
+                >
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2 mb-2">
+                            {game.status === 'abandoned' ? (
+                              <>
+                                <span className="text-2xl" aria-hidden="true">⏸️</span>
+                                <span>Game Abandoned</span>
+                              </>
+                            ) : winner ? (
+                              <>
+                                <span className="text-2xl" aria-hidden="true">{winner.avatar}</span>
+                                <span>{winner.name} Won!</span>
+                              </>
+                            ) : (
+                              <span>Game Over</span>
+                            )}
+                          </CardTitle>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
+                              {formatDate(game.createdAt)}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-4 w-4" />
+                              <span className="sr-only">Duration</span>
                               {formatDuration(game.createdAt, game.updatedAt)}
                             </div>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(game.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Users className="h-4 w-4 text-muted-foreground" />
-                      <div className="flex gap-2 flex-wrap">
-                        {game.players.map((player) => (
-                          <div
-                            key={player.id}
-                            className="flex items-center gap-1 px-2 py-1 bg-muted rounded-md text-sm"
-                          >
-                            <span>{player.avatar}</span>
-                            <span>{player.name}</span>
-                            {player.eliminated && (
-                              <Badge variant="destructive" className="text-xs ml-1">
-                                Out
-                              </Badge>
-                            )}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-center text-sm mb-3">
-                      <div className="bg-muted rounded-md p-2">
-                        <div className="font-bold">{game.history.length}</div>
-                        <div className="text-xs text-muted-foreground">Actions</div>
-                      </div>
-                      <div className="bg-muted rounded-md p-2">
-                        <div className="font-bold">{game.players.length}</div>
-                        <div className="text-xs text-muted-foreground">Players</div>
-                      </div>
-                      <div className="bg-muted rounded-md p-2">
-                        <div className="font-bold">
-                          {game.history.filter(h => h.action === 'pot_black').length}
                         </div>
-                        <div className="text-xs text-muted-foreground">Black Pots</div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setPendingDeleteId(game.id)}
+                          aria-label={`Delete game from ${formatDate(game.createdAt)}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
                       </div>
-                    </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 mb-3">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex gap-2 flex-wrap">
+                          {game.players.map((player) => (
+                            <div
+                              key={player.id}
+                              className="flex items-center gap-1 px-2 py-1 bg-muted rounded-md text-sm"
+                            >
+                              <span aria-hidden="true">{player.avatar}</span>
+                              <span>{player.name}</span>
+                              {player.eliminated && (
+                                <Badge variant="destructive" className="text-xs ml-1">
+                                  Out
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
 
-                    <Link href={`/history/${game.id}`}>
-                      <Button variant="outline" className="w-full">
-                        View Details
+                      <div className="grid grid-cols-3 gap-2 text-center text-sm mb-3">
+                        <div className="bg-muted rounded-md p-2">
+                          <div className="font-bold">{game.history.length}</div>
+                          <div className="text-xs text-muted-foreground">Actions</div>
+                        </div>
+                        <div className="bg-muted rounded-md p-2">
+                          <div className="font-bold">{game.players.length}</div>
+                          <div className="text-xs text-muted-foreground">Players</div>
+                        </div>
+                        <div className="bg-muted rounded-md p-2">
+                          <div className={cn('font-bold', ACTION_STYLES.pot_black.text)}>
+                            {game.history.filter(h => h.action === 'pot_black').length}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Black Pots</div>
+                        </div>
+                      </div>
+
+                      <Button asChild variant="outline" className="w-full">
+                        <Link href={`/history/${game.id}`}>
+                          View Details
+                        </Link>
                       </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )
             })}
           </div>
         )}
       </div>
+
+      <BottomSheet
+        isOpen={pendingDeleteId !== null}
+        onClose={() => setPendingDeleteId(null)}
+        title="Delete this game?"
+      >
+        <div className="p-4 sm:p-6 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            It is removed from this device&apos;s history and stats. If it was already uploaded,
+            it still counts on the leaderboard.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button variant="destructive" className="w-full sm:flex-1" onClick={confirmDelete}>
+              Delete
+            </Button>
+            <Button variant="outline" className="w-full sm:flex-1" onClick={() => setPendingDeleteId(null)}>
+              Keep it
+            </Button>
+          </div>
+        </div>
+      </BottomSheet>
     </main>
   )
 }

@@ -8,11 +8,12 @@ import {
   applyAction,
   getCurrentPlayer,
   getActivePlayers,
-  getEliminatedPlayers,
   getNextPlayers,
   getWinner,
   undoLastAction,
-  calculateStats,
+  abandonGame,
+  addPlayerToGame,
+  MAX_PLAYERS,
 } from '../game-logic';
 import { DEFAULT_RULESET, Game, Player } from '../types';
 
@@ -123,6 +124,19 @@ describe('Game Logic', () => {
       expect(game.createdBy).toBe('creator-id');
     });
 
+    it('should record the creator even when no player is marked as them', () => {
+      // Nobody gets the userId, but the sync still needs to know whose game it is
+      const players = [
+        { name: 'Player 1', avatar: '🎱' },
+        { name: 'Player 2', avatar: '🎯' },
+      ];
+
+      const game = createGame(players, DEFAULT_RULESET, null, 'creator-id');
+
+      expect(game.players.every(p => !p.userId)).toBe(true);
+      expect(game.createdBy).toBe('creator-id');
+    });
+
     it('should fall back to the first player when no owner is marked', () => {
       const players = [
         { name: 'Player 1', avatar: '🎱' },
@@ -163,6 +177,19 @@ describe('Game Logic', () => {
 
       const owner = game.players.find(p => p.userId === 'creator-id');
       expect(owner?.name).toBe('Me');
+    });
+
+    it('should take as many players as the database allows', () => {
+      expect(MAX_PLAYERS).toBe(32);
+      const game = createGame(roster(MAX_PLAYERS));
+
+      expect(game.players).toHaveLength(MAX_PLAYERS);
+    });
+
+    it('should refuse more players than the database allows', () => {
+      // The row would be refused with check_violation, which is final: the
+      // game could be played to the end and never upload
+      expect(() => createGame(roster(MAX_PLAYERS + 1))).toThrow('at most 32 players');
     });
   });
 
@@ -359,26 +386,6 @@ describe('Game Logic', () => {
     });
   });
 
-  describe('getEliminatedPlayers', () => {
-    it('should return all eliminated players', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
-
-      // Eliminate player 1
-      for (let i = 0; i < 3; i++) {
-        game = applyAction(game, 'miss');
-        game = { ...game, currentPlayerIndex: 0 };
-      }
-
-      const eliminatedPlayers = getEliminatedPlayers(game);
-      expect(eliminatedPlayers).toHaveLength(1);
-      expect(eliminatedPlayers[0].name).toBe('Player 1');
-    });
-  });
-
   describe('getNextPlayers', () => {
     it('should return the next N active players', () => {
       const players = [
@@ -554,68 +561,75 @@ describe('Game Logic', () => {
     });
   });
 
-  describe('calculateStats', () => {
-    it('should calculate correct game statistics', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
+  describe('abandonGame', () => {
+    it('should end an active game with nobody winning', () => {
+      const game = applyAction(
+        createGame([
+          { name: 'Player 1', avatar: '🎱' },
+          { name: 'Player 2', avatar: '🎯' },
+        ]),
+        'miss'
+      );
 
+      const abandoned = abandonGame(game);
+
+      expect(abandoned.status).toBe('abandoned');
+      expect(abandoned.winnerId).toBeUndefined();
+      expect(abandoned.history).toEqual(game.history);
+      expect(abandoned.players).toEqual(game.players);
+    });
+
+    it('should stamp the abandoned state as the newest version', () => {
+      const game = {
+        ...createGame([{ name: 'Player 1', avatar: '🎱' }]),
+        updatedAt: '2020-01-01T00:00:00.000Z',
+      };
+
+      expect(abandonGame(game).updatedAt > game.updatedAt).toBe(true);
+    });
+
+    it('should refuse a game that is already over', () => {
+      const game = { ...createGame([{ name: 'Player 1', avatar: '🎱' }]), status: 'completed' as const };
+
+      expect(() => abandonGame(game)).toThrow('Only an active game can be abandoned');
+    });
+  });
+
+  describe('addPlayerToGame', () => {
+    it('should add a player with the fewest lives anyone still has', () => {
+      let game = createGame(roster(2));
       game = applyAction(game, 'miss');
-      game = applyAction(game, 'pot');
-      game = applyAction(game, 'pot_black');
-      game = applyAction(game, 'miss');
 
-      const stats = calculateStats(game);
-      expect(stats.totalActions).toBe(4);
-      expect(stats.totalMisses).toBe(2);
-      expect(stats.totalPots).toBe(1);
-      expect(stats.totalBlackPots).toBe(1);
+      const updated = addPlayerToGame(game, 'Late', '🎲', 'roster-id');
+
+      expect(updated.players).toHaveLength(3);
+      expect(updated.players[2]).toMatchObject({ id: 'roster-id', name: 'Late', lives: 2, eliminated: false });
     });
 
-    it('should include winner in stats for completed game', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
+    it('should refuse a player who is already in the game', () => {
+      const game = createGame([{ name: 'Anna', avatar: '🎱', id: 'anna' }, { name: 'Boris', avatar: '🎯' }]);
 
-      // Eliminate player 2
-      game = { ...game, currentPlayerIndex: 1 };
-      for (let i = 0; i < 3; i++) {
-        game = applyAction(game, 'miss');
-        game = { ...game, currentPlayerIndex: 1 };
-      }
-
-      const stats = calculateStats(game);
-      expect(stats.winner?.name).toBe('Player 1');
+      expect(() => addPlayerToGame(game, 'Anna', '🎱', 'anna')).toThrow('already in this game');
     });
 
-    it('should calculate duration for completed game', () => {
-      const players = [
-        { name: 'Player 1', avatar: '🎱' },
-        { name: 'Player 2', avatar: '🎯' },
-      ];
-      let game = createGame(players);
+    it('should fill a game up to the limit', () => {
+      const game = createGame(roster(MAX_PLAYERS - 1));
 
-      // Eliminate player 2
-      game = { ...game, currentPlayerIndex: 1 };
-      for (let i = 0; i < 3; i++) {
-        game = applyAction(game, 'miss');
-        game = { ...game, currentPlayerIndex: 1 };
-      }
-
-      const stats = calculateStats(game);
-      expect(stats.duration).toBeGreaterThanOrEqual(0);
+      expect(addPlayerToGame(game, 'Last', '🎲').players).toHaveLength(MAX_PLAYERS);
     });
 
-    it('should not include duration for active game', () => {
-      const players = [{ name: 'Player 1', avatar: '🎱' }];
-      const game = createGame(players);
+    it('should refuse a player beyond the limit, counting the eliminated', () => {
+      const full = createGame(roster(MAX_PLAYERS));
+      const withEliminated = {
+        ...full,
+        players: full.players.map((p, i) => (i > 1 ? { ...p, lives: 0, eliminated: true } : p)),
+      };
 
-      const stats = calculateStats(game);
-      expect(stats.duration).toBeUndefined();
+      expect(() => addPlayerToGame(withEliminated, 'One more', '🎲')).toThrow('at most 32 players');
     });
   });
 });
+
+function roster(count: number) {
+  return Array.from({ length: count }, (_, i) => ({ name: `Player ${i + 1}`, avatar: '🎱' }));
+}

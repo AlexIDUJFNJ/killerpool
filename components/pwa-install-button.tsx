@@ -39,7 +39,7 @@ export function PWAInstallButton({ className }: { className?: string }) {
           onClose={() => setShowIOSHelp(false)}
           title="Install on iPhone or iPad"
         >
-          <ol className="space-y-4 text-sm text-muted-foreground">
+          <ol className="space-y-4 p-6 text-sm text-muted-foreground">
             <li className="flex gap-3">
               <span className="font-bold text-primary">1.</span>
               <span className="flex items-center gap-1.5">

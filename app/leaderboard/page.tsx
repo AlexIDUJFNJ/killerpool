@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button'
 import { LeaderboardList } from '@/components/leaderboard/leaderboard-list'
 
 export const metadata: Metadata = {
-  title: 'Leaderboard | Killerpool',
+  // The root layout's '%s | Killerpool' template adds the suffix; spelling it
+  // out here rendered "Leaderboard | Killerpool | Killerpool"
+  title: 'Leaderboard',
   description: 'Top players in Killer Pool - See who dominates the table',
   openGraph: {
     title: 'Leaderboard | Killerpool',
@@ -19,11 +21,11 @@ export default function LeaderboardPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div className="flex-1">
             <div className="flex items-center gap-2 sm:gap-3">
               <Trophy className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />

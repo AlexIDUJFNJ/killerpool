@@ -1,4 +1,16 @@
 import '@testing-library/jest-dom';
+import { webcrypto } from 'node:crypto';
+import { TextEncoder } from 'node:util';
+
+// jsdom implements crypto.getRandomValues and randomUUID but not
+// crypto.subtle, nor TextEncoder; the host secret is hashed with both
+// (lib/host-secret.ts). Node's own implementations stand in.
+if (!globalThis.crypto.subtle) {
+  Object.defineProperty(globalThis.crypto, 'subtle', { value: webcrypto.subtle, configurable: true });
+}
+if (typeof globalThis.TextEncoder === 'undefined') {
+  Object.defineProperty(globalThis, 'TextEncoder', { value: TextEncoder, configurable: true, writable: true });
+}
 
 // Mock window.matchMedia for theme detection
 Object.defineProperty(window, 'matchMedia', {

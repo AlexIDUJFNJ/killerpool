@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Play, Users, Trophy, QrCode, Cloud, Share2, Sun } from 'lucide-react'
 import type { Metadata } from 'next'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { cn } from '@/lib/utils'
+import { ACTION_STYLES } from '@/components/game/action-styles'
 
 export const metadata: Metadata = {
   title: 'Help & Documentation',
@@ -16,11 +19,11 @@ export default function HelpPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
             <h1 className="text-3xl font-bold">Help & Documentation</h1>
             <p className="text-muted-foreground">Everything you need to know about Killerpool</p>
@@ -53,9 +56,9 @@ export default function HelpPage() {
             <div>
               <h3 className="font-semibold mb-2">🎱 Actions</h3>
               <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
-                <li><strong>MISS</strong> - You missed your shot: <span className="text-red-500 font-semibold">-1 life</span></li>
-                <li><strong>POT</strong> - You potted a colored ball: <span className="text-yellow-500 font-semibold">No change</span></li>
-                <li><strong>POT BLACK</strong> - You potted the black ball: <span className="text-green-500 font-semibold">+1 life</span></li>
+                <li><strong>MISS</strong> - You missed your shot: <span className={cn('font-semibold', ACTION_STYLES.miss.text)}>-1 life</span></li>
+                <li><strong>POT</strong> - You potted a colored ball: <span className={cn('font-semibold', ACTION_STYLES.pot.text)}>No change</span></li>
+                <li><strong>POT BLACK</strong> - You potted the black ball: <span className={cn('font-semibold', ACTION_STYLES.pot_black.text)}>+1 life</span></li>
               </ul>
             </div>
 
@@ -83,17 +86,17 @@ export default function HelpPage() {
                 <h3 className="font-semibold">Quick Start</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                Tap &quot;Start New Game&quot; on the home screen, add 2+ players with names and avatars, then tap &quot;Start Game&quot;. Swipe cards to record actions - left for MISS, right for POT, up for POT BLACK.
+                Tap &quot;Start New Game&quot; on the home screen, add 2+ players with names and avatars, then tap &quot;Start Game&quot;. Record each shot by swiping the player&apos;s card — left for MISS, right for POT, up for POT BLACK — or with the Miss, Black and Pot buttons under it. On a keyboard, the arrow keys do the same.
               </p>
             </div>
 
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <QrCode className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Invite Players</h3>
+                <h3 className="font-semibold">Share a Live Game</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                During an active game, tap the QR code icon in the header to generate an invite link or QR code. Share it with friends to let them join or spectate the game.
+                During a game, tap the QR code icon in the header to get a link and a QR code. Anyone who opens it watches the game update live — they cannot play from their device; this one keeps score. To add a player mid-game, open the players list (👥) and tap &quot;Add Player&quot;.
               </p>
             </div>
 
@@ -103,7 +106,7 @@ export default function HelpPage() {
                 <h3 className="font-semibold">Cloud Sync</h3>
               </div>
               <p className="text-muted-foreground ml-7">
-                Sign in to sync your game history across devices. Your completed games are automatically saved to the cloud and can be accessed from any device.
+                Sign in to keep your games in the cloud. Completed games upload automatically, and ones completed offline go up once you are back online. Tap &quot;Sync&quot; on the History page to send anything still waiting and bring in games from your other devices.
               </p>
             </div>
 
@@ -120,11 +123,12 @@ export default function HelpPage() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Sun className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Theme Switcher</h3>
+                <h3 className="font-semibold">Theme</h3>
               </div>
-              <p className="text-muted-foreground ml-7">
-                The app uses a dark theme by default. If you have not chosen one, it follows your system setting.
+              <p className="text-muted-foreground ml-7 mb-3">
+                Killerpool starts in dark mode. Pick Light, Dark or System here or at the bottom of the home screen — System follows your device and switches with it. The choice is remembered on this device.
               </p>
+              <ThemeToggle className="ml-7" />
             </div>
           </CardContent>
         </Card>
@@ -138,7 +142,7 @@ export default function HelpPage() {
             <ul className="space-y-3 text-muted-foreground">
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
-                <span>Use the undo button (↻) in the header to reverse the last action if you made a mistake</span>
+                <span>Use the undo button (↺) in the header to reverse the last action if you made a mistake</span>
               </li>
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
@@ -146,11 +150,11 @@ export default function HelpPage() {
               </li>
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
-                <span>The app works offline - your games are saved locally and sync when you&apos;re back online</span>
+                <span>The app works offline — games are saved on this device, and completed ones upload when you&apos;re back online</span>
               </li>
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
-                <span>Use filters on the History page to find specific games by date, player name, or status</span>
+                <span>Use filters on the History page to find specific games by date, player name, or status — completed, or ended early with &quot;End Game&quot;</span>
               </li>
               <li className="flex gap-3">
                 <span className="text-primary">•</span>
@@ -169,21 +173,21 @@ export default function HelpPage() {
             <div>
               <h3 className="font-semibold mb-2">Can I play without an account?</h3>
               <p className="text-muted-foreground">
-                Yes! You can start playing immediately without signing in. However, signing in enables cloud sync and cross-device access to your game history.
+                Yes! You can start playing immediately without signing in. Your games and stats are kept on this device. Signing in adds cloud sync across your devices and achievements — and the games you played as a guest still count in your stats.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold mb-2">How do I recover a lost game?</h3>
+              <h3 className="font-semibold mb-2">How do I get back to a game I closed?</h3>
               <p className="text-muted-foreground">
-                If you accidentally closed the app, tap &quot;Resume Game&quot; on the home screen to continue where you left off. Games are automatically saved.
+                Open Killerpool again on the same device: the home screen shows a &quot;Game in Progress&quot; banner — tap &quot;Resume&quot; to continue where you left off. The game is saved on the device after every shot.
               </p>
             </div>
 
             <div>
               <h3 className="font-semibold mb-2">Can other people follow my game?</h3>
               <p className="text-muted-foreground">
-                Yes. Share the game from the invite button and anyone with the link watches it live, no account needed. Watching is read-only — the device that started the game stays in control.
+                Yes. Share the game from the QR code button and anyone with the link watches it live, no account needed. Watching is read-only — the device that started the game stays in control.
               </p>
             </div>
 
@@ -198,11 +202,11 @@ export default function HelpPage() {
 
         {/* Back Button */}
         <div className="flex justify-center">
-          <Link href="/">
-            <Button size="lg">
+          <Button asChild size="lg">
+            <Link href="/">
               Back to Home
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     </main>

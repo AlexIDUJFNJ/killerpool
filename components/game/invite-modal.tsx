@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Copy, Download, Share2, Check, QrCode as QrCodeIcon, Loader2, AlertCircle } from 'lucide-react'
 import { generateInviteLink, generateInviteQRCode, downloadQRCode, shareInviteLink, copyInviteLink } from '@/lib/invite'
 import { useGame } from '@/contexts/game-context'
@@ -20,32 +21,58 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>('')
   const [copied, setCopied] = React.useState(false)
   const [isSharing, setIsSharing] = React.useState(false)
-  const [isSyncing, setIsSyncing] = React.useState(false)
-  const [syncError, setSyncError] = React.useState<string | null>(null)
+  const [sharingFailed, setSharingFailed] = React.useState(false)
+  const [downloadFailed, setDownloadFailed] = React.useState(false)
+  // "Try again" bumps this to run the sharing effect once more
+  const [attempt, setAttempt] = React.useState(0)
   const inviteLink = generateInviteLink(gameId)
+  const linkInputId = React.useId()
 
-  // Enable sharing when modal opens (syncs game to Supabase)
-  // Skip for spectators - the game is already in Supabase
+  // Opening the modal uploads the game so the link can show it live.
+  // Spectators skip this: the game is already in Supabase.
+  const needsSharing = open && !isSharingEnabled && !isSpectatorMode
+  const isSyncing = needsSharing && !sharingFailed
+  // The link is held back until the host's first write has landed. Inserting a
+  // guest game is open to anyone, and that first row fixes the host-secret hash
+  // (00016): whoever got the id into the database first would own the game.
+  const canShare = isSharingEnabled || isSpectatorMode
+
+  // enableSharing changes identity with every game update; reading it from a
+  // ref keys the effect on intent (open, retry) instead of on each shot played
+  const enableSharingRef = React.useRef(enableSharing)
   React.useEffect(() => {
-    if (open && !isSharingEnabled && !isSpectatorMode) {
-      setIsSyncing(true)
-      setSyncError(null)
+    enableSharingRef.current = enableSharing
+  }, [enableSharing])
 
-      enableSharing()
-        .then((success) => {
-          if (!success) {
-            setSyncError('Failed to enable live sharing. Check console for details. You may need to apply the database migration.')
-          }
-        })
-        .catch((error) => {
-          console.error('[InviteModal] Error enabling sharing:', error)
-          setSyncError(`Failed to enable live sharing: ${error instanceof Error ? error.message : 'Unknown error'}`)
-        })
-        .finally(() => {
-          setIsSyncing(false)
-        })
+  React.useEffect(() => {
+    if (!needsSharing) return
+    let cancelled = false
+
+    enableSharingRef.current()
+      .then((success) => {
+        // The cause (network, permissions) is logged by enableSharing
+        if (!cancelled && !success) setSharingFailed(true)
+      })
+      .catch((error) => {
+        console.error('[InviteModal] Error enabling sharing:', error)
+        if (!cancelled) setSharingFailed(true)
+      })
+
+    return () => {
+      cancelled = true
     }
-  }, [open, isSharingEnabled, enableSharing, isSpectatorMode])
+  }, [needsSharing, attempt])
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    // Reopening tries again from a clean slate
+    if (!nextOpen) setSharingFailed(false)
+    onOpenChange(nextOpen)
+  }
+
+  const retrySharing = () => {
+    setSharingFailed(false)
+    setAttempt((n) => n + 1)
+  }
 
   React.useEffect(() => {
     if (open) {
@@ -75,16 +102,17 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
   }
 
   const handleDownloadQR = async () => {
+    setDownloadFailed(false)
     try {
       await downloadQRCode(gameId)
     } catch (error) {
       console.error('Failed to download QR code:', error)
-      alert('Failed to download QR code')
+      setDownloadFailed(true)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -99,16 +127,24 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
         <div className="space-y-4">
           {/* Sync Status */}
           {isSyncing && (
-            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg" role="status">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-sm">Enabling live sharing...</span>
             </div>
           )}
 
-          {syncError && (
-            <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-lg">
-              <AlertCircle className="h-4 w-4" />
-              <span className="text-sm">{syncError}</span>
+          {sharingFailed && !isSharingEnabled && (
+            <div className="flex items-start gap-2 p-3 bg-destructive/10 text-destructive rounded-lg" role="alert">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm">
+                  Live sharing couldn&apos;t be turned on, so people opening the link
+                  won&apos;t see the game yet. Check your connection and try again.
+                </p>
+                <Button variant="outline" size="sm" onClick={retrySharing}>
+                  Try again
+                </Button>
+              </div>
             </div>
           )}
 
@@ -125,7 +161,7 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
           )}
 
           {/* QR Code */}
-          {qrCodeDataUrl && (
+          {canShare && qrCodeDataUrl && (
             <div className="flex flex-col items-center gap-3 p-4 bg-muted rounded-lg">
               <a
                 href={inviteLink}
@@ -150,46 +186,57 @@ export function InviteModal({ gameId, gameName, open, onOpenChange }: InviteModa
                 <Download className="h-4 w-4 mr-2" />
                 Download QR Code
               </Button>
+              {downloadFailed && (
+                <p className="text-sm text-destructive" role="alert">
+                  The QR code couldn&apos;t be saved. Try again, or share the link instead.
+                </p>
+              )}
             </div>
           )}
 
-          {/* Invite Link */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Invite Link</label>
-            <div className="flex gap-2">
-              <Input
-                value={inviteLink}
-                readOnly
-                className="flex-1"
-                onClick={(e) => e.currentTarget.select()}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleCopy}
-                disabled={copied}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
+          {canShare && (
+            <>
+              {/* Invite Link */}
+              <div className="space-y-2">
+                <Label htmlFor={linkInputId}>Invite Link</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id={linkInputId}
+                    value={inviteLink}
+                    readOnly
+                    className="flex-1"
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleCopy}
+                    disabled={copied}
+                    aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
+                  >
+                    {copied ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button
-              variant="default"
-              className="flex-1"
-              onClick={handleShare}
-              disabled={isSharing}
-            >
-              <Share2 className="h-4 w-4 mr-2" />
-              Share Link
-            </Button>
-          </div>
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  variant="default"
+                  className="flex-1"
+                  onClick={handleShare}
+                  disabled={isSharing}
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Link
+                </Button>
+              </div>
+            </>
+          )}
 
           {/* Instructions */}
           <div className="text-xs text-muted-foreground space-y-1 p-3 bg-muted/50 rounded-md">

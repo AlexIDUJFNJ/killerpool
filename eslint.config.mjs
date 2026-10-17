@@ -16,18 +16,16 @@ const config = [
       "react-hooks/exhaustive-deps": "warn",
       "prefer-const": "warn",
       "no-console": ["warn", { allow: ["warn", "error"] }],
-      // Every hit is the same shape: read localStorage in an effect after mount
-      // and put it in state. It cannot be read during render — the server has
-      // no localStorage — so the effect is the only place left. Moving these to
-      // useSyncExternalStore is worth doing, but as its own change rather than
-      // a side effect of a dependency bump, so this stays visible as a warning.
+      // A warning, not an error, for the one hit left: GameProvider seeding its
+      // game from localStorage after hydration (contexts/game-context.tsx).
+      // That game is state the provider owns — shots, undo, a spectated game
+      // that never touches storage — with localStorage as its copy, so
+      // useSyncExternalStore does not fit it; and reading storage during the
+      // first render would not match the server's markup. Reads of storage
+      // that are a view of it go through useSyncExternalStore instead (see
+      // subscribeToGameHistory in lib/storage.ts).
       "react-hooks/set-state-in-effect": "warn",
     },
-  },
-  {
-    // The logger is the one place allowed to reach for console
-    files: ["lib/logger.ts"],
-    rules: { "no-console": "off" },
   },
   {
     // Tests mock browser APIs and strip animation props by destructuring them
@@ -54,6 +52,8 @@ const config = [
       // (sw.js, workbox-*, swe-worker-*, fallback-*)
       "public/**/*.js",
       "scripts/",
+      // Agent worktrees: full copies of the repo, linted in their own checkout
+      ".claude/",
     ],
   },
 ];

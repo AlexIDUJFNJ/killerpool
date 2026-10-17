@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useGame } from '@/contexts/game-context'
-import { createGame } from '@/lib/game-logic'
+import { createGame, MAX_PLAYERS } from '@/lib/game-logic'
 import { DEFAULT_AVATARS, DEFAULT_RULESET } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -20,7 +20,6 @@ import { cn, shuffle } from '@/lib/utils'
 import { motion } from 'motion/react'
 import { Plus, Trash2, ArrowLeft, Play, Shuffle } from 'lucide-react'
 import Link from 'next/link'
-import type { User } from '@supabase/supabase-js'
 
 /**
  * A row in the form. `rowId` is a stable identity so that Shuffle, removal and
@@ -37,7 +36,9 @@ interface PlayerDraft {
 
 export default function NewGamePage() {
   const router = useRouter()
-  const { startGame } = useGame()
+  // Followed by the provider through sign-in and sign-out; this form used to
+  // keep a second subscription of its own for the same answer
+  const { startGame, currentUserId } = useGame()
 
   const [players, setPlayers] = React.useState<PlayerDraft[]>([
     { rowId: 'p0', name: '', avatar: DEFAULT_AVATARS[0] },
@@ -48,11 +49,16 @@ export default function NewGamePage() {
   // it is tracked by row id, never by position.
   const [meRowId, setMeRowId] = React.useState<string | null>('p0')
   const [selectedRowId, setSelectedRowId] = React.useState<string | null>(null)
-  const [user, setUser] = React.useState<User | null>(null)
   const [playerSuggestions, setPlayerSuggestions] = React.useState<string[]>([])
   const [activeSuggestionRowId, setActiveSuggestionRowId] = React.useState<string | null>(null)
   const [filteredSuggestions, setFilteredSuggestions] = React.useState<string[]>([])
+  // Why the last Start was refused. Shown next to the button and cleared by
+  // the next edit, so it never describes a form that has since changed.
+  const [formError, setFormError] = React.useState<string | null>(null)
   const nextRowId = React.useRef(2)
+  const limitNoteId = React.useId()
+  // The database refuses a bigger game outright, see MAX_PLAYERS
+  const isFull = players.length >= MAX_PLAYERS
 
   React.useEffect(() => {
     const supabase = createClient()
@@ -72,7 +78,6 @@ export default function NewGamePage() {
     }
 
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      setUser(user)
       if (!user || usedRematch) return
 
       const { data: profile } = await supabase
@@ -88,25 +93,21 @@ export default function NewGamePage() {
       }
     })
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
     // Load player name suggestions from history
     const suggestions = getPlayerNamesSuggestions()
     setPlayerSuggestions(suggestions)
-
-    return () => subscription.unsubscribe()
   }, [])
 
   const handleAddPlayer = () => {
+    if (isFull) return
+    setFormError(null)
     const nextAvatar = DEFAULT_AVATARS[players.length % DEFAULT_AVATARS.length]
     setPlayers([...players, { rowId: `p${nextRowId.current++}`, name: '', avatar: nextAvatar }])
   }
 
   const handleRemovePlayer = (rowId: string) => {
     if (players.length > 2) {
+      setFormError(null)
       setPlayers(players.filter(p => p.rowId !== rowId))
       if (meRowId === rowId) {
         setMeRowId(null)
@@ -115,6 +116,7 @@ export default function NewGamePage() {
   }
 
   const handleNameChange = (rowId: string, name: string) => {
+    setFormError(null)
     setPlayers(prev => prev.map(p => (p.rowId === rowId ? { ...p, name } : p)))
 
     // Update filtered suggestions for autocomplete
@@ -132,6 +134,7 @@ export default function NewGamePage() {
   }
 
   const handleSelectSuggestion = (rowId: string, suggestion: string) => {
+    setFormError(null)
     setPlayers(prev => prev.map(p => (p.rowId === rowId ? { ...p, name: suggestion } : p)))
     setFilteredSuggestions([])
     setActiveSuggestionRowId(null)
@@ -152,14 +155,21 @@ export default function NewGamePage() {
     // Validate
     const validPlayers = players.filter(p => p.name.trim().length > 0)
     if (validPlayers.length < 2) {
-      alert('Please add at least 2 players with names')
+      setFormError('Add at least 2 players with names')
+      return
+    }
+
+    // Only reachable through a rematch of an older, bigger game: the form
+    // itself stops adding rows at the limit
+    if (validPlayers.length > MAX_PLAYERS) {
+      setFormError(`A game can have up to ${MAX_PLAYERS} players. Remove ${validPlayers.length - MAX_PLAYERS} to start.`)
       return
     }
 
     // Never guess who the creator is. A wrong guess hands their achievements
     // and their leaderboard entry to another player, and that is not reversible
     if (meRowId !== null && !validPlayers.some(p => p.rowId === meRowId)) {
-      alert('Enter your own name, or mark which player is you')
+      setFormError('Enter your own name, or mark which player is you')
       return
     }
 
@@ -168,12 +178,12 @@ export default function NewGamePage() {
     const names = validPlayers.map(p => p.name.trim().toLowerCase())
     const duplicate = names.find((name, i) => names.indexOf(name) !== i)
     if (duplicate) {
-      alert(`Two players are called "${duplicate}". Give them different names.`)
+      setFormError(`Two players are called "${duplicate}". Give them different names.`)
       return
     }
 
     // Use userId if authenticated, otherwise use stable guest_id
-    const userId = user?.id || getGuestId()
+    const userId = currentUserId || getGuestId()
     const entries = validPlayers.map(p => ({
       name: p.name.trim(),
       avatar: p.avatar,
@@ -181,7 +191,10 @@ export default function NewGamePage() {
       id: resolveRosterPlayerId(p.name),
     }))
 
-    const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId)
+    // With nobody marked as "me" no player gets the userId, but the game still
+    // records who created it: the sync decides from that which account may
+    // upload it
+    const game = createGame(entries, DEFAULT_RULESET, meRowId === null ? null : userId, userId)
     rememberRosterPlayers(entries.map(e => ({ id: e.id, name: e.name, avatar: e.avatar })))
     startGame(game)
 
@@ -196,11 +209,11 @@ export default function NewGamePage() {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/" aria-label="Back to home">
               <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <h1 className="text-2xl sm:text-3xl font-bold">New Game</h1>
         </div>
 
@@ -217,7 +230,9 @@ export default function NewGamePage() {
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center gap-3 sm:gap-4">
                     <button
+                      type="button"
                       onClick={() => setSelectedRowId(player.rowId)}
+                      aria-label={`Choose avatar for player ${index + 1}`}
                       className="shrink-0"
                     >
                       <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-primary/20 cursor-pointer hover:border-primary transition-colors">
@@ -228,8 +243,11 @@ export default function NewGamePage() {
                     </button>
 
                     <div className="flex-1 min-w-0 relative">
+                      {/* The placeholder disappears as soon as someone types,
+                          so it cannot be the field's only name */}
                       <input
                         type="text"
+                        aria-label={`Player ${index + 1} name`}
                         placeholder={`Player ${index + 1} name`}
                         value={player.name}
                         onChange={(e) => handleNameChange(player.rowId, e.target.value)}
@@ -268,9 +286,10 @@ export default function NewGamePage() {
                         leaderboard and /stats are keyed on. */}
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setFormError(null)
                         setMeRowId(current => (current === player.rowId ? null : player.rowId))
-                      }
+                      }}
                       aria-pressed={meRowId === player.rowId}
                       title={meRowId === player.rowId ? 'This is you' : 'Mark this player as you'}
                       className={cn(
@@ -288,6 +307,7 @@ export default function NewGamePage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleRemovePlayer(player.rowId)}
+                        aria-label={`Remove player ${index + 1}`}
                       >
                         <Trash2 className="h-5 w-5 text-destructive" />
                       </Button>
@@ -299,14 +319,23 @@ export default function NewGamePage() {
           ))}
         </div>
 
-        <Button
-          variant="outline"
-          className="w-full h-14 mb-8"
-          onClick={handleAddPlayer}
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Add Player ({players.length})
-        </Button>
+        <div className="mb-8">
+          <Button
+            variant="outline"
+            className="w-full h-14"
+            onClick={handleAddPlayer}
+            disabled={isFull}
+            aria-describedby={isFull ? limitNoteId : undefined}
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Add Player ({players.length})
+          </Button>
+          {isFull && (
+            <p id={limitNoteId} role="status" className="mt-2 text-center text-sm text-muted-foreground">
+              A game can have up to {MAX_PLAYERS} players.
+            </p>
+          )}
+        </div>
 
         {selectedRowId !== null && (
           <motion.div
@@ -357,6 +386,15 @@ export default function NewGamePage() {
             <Shuffle className="mr-2 h-5 w-5" />
             Shuffle Players
           </Button>
+        )}
+
+        {formError && (
+          <p
+            role="alert"
+            className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            {formError}
+          </p>
         )}
 
         <Button

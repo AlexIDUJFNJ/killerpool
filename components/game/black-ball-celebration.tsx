@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { motion, AnimatePresence, useIsPresent, useReducedMotion } from 'motion/react'
 import { shuffle } from '@/lib/utils'
 
 const PHRASES = [
@@ -93,112 +93,150 @@ export function BlackBallCelebration({
   show: boolean
   onComplete: () => void
 }) {
-  const [key, setKey] = React.useState(0)
-  const [texts, setTexts] = React.useState<FlyingText[]>([])
-  const [sparks, setSparks] = React.useState<Spark[]>([])
-
-  React.useEffect(() => {
-    if (show) {
-      setKey((k) => k + 1)
-      setTexts(generateTexts())
-      setSparks(generateSparks(25))
-      const timer = setTimeout(onComplete, DURATION)
-      return () => clearTimeout(timer)
-    }
-  }, [show, onComplete])
+  // One overlay per show, keyed by a count that goes up each time show turns
+  // on. A black potted while the last overlay is still fading out gets one of
+  // its own rather than reviving that one, and an overlay that was already
+  // mounted is never re-keyed (that made AnimatePresence play two of them).
+  // Counted during render against the previous value, not in an effect, so
+  // the overlay appears with the render that turns show on.
+  const [wasShown, setWasShown] = React.useState(show)
+  const [burstId, setBurstId] = React.useState(0)
+  if (show !== wasShown) {
+    setWasShown(show)
+    if (show) setBurstId((id) => id + 1)
+  }
 
   return (
     <AnimatePresence>
-      {show && (
+      {show && <Burst key={burstId} onComplete={onComplete} />}
+    </AnimatePresence>
+  )
+}
+
+/** One celebration. Its texts and sparks are rolled once, as it mounts. */
+function Burst({ onComplete }: { onComplete: () => void }) {
+  // A full-screen flash with particles flying in every direction is exactly
+  // what "reduce motion" asks to avoid; those players get one calm caption
+  const reduceMotion = useReducedMotion()
+  // A lazy initial state: rolled when the burst mounts and kept, since a
+  // value rolled on every render would jump mid-animation
+  const [{ texts, sparks }] = React.useState(() => ({
+    texts: reduceMotion ? [] : generateTexts(),
+    sparks: reduceMotion ? [] : generateSparks(25),
+  }))
+  // Counts down only while shown: once the burst is fading out, show is off
+  // and the parent has nothing left to be told
+  const isPresent = useIsPresent()
+
+  React.useEffect(() => {
+    if (!isPresent) return
+    const timer = setTimeout(onComplete, DURATION)
+    return () => clearTimeout(timer)
+  }, [isPresent, onComplete])
+
+  return (
+    <motion.div
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-50 pointer-events-none select-none overflow-hidden"
+      aria-hidden
+    >
+      {reduceMotion && (
         <motion.div
-          key={key}
-          initial={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-50 pointer-events-none select-none overflow-hidden"
-          aria-hidden
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 1, 1, 0] }}
+          transition={{ duration: 1.6, times: [0, 0.15, 0.8, 1] }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2"
         >
-          {/* Quick dark flash */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 0.5, 0] }}
-            transition={{ duration: 0.4, times: [0, 0.15, 1] }}
-            className="absolute inset-0 bg-black pointer-events-none"
-          />
-
-          {/* Spark particles */}
-          {sparks.map((s) => {
-            const rad = (s.angle * Math.PI) / 180
-            return (
-              <motion.div
-                key={`s-${s.id}`}
-                initial={{
-                  left: `${s.x}%`,
-                  top: `${s.y}%`,
-                  scale: 0,
-                  opacity: 1,
-                }}
-                animate={{
-                  left: `calc(${s.x}% + ${Math.cos(rad) * s.speed}px)`,
-                  top: `calc(${s.y}% + ${Math.sin(rad) * s.speed}px)`,
-                  scale: [0, 1.5, 0],
-                  opacity: [1, 1, 0],
-                }}
-                transition={{
-                  duration: s.duration,
-                  delay: s.delay,
-                  ease: 'easeOut',
-                }}
-                className="absolute rounded-full pointer-events-none"
-                style={{
-                  width: s.size,
-                  height: s.size,
-                  backgroundColor: s.color,
-                  boxShadow: `0 0 ${s.size * 2}px ${s.color}`,
-                }}
-              />
-            )
-          })}
-
-          {/* Flying text phrases — all at once, scattered across screen */}
-          {texts.map((t) => (
-            <motion.div
-              key={`t-${t.id}`}
-              initial={{
-                left: `${t.x}%`,
-                top: `${t.y}%`,
-                scale: 0,
-                rotate: t.rotation - 20,
-                opacity: 0,
-              }}
-              animate={{
-                left: `calc(${t.x}% + ${t.dx}px)`,
-                top: `calc(${t.y}% + ${t.dy}px)`,
-                scale: [0, t.scale * 1.3, t.scale, 0],
-                rotate: [t.rotation - 20, t.rotation + 5, t.rotation],
-                opacity: [0, 1, 1, 0],
-              }}
-              transition={{
-                duration: 1.6,
-                delay: t.delay,
-                ease: 'easeOut',
-              }}
-              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap pointer-events-none"
-            >
-              <span
-                className="text-3xl sm:text-5xl font-black"
-                style={{
-                  color: t.color,
-                  textShadow: `0 0 20px ${t.color}, 0 2px 8px rgba(0,0,0,0.8)`,
-                  WebkitTextStroke: '1px rgba(0,0,0,0.3)',
-                }}
-              >
-                {t.text}
-              </span>
-            </motion.div>
-          ))}
+          <span className="text-4xl sm:text-6xl font-black text-emerald-500 drop-shadow-lg">
+            {PHRASES[0]}
+          </span>
+          <span className="text-lg sm:text-xl font-bold text-foreground">+1 LIFE</span>
         </motion.div>
       )}
-    </AnimatePresence>
+
+      {/* Quick dark flash */}
+      {!reduceMotion && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.5, 0] }}
+          transition={{ duration: 0.4, times: [0, 0.15, 1] }}
+          className="absolute inset-0 bg-black pointer-events-none"
+        />
+      )}
+
+      {/* Spark particles */}
+      {sparks.map((s) => {
+        const rad = (s.angle * Math.PI) / 180
+        return (
+          <motion.div
+            key={`s-${s.id}`}
+            initial={{
+              left: `${s.x}%`,
+              top: `${s.y}%`,
+              scale: 0,
+              opacity: 1,
+            }}
+            animate={{
+              left: `calc(${s.x}% + ${Math.cos(rad) * s.speed}px)`,
+              top: `calc(${s.y}% + ${Math.sin(rad) * s.speed}px)`,
+              scale: [0, 1.5, 0],
+              opacity: [1, 1, 0],
+            }}
+            transition={{
+              duration: s.duration,
+              delay: s.delay,
+              ease: 'easeOut',
+            }}
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              width: s.size,
+              height: s.size,
+              backgroundColor: s.color,
+              boxShadow: `0 0 ${s.size * 2}px ${s.color}`,
+            }}
+          />
+        )
+      })}
+
+      {/* Flying text phrases — all at once, scattered across screen */}
+      {texts.map((t) => (
+        <motion.div
+          key={`t-${t.id}`}
+          initial={{
+            left: `${t.x}%`,
+            top: `${t.y}%`,
+            scale: 0,
+            rotate: t.rotation - 20,
+            opacity: 0,
+          }}
+          animate={{
+            left: `calc(${t.x}% + ${t.dx}px)`,
+            top: `calc(${t.y}% + ${t.dy}px)`,
+            scale: [0, t.scale * 1.3, t.scale, 0],
+            rotate: [t.rotation - 20, t.rotation + 5, t.rotation],
+            opacity: [0, 1, 1, 0],
+          }}
+          transition={{
+            duration: 1.6,
+            delay: t.delay,
+            ease: 'easeOut',
+          }}
+          className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap pointer-events-none"
+        >
+          <span
+            className="text-3xl sm:text-5xl font-black"
+            style={{
+              color: t.color,
+              textShadow: `0 0 20px ${t.color}, 0 2px 8px rgba(0,0,0,0.8)`,
+              WebkitTextStroke: '1px rgba(0,0,0,0.3)',
+            }}
+          >
+            {t.text}
+          </span>
+        </motion.div>
+      ))}
+    </motion.div>
   )
 }

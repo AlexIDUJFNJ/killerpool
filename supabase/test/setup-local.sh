@@ -3,13 +3,17 @@
 # Brings up a throwaway Postgres, fakes the parts of Supabase the migrations
 # rely on, and applies the whole migration chain from scratch.
 #
-# There is no local Supabase environment in this project (no config.toml), and
-# `supabase db push` is not usable either: the project is not linked and the
-# migration history table is empty, so a push would start from 00001. This is
-# how a migration gets verified before it reaches production.
+# There is no local Supabase environment in this project (no config.toml), so
+# there is nothing local to `supabase db push` to. This is how a migration gets
+# verified before it reaches production; how it then gets there is in
+# supabase/README.md ("Применение миграций к проду").
 #
 #   ./supabase/test/setup-local.sh          # start and migrate
 #   ./supabase/test/setup-local.sh --stop   # tear down
+#
+# The database it builds carries a marker (schema kp_harness) and listens on a
+# Unix socket only (listen_addresses empty). rls-policies.sql checks both before
+# it writes anything.
 #
 set -euo pipefail
 
@@ -71,6 +75,23 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 SQL
 
+# The marker rls-policies.sql looks for before its first write. That file
+# DELETEs every game; it must never run anywhere else. The cluster's
+# system_identifier is unique per initdb, so a marker copied into another
+# cluster (a dump restored somewhere) does not count.
+psql_run <<'SQL' >/dev/null
+CREATE SCHEMA kp_harness;
+COMMENT ON SCHEMA kp_harness IS
+  'Throwaway test database built by supabase/test/setup-local.sh. rls-policies.sql refuses to run where this schema is missing.';
+CREATE TABLE kp_harness.marker AS
+  SELECT c.system_identifier,
+         current_setting('port')                    AS port,
+         current_setting('unix_socket_directories') AS socket_dir,
+         now()                                      AS built_at
+    FROM pg_control_system() c;
+SQL
+
 echo
 echo "ready:  psql -h $SOCK -p $PORT -U postgres"
-echo "tests:  psql -h $SOCK -p $PORT -U postgres -f supabase/test/rls-policies.sql"
+echo "tests:  psql -h $SOCK -p $PORT -U postgres -v kp_port=$PORT -v kp_sock=$SOCK -f supabase/test/rls-policies.sql"
+echo "        (exit 0 = every check passed; 3 = a check failed or the database was refused)"

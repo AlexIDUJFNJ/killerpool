@@ -6,8 +6,15 @@ import { initInstallCapture } from '@/lib/pwa-install'
 
 /**
  * PWA Initialization Component
- * Registers the service worker, retries failed game syncs and captures the
- * install prompt (see components/pwa-install-button.tsx for the UI)
+ * Retries failed game syncs and captures the install prompt (see
+ * components/pwa-install-button.tsx for the UI).
+ *
+ * The service worker is not registered here. @ducanh2912/next-pwa does it
+ * (`register: true` in next.config.js) from the script it injects into the
+ * client entry, which also drives cacheOnFrontEndNav and reloadOnOnline and
+ * stays off in development. A second register('/sw.js') here was redundant in
+ * production, and in `next dev` it registered whatever public/sw.js the last
+ * build had left behind.
  */
 export function PWAInit() {
   useEffect(() => {
@@ -33,13 +40,6 @@ export function PWAInit() {
 
     window.addEventListener('online', handleOnline)
     document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    // Register service worker (only where supported)
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch((error) => {
-        console.error('Service Worker registration failed:', error)
-      })
-    }
 
     return () => {
       window.removeEventListener('online', handleOnline)
