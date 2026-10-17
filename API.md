@@ -925,7 +925,7 @@ export const haptics = {
 
 ## Database Schema
 
-**Миграции:** `supabase/migrations/00001–00016`. **Типы:** `lib/types/database.types.ts` генерируется из продовой схемы и руками не правится (исключение — `games.host_secret_hash`, вписанная руками до выкладки 00016; после неё файл перегенерировать); после каждой миграции:
+**Миграции:** `supabase/migrations/00001–00016`. **Типы:** `lib/types/database.types.ts` генерируется из продовой схемы и руками не правится; после каждой миграции:
 
 ```bash
 npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts

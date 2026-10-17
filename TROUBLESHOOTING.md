@@ -230,7 +230,7 @@ Error: column "created_by" does not exist
 
    Перед тем как везти миграцию в прод, её стоит прогнать локально: `./supabase/test/setup-local.sh` поднимает временный Postgres, подделывает то, что даёт Supabase (схема `auth`, роли `anon`/`authenticated`, `auth.uid()` через GUC), и накатывает всю цепочку с нуля. Для политик есть отдельный прогон под ролями: `psql ... -f supabase/test/rls-policies.sql`.
 
-2. **`supabase db push` пытается накатить всё с 00001** и падает на первом `CREATE TYPE`. Это продовый проект без журнала миграций: 00001–00014 применялись через SQL Editor. Журнал заводится один раз командой `supabase migration repair --linked --status applied 00001 … 00014`, после неё push видит только новые миграции — сейчас ровно две, 00015 и 00016 (`supabase db push --linked --dry-run`). Порядок — в [DEPLOYMENT.md](./DEPLOYMENT.md#supabase-cli). Не применяйте новые миграции через SQL Editor: в журнал они не попадут, и следующий push повторит их.
+2. **`supabase db push` пытается накатить всё с 00001** и падает на первом `CREATE TYPE`. Значит, у проекта нет журнала миграций: так было на проде, пока 00001–00014 применялись через SQL Editor (журнал заведён 17.10.2026). Журнал заводится один раз командой `supabase migration repair --linked --status applied <версии, которые уже в базе>`, после неё push видит только новые миграции (`supabase db push --linked --dry-run`). Порядок — в [DEPLOYMENT.md](./DEPLOYMENT.md#supabase-cli). Не применяйте новые миграции через SQL Editor: в журнал они не попадут, и следующий push повторит их.
 
 3. В крайнем случае (только на своей тестовой базе!) удалите все таблицы и примените миграции заново:
 ```sql

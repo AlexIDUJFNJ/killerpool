@@ -153,7 +153,7 @@ REST-эндпоинтов нет (`app/api` не существует). Клие
 
 - `strict: true` в tsconfig
 - Типы БД в `lib/types/database.types.ts` генерируются из продовой схемы, руками не правятся:
-  `npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts` (после каждой миграции). Единственное исключение — `games.host_secret_hash`, вписанная руками до того, как 00016 дойдёт до прода; после неё файл перегенерируется
+  `npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts` (после каждой миграции)
 - Единый маппинг между строкой БД и доменным типом в обе стороны: `mapDbGameToGame` и `mapGameToDbRow` (`lib/game-mapper.ts`)
 
 ---
@@ -942,8 +942,8 @@ Jest 30 + jsdom + Testing Library (`jest.config.ts`, `jest.setup.ts`). **37 сь
 - `npm run build` (prebuild-хук генерирует иконки: `scripts/generate-icons.js`)
 - Security headers — из `vercel.json` (см. выше)
 - Node 22 (`engines`)
-- Supabase — отдельный managed-проект, слинкованный через Supabase CLI. 00001–00014 исторически применялись вручную через SQL Editor, поэтому журнала миграций на проде нет: перед первым `supabase db push` его заводят `supabase migration repair --linked --status applied 00001 … 00014`
-- **Порядок выкладки 00015 и 00016: сначала база, потом клиент.** `repair` 00001–00014 → `migration list` → `db push --dry-run` (ровно две: 00015 и 00016) → `db push` → проверка `convalidated` после 00015 → проверка gateway для 00016 (три curl-запроса: доходит ли `x-host-secret` до PostgREST) → только потом merge `dev` в `main`, то есть деплой клиента. Новый клиент шлёт колонку `host_secret_hash`: на старой схеме он получит `PGRST204` и, повторив запись без неё, выложит игры без защиты, а если gateway теряет заголовок, первая же запись запрёт каждого гостя-хоста в его игре. Старый клиент на новой схеме работает как прежде. Команды — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду), подробности о деплое — в [DEPLOYMENT.md](./DEPLOYMENT.md#supabase-cli)
+- Supabase — отдельный managed-проект, слинкованный через Supabase CLI. 00001–00014 исторически применялись вручную через SQL Editor, поэтому журнала миграций на проде не было; 17.10.2026 его завели (`supabase migration repair --linked --status applied 00001 … 00014`), и с 00015 миграции идут только через `supabase db push`
+- **Порядок выкладки 00015 и 00016: сначала база, потом клиент** (выполнено 17.10.2026). `repair` 00001–00014 → `migration list` → `db push --dry-run` (ровно две: 00015 и 00016) → `db push` → проверка `convalidated` после 00015 → проверка gateway для 00016 (три curl-запроса: доходит ли `x-host-secret` до PostgREST) → только потом merge `dev` в `main`, то есть деплой клиента. Новый клиент шлёт колонку `host_secret_hash`: на старой схеме он получит `PGRST204` и, повторив запись без неё, выложит игры без защиты, а если gateway теряет заголовок, первая же запись запрёт каждого гостя-хоста в его игре. Старый клиент на новой схеме работает как прежде. Команды — в [supabase/README.md](./supabase/README.md#-применение-миграций-к-проду), подробности о деплое — в [DEPLOYMENT.md](./DEPLOYMENT.md#supabase-cli)
 
 ---
 

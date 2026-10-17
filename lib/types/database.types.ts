@@ -1,9 +1,6 @@
 // Generated from the production schema — do not edit by hand. Regenerate after
 // every migration:
 //   npx supabase gen types typescript --linked --schema public > lib/types/database.types.ts
-//
-// Exception: games.host_secret_hash was added by hand in the generated shape,
-// ahead of 00016 reaching production. Regenerate once it has.
 
 export type Json =
   | string
